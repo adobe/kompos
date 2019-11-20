@@ -1,0 +1,13 @@
+kompos.egg-info/
+*.plan
+*.tf.json
+*.tfvars.json
+*.tfstate
+.cache/
+*.pyc
+.terraform
+build/
+dist/
+buildrunner.results
+.idea
+.env
