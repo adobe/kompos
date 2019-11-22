@@ -35,6 +35,7 @@ class ConfigGeneratorParserConfig(SubParserConfig):
         kompos data/account=ee-dev/env=dev/region=va6/project=ee/cluster=experiments/composition=helmfiles config --format json --print-data
         '''
 
+
 class ConfigGeneratorRunner(HierarchicalConfigGenerator, object):
     def __init__(self, kompos_config, cluster_config_path):
         super(ConfigGeneratorRunner, self).__init__()
@@ -67,4 +68,5 @@ class ConfigGeneratorRunner(HierarchicalConfigGenerator, object):
             print_data=True,
             skip_interpolation_resolving=args.skip_interpolation_resolving,
             skip_interpolation_validation=args.skip_interpolation_validation,
+            skip_secrets=args.skip_secrets
         )
