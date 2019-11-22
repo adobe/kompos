@@ -1,8 +1,3 @@
 simpledi>=0.2
-awscli==1.16.206
-boto3==1.9.196
-boto==2.49.0
 PyYAML==5.1
-hvac==0.9.3
-kubernetes==9.0.0
 himl==0.5.0
