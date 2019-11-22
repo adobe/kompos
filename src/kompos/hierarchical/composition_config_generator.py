@@ -97,7 +97,8 @@ class HierarchicalConfigGenerator(object):
         print_data=False,
         output_file=None,
         skip_interpolation_resolving=False,
-        skip_interpolation_validation=False
+        skip_interpolation_validation=False,
+        skip_secrets=False
     ):
         cmd = self.get_sh_command(
             config_path,
@@ -108,7 +109,8 @@ class HierarchicalConfigGenerator(object):
             print_data,
             output_file,
             skip_interpolation_resolving,
-            skip_interpolation_validation
+            skip_interpolation_validation,
+            skip_secrets
         )
 
         display(cmd, color="yellow")
@@ -122,7 +124,8 @@ class HierarchicalConfigGenerator(object):
             output_file=output_file,
             print_data=print_data,
             skip_interpolations=skip_interpolation_resolving,
-            skip_interpolation_validation=skip_interpolation_validation
+            skip_interpolation_validation=skip_interpolation_validation,
+            skip_secrets=skip_secrets
         )
 
     @staticmethod
@@ -135,7 +138,8 @@ class HierarchicalConfigGenerator(object):
         print_data=False,
         output_file=None,
         skip_interpolation_resolving=False,
-        skip_interpolation_validation=False
+        skip_interpolation_validation=False,
+        skip_secrets=False
     ):
         command = "kompos {} config --format {}".format(
             config_path, output_format)
@@ -153,6 +157,8 @@ class HierarchicalConfigGenerator(object):
             command += " --skip-interpolation-resolving"
         if skip_interpolation_validation:
             command += " --skip-interpolation-validation"
+        if skip_secrets:
+            command += " --skip-secrets"
 
         return command
 
@@ -168,7 +174,6 @@ class PreConfigGenerator(HierarchicalConfigGenerator, object):
         return self.generate_config(config_path=get_config_path(config_path, composition),
                                     exclude_keys=self.excluded_config_keys,
                                     filters=self.filtered_output_keys)
-
 
 
 class TerraformConfigGenerator(HierarchicalConfigGenerator, object):
