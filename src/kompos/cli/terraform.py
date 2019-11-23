@@ -182,12 +182,6 @@ class TerraformRunner(object):
 
     def run(self, args, extra_args):
         logger.info("Found extra_args %s", extra_args)
-        terraform_config_path = os.environ.get(
-                                                "TF_CLI_CONFIG_FILE",
-                                                self.kompos_config.terraform_config_path
-                                                )
-        os.environ["TF_CLI_CONFIG_FILE"] = terraform_config_path
-        logger.info("Set TF_CLI_CONFIG_FILE=%s", terraform_config_path)
 
         # Stop processing if an incompatible version is detected.
         validate_terraform_version(self.kompos_config.terraform_version())
