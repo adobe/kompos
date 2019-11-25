@@ -146,10 +146,6 @@ class KomposConfig(object):
         return get_value_or(self.config, "compositions/order/{}".format(composition), default)
 
 
-    def terraform_remove_local_cache(self):
-        return get_value_or(self.config, "terraform/remove_local_cache", False)
-
-
     def terraform_version(self):
         return get_value_or(self.config, "terraform/version", 'latest')
 

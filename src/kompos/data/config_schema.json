@@ -52,11 +52,6 @@
           "type": "string",
           "description": "The terraform version that should be used. Kompos will abort on version mismatch."
         },
-        "remove_local_cache": {
-          "type": "boolean",
-          "description": "Whether to clean the terraform cache before each operation",
-          "default": true
-        },
         "local_path": {
           "type": "string",
           "description": "Local file path to the terraform modules repo"

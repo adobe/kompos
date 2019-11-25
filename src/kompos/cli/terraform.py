@@ -281,7 +281,7 @@ class TerraformRunner(object):
               "{remove_local_cache} " \
               "terraform {subcommand} {tf_args} {extra_args} {var_file}".format(
                 terraform_path=terraform_path,
-                remove_local_cache=remove_local_cache_cmd(self.kompos_config, args.subcommand),
+                remove_local_cache=remove_local_cache_cmd(args.subcommand),
                 subcommand=args.subcommand,
                 extra_args=' '.join(extra_args),
                 tf_args=' '.join(args.terraform_args),
@@ -291,8 +291,8 @@ class TerraformRunner(object):
         return dict(command=cmd, post_actions=[])
 
 
-def remove_local_cache_cmd(config, subcommand):
-    if subcommand in SUBCMDS_WITH_INIT and config.terraform_remove_local_cache():
+def remove_local_cache_cmd(subcommand):
+    if subcommand in SUBCMDS_WITH_INIT:
         return 'rm -rf .terraform && terraform init && '
 
     return ''
