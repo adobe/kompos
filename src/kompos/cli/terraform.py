@@ -224,7 +224,8 @@ class TerraformRunner(object):
             # Use the default local repo (not versioned).
             terraform_composition_path = os.path.join(
                 self.kompos_config.terraform_local_path(),
-                self.kompos_config.terraform_root_path()
+                self.kompos_config.terraform_root_path(),
+                cloud_type,
             )
 
             # Overwrite with the nix output, if the nix integration is enabled.
@@ -242,10 +243,10 @@ class TerraformRunner(object):
                 # of the module directory, so as a workaround we're using a temporary directory
                 # with the contents of the derivation so terraform can create new files.
                 # See: https://github.com/hashicorp/terraform/issues/18030
-
                 terraform_composition_path = os.path.join(
                     writeable_nix_out_path(pname),
-                    self.kompos_config.terraform_root_path()
+                    self.kompos_config.terraform_root_path(),
+                    cloud_type
                 )
 
             tf_config_generator.generate_files(
