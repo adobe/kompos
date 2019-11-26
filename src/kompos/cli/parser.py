@@ -9,6 +9,7 @@
 # governing permissions and limitations under the License.
 
 import argparse
+import pkg_resources
 
 import sys
 
@@ -38,6 +39,13 @@ class RootParser(object):
             '--nix',
             action='store_true',
             help='Enable nix integration for remote resources'
+        )
+        parser.add_argument(
+            '--version',
+            action='version',
+            version='%(prog)s v{version}'.format(
+                version=pkg_resources.get_distribution("kompos").version
+            )
         )
         configure_common_arguments(parser)
 
