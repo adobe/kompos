@@ -11,12 +11,16 @@
 import os
 import yaml
 import logging
+import fastjsonschema
+import pkg_resources
 
 from functools import reduce
+from distutils.version import StrictVersion
+
+CONFIG_SCHEMA_PATH = "data/config_schema.json"
 
 
 logger = logging.getLogger(__name__)
-
 
 # The filename of the generated hierarchical configuration for Terrraform.
 TERRAFORM_CONFIG_FILENAME = "variables.tfvars.json"
@@ -38,72 +42,24 @@ def get_value_or(dictionary, x_path, default=None):
         if isinstance(d, dict) else default, keys, dictionary)
 
 
-def file_tree(config_path, search_fname):
-    """ From the current dir returns a list with all the files in the file tree to the root dir """
-
-    parts = os.path.realpath(config_path)
-
-    file_stack = []
-
-    while parts:
-        fname = '/'.join((parts, search_fname))
-        file_stack.append(fname)
-        parts = parts.rpartition('/')[0]
-
-    return file_stack
-
-
-def read_value_from_file(file, extract_function):
-    with open(file, 'r') as f:
-        return extract_function(yaml.loads(f.read()))
-
-
 class KomposConfig(object):
     """
-    Parses the all .komposconfig.yaml files that it can find starting from the
-    first down the path to the one in the current dir
-
-    For /root/cluster/cluster.yaml:
-
-        /etc/kompos/.komposconfig.yaml
-        ~/.komposconfig.yaml
-        /root/.komposconfig.yaml
-        /root/cluster/.komposconfig.yaml
+    Parses all the available configuration files in order and merges them together.
     """
-
-    DEFAULTS = {
-        # cache dir
-        'cache.dir': '~/.kompos/cache',
-
-        # terraform options
-        'terraform.version': 'latest',
-
-        # S3 remote state
-        'terraform.s3_state': False,
-
-        # Integrate https://github.com/coinbase/terraform-landscape
-        'terraform.landscape': False,
-
-        # Remove .terraform folder before each terraform plan, to prevent reuse of installed backends (it can confuse terraform when the cluster backend is
-        # not the same for all of them)
-        'terraform.remove_local_cache': False,
-    }
 
     DEFAULT_PATHS = [
         '/etc/kompos/.komposconfig.yaml',
-        '~/.komposconfig.yaml'
+        os.path.expanduser('~/.komposconfig.yaml'),
+        os.path.join(os.getcwd(), '.komposconfig.yaml')
     ]
 
     def __init__(self, console_args, package_dir):
         cluster_config_path = console_args.cluster_config_path
-        self.config = self.DEFAULTS
+        self.config = dict()
         self.package_dir = package_dir
+        self.validate = fastjsonschema.compile(self.read_schema())
 
         paths = self.DEFAULT_PATHS[:]
-        for fname in reversed(
-                file_tree(cluster_config_path, '.komposconfig.yaml')):
-            if fname not in paths:
-                paths.append(fname)
 
         parsed_files = []
         logger.debug("parsing %s", paths)
@@ -113,7 +69,12 @@ class KomposConfig(object):
             if os.path.isfile(config_path):
                 logger.info("parsing %s", config_path)
                 with open(config_path) as f:
-                    config = yaml.safe_load(f.read())
+                    try:
+                        config = yaml.safe_load(f.read())
+                    except Exception as e:
+                        logger.error("Failed to parse configuration file: %s", config_path)
+                        raise e
+
                     if isinstance(config, dict):
                         parsed_files.append(config_path)
                         self.config.update(config)
@@ -121,16 +82,36 @@ class KomposConfig(object):
                         logger.error(
                             "cannot parse yaml dict from file: %s", config_path)
 
+                try:
+                    self.validate(config)
+                except fastjsonschema.exceptions.JsonSchemaException as e:
+                    logger.error("Schema validation failed for configuration file: %s", config_path)
+                    raise e
+
         self.parsed_files = parsed_files
         logger.info("final kompos config: %s from %s", self.config, parsed_files)
 
     def get(self, item, default=None):
         return self.config.get(item, default)
 
-    @property
-    def terraform_config_path(self):
-        default_path = self.package_dir + '/data/terraform/terraformrc'
-        return self.config.get('terraform.config_path', default_path)
+    def validate_version(self):
+        min_kompos_version = get_value_or(self.config, "min_version")
+
+        if not min_kompos_version:
+            return
+
+        current_kompos_version = pkg_resources.get_distribution("kompos").version
+
+        if StrictVersion(current_kompos_version) < StrictVersion(min_kompos_version):
+            raise Exception(
+                "The current kompos version '{}' is lower than the minimum required version '{}'".format(
+                    current_kompos_version, min_kompos_version,
+                )
+            )
+
+    def read_schema(self):
+        with open(os.path.join(self.package_dir, CONFIG_SCHEMA_PATH), "r") as f:
+            return yaml.safe_load(f.read())
 
     def __contains__(self, item):
         return item in self.config
@@ -165,20 +146,16 @@ class KomposConfig(object):
         return get_value_or(self.config, "compositions/order/{}".format(composition), default)
 
 
-    def terraform_remove_local_cache(self):
-        return get_value_or(self.config, "terraform/remove_local_cache", False)
-
-
     def terraform_version(self):
         return get_value_or(self.config, "terraform/version", 'latest')
 
 
     def terraform_repo_url(self):
-        return self.config['terraform']['repo_url']
+        return self.config['terraform']['repo']['url']
 
 
     def terraform_repo_name(self):
-        return self.config['terraform']['repo_name']
+        return self.config['terraform']['repo']['name']
 
 
     def terraform_root_path(self):
@@ -186,15 +163,15 @@ class KomposConfig(object):
 
 
     def terraform_local_path(self):
-        return self.config['terraform']['local_path']
+        return os.path.expanduser(self.config['terraform']['local_path'])
 
 
     def helmfile_repo_url(self):
-        return self.config['helmfile']['repo_url']
+        return self.config['helmfile']['repo']['url']
 
 
     def helmfile_repo_name(self):
-        return self.config['helmfile']['repo_name']
+        return self.config['helmfile']['repo']['name']
 
 
     def helmfile_root_path(self):
@@ -202,4 +179,4 @@ class KomposConfig(object):
 
 
     def helmfile_local_path(self):
-        return self.config['helmfile']['local_path']
+        return os.path.expanduser(self.config['helmfile']['local_path'])

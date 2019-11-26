@@ -1,0 +1,124 @@
+{
+  "$schema": "http://json-schema.org/schema#",
+  "description": "Kompos configuration schema",
+  "type": "object",
+  "properties": {
+    "compositions": {
+      "type": "object",
+      "properties": {
+        "order": {
+          "type": "object",
+          "required": [
+            "terraform",
+            "helmfile"
+          ],
+          "properties": {
+            "terraform": {
+              "type": "array",
+              "uniqueItems": true,
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "helmfile": {
+              "type": "array",
+              "uniqueItems": true,
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "config_keys": {
+          "type": "object",
+          "properties": {
+            "excluded": {
+              "type": "object"
+            },
+            "filtered": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "terraform": {
+      "type": "object",
+      "description": "Configuration related to the terraform runner",
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "The terraform version that should be used. Kompos will abort on version mismatch."
+        },
+        "local_path": {
+          "type": "string",
+          "description": "Local file path to the terraform modules repo"
+        },
+        "root_path": {
+          "type": "string",
+          "description": "Relative to `local_path`. It should point to the modules directory"
+        },
+        "repo": {
+          "type": "object",
+          "required": [
+            "name",
+            "url"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "The name of the nix derivation (or how the upstream repo will be referenced by nix)"
+            },
+            "url": {
+              "type": "string",
+              "description": "The upstream terraform modules repo"
+            }
+          }
+        }
+      }
+    },
+    "helmfile": {
+      "type": "object",
+      "description": "Configuration related to the helmfile runner",
+      "properties": {
+        "local_path": {
+          "type": "string",
+          "description": "Local file path to the helmfile releases repo"
+        },
+        "root_path": {
+          "type": "string",
+          "description": "Relative to `local_path`. The result is the directory of the generated hierarchical configuration file"
+        },
+        "repo": {
+          "type": "object",
+          "description": "Configuration regarding versioning",
+          "required": [
+            "name",
+            "url"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "The name of the nix derivation (or how the upstream repo will be referenced by nix)"
+            },
+            "url": {
+              "type": "string",
+              "description": "The upstream helmfile repo"
+            }
+          }
+        }
+      }
+    },
+    "min_version": {
+      "type": "string",
+      "description": "The minimum kompos version allowed"
+    }
+  },
+  "required": [
+    "terraform",
+    "helmfile",
+    "compositions"
+  ]
+}

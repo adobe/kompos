@@ -1,3 +1,4 @@
 simpledi>=0.2
 PyYAML==5.1
 himl==0.5.0
+fastjsonschema==2.14.*

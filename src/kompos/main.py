@@ -18,7 +18,7 @@ from .cli.config_generator import ConfigGeneratorParserConfig, ConfigGeneratorRu
 from .cli.parser import RootParser, CommandParserConfig
 from .cli.terraform import TerraformParserConfig, TerraformRunner
 from .cli.helmfile import HelmfileParserConfig, HelmfileRunner
-from . import KomposException, Executor, validate_kompos_version
+from . import KomposException, Executor
 from .komposconfig import KomposConfig
 
 logger = logging.getLogger(__name__)
@@ -40,18 +40,16 @@ class AppContainer(Container):
 
         self.configure_parsers()
 
+        self.kompos_config = cache(auto(KomposConfig))
         self.terraform_runner = auto(TerraformRunner)
-        # self.run_runner = auto(CommandRunner)
         self.helmfile_runner = auto(HelmfileRunner)
         self.config_runner = auto(ConfigGeneratorRunner)
-
-        self.kompos_config = cache(auto(KomposConfig))
 
         # bind the command executor
         self.execute = auto(Executor)
 
         self.configure()
-        self.validate_kompos_version()
+        self.kompos_config.validate_version()
 
     def configure_parsers(self):
         self.root_parser = auto(RootParser)
@@ -84,10 +82,6 @@ class AppContainer(Container):
         os.chdir(self.root_dir)
 
         return args
-
-    def validate_kompos_version(self):
-        if 'kompos.min_version' in self.kompos_config:
-            validate_kompos_version(self.kompos_config['kompos.min_version'])
 
     def run(self):
         if 'refresh_cache' in vars(self.console_args):
