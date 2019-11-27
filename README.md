@@ -1,7 +1,7 @@
 # kompos
 [![Build Status](https://www.travis-ci.com/adobe/kompos.svg?token=8uHqfhgsxdvJ93qWAxhn&branch=master)](https://www.travis-ci.com/adobe/kompos) [![Docker pull](https://img.shields.io/docker/pulls/adobe/kompos)](https://hub.docker.com/r/adobe/kompos) [![](https://images.microbadger.com/badges/version/adobe/kompos.svg)](https://microbadger.com/images/adobe/kompos "Get your own version badge on microbadger.com") [![License](https://img.shields.io/github/license/adobe/kompos)](https://github.com/adobe/kompos/blob/master/LICENSE)
 
-![kompos](img/knot.png)
+![kompos](img/kompos.png)
 
 **Kompos** is a configuration driven tool for provisioning and managing Kubernetes infrastructure across AWS and Azure.
 It uses a hierarchical folder structure and yaml files to store and generate configurations, with pluggable compositions that encapsulates the infrastructure code and state. Terraform and helmfile are supported as provisioners.
