@@ -8,22 +8,6 @@
 # OF ANY KIND, either express or implied. See the License for the specific language
 # governing permissions and limitations under the License.
 
-import os
-from subprocess import Popen, PIPE
-import sys
-
-
-def get_output(command, trim=True):
-    out = Popen(command, shell=True, stdout=PIPE).communicate()[0]
-    if trim:
-        out = out.strip()
-
-    return out
-
 
 def display(msg, **kwargs):
     print(msg)
-
-
-def err(msg):
-    display(str(msg), stderr=True, color='red')
