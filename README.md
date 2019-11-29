@@ -54,8 +54,22 @@ infrastructure code (i.e terraform & helmfile releases) on a specific version.
 This enables you to finely control your deployments and use different
 infrastructure versions per environment, cluster etc.
 
-Enable the integration with the `--nix` flag with each command. Below are the
-necessary parts of komposconfig regarding nix/versioning:
+#### Prerequisites
+
+Install `nix` and `nix-prefetch-git`.
+
+```bash
+$ curl https://nixos.org/nix/install | sh
+
+# It's used to automatically derive the commit sha & the hash of the repo,
+# in case those are not provided by the configuration.
+$ nix-env -f '<nixpkgs>' -iA nix-prefetch-git
+```
+
+#### Configuration
+
+Use the integration with the `--nix` flag with each command. Below are the
+necessary parts of komposconfig regarding nix & versioning:
 
 ```yaml
 terraform:
@@ -83,22 +97,23 @@ helmfile:
     url:  "git@github.com:my-org/helmfile-releases.git"
 ```
 
-And in the hierarchical configuration you'll need the following key/value pairs:
+And in the hierarchical configuration you'll need the following keys:
 
 ```yaml
 infrastructure:
   terraform:
     version: "0.1.0" # A git tag or a commit sha.
 
-    # Optional. 
-    # The sha256 hash of the repo needed by nix's fetchgit function.
-    #
-    # It can be obtained using nix-prefetch-git:
-    # $ nix-prefetch-git --url <repo-url> --rev <version>
+    # This is an optional field.
+    # The sha256 hash of the repo provides data integrity and ensures that we
+    # always get the same input. 
     # 
-    # If ommitted nix-prefetch-git will be used to retrieve it.
+    # It can be omitted when you're using a tag that is periodically updated. 
+    # (e.g in a dev/nightly environment). Since this is a mandatory field for nix, 
+    # nix-prefetch-git will be used as a fallback to caclulate it.
     sha256: "ab9190b0ecc8060a54f1fac7de606e6b2c4757c227f2ce529668eb145d9a9516"
 
+  # Likewise for helmfile.
   helmfile:
     version: "0.1.0"
     sha256: "139cd5119d398d06f6535f42d775986a683a90e16ce129a5fb7f48870613a1a5"
