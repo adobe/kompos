@@ -47,7 +47,6 @@ class RootParser(object):
                 version=pkg_resources.get_distribution("kompos").version
             )
         )
-        configure_common_arguments(parser)
 
         subparsers = parser.add_subparsers(dest='command')
 
@@ -57,9 +56,6 @@ class RootParser(object):
                                                        epilog=subparser_conf.get_epilog(),
                                                        formatter_class=subparser_conf.get_formatter())
             subparser_conf.configure(subparser_instance)
-
-        subparsers.add_parser(
-            'noop', help='used to initialize the full container for api usage')
 
         return parser
 
@@ -100,46 +96,3 @@ class SubParserConfig(object):
 
     def get_epilog(self):
         return ""
-
-
-def configure_common_arguments(parser):
-    parser.add_argument('-e', '--extra-vars', type=str, action='append', default=[],
-                        help='Extra variables to use. Eg: -e ssh_user=ssh_user')
-
-    return parser
-
-
-def configure_common_ansible_args(parser):
-    parser.add_argument('--ask-sudo-pass', action='store_true',
-                        help='Ask sudo pass for commands that need sudo')
-    parser.add_argument('--limit', type=str,
-                        help='Limit run to a specific server subgroup. Eg: --limit newton-dcs')
-
-    return parser
-
-
-class CommandParserConfig(SubParserConfig):
-    def get_epilog(self):
-        return ''
-
-    def configure(self, parser):
-        configure_common_ansible_args(parser)
-        parser.add_argument(
-            'host_pattern',
-            type=str,
-            help='Limit the run to the following hosts')
-        parser.add_argument(
-            'shell_command',
-            type=str,
-            help='Shell command you want to run')
-        parser.add_argument(
-            'extra_args',
-            type=str,
-            nargs='*',
-            help='Extra arguments')
-
-    def get_help(self):
-        return 'Runs a command against the cluster'
-
-    def get_name(self):
-        return 'run'

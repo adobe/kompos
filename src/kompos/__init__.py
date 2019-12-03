@@ -74,7 +74,3 @@ class Executor(object):
         cmd = re.sub(r'access_key=.{10}', 'access_key=****', cmd)
 
         return cmd
-
-
-class KomposException(Exception):
-    pass

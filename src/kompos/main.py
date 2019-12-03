@@ -15,10 +15,10 @@ import os
 from simpledi import Container, auto, cache, instance, ListInstanceProvider
 
 from .cli.config_generator import ConfigGeneratorParserConfig, ConfigGeneratorRunner
-from .cli.parser import RootParser, CommandParserConfig
+from .cli.parser import RootParser
 from .cli.terraform import TerraformParserConfig, TerraformRunner
 from .cli.helmfile import HelmfileParserConfig, HelmfileRunner
-from . import KomposException, Executor
+from . import Executor
 from .komposconfig import KomposConfig
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,6 @@ class AppContainer(Container):
 
         parsers = ListInstanceProvider()
         parsers.add(auto(TerraformParserConfig))
-        parsers.add(auto(CommandParserConfig))
         parsers.add(auto(HelmfileParserConfig))
         parsers.add(auto(ConfigGeneratorParserConfig))
         self.sub_parsers = parsers
@@ -84,8 +83,6 @@ class AppContainer(Container):
         return args
 
     def run(self):
-        if 'refresh_cache' in vars(self.console_args):
-            os.environ['REFRESH_CACHE'] = str(self.console_args.refresh_cache)
         command_name = '%s_runner' % self.console_args.command
         runner_instance = self.get_instance(command_name)
 
@@ -117,7 +114,7 @@ def get_root_dir(args):
 
     if args.root_dir:
         if not os.path.isdir(os.path.realpath(args.root_dir)):
-            raise KomposException(
+            raise ValueError(
                 "Specified root dir '%s' does not exists" %
                 os.path.realpath(
                     args.root_dir))
