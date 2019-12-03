@@ -51,7 +51,7 @@ setup(
     package_dir={'': 'src'},
     packages=find_packages('src'),
     package_data={
-        '': ['data/terraform/*']
+        '': ['data/config_schema.json']
     },
     install_requires=_requires,
     entry_points={
