@@ -9,45 +9,39 @@ structure and yaml files to store and generate configurations, with pluggable
 compositions that encapsulates the infrastructure code and state. Terraform and
 helmfile are supported as provisioners.
 
-* [Hierarchical](#hierarchical)
-* [Installing](#installing)
-   * [Locally](#locally)
-   * [Nix integration](#nix-integration)
-   * [Docker image](#docker-image)
-* [License](#license)
+Below is a graphical representation of the data flow.
 
+![kompos-data-flow](img/kompos-diagram.svg)
 
-# Hierarchical configuration
-See examples/features/hierarchical
+## Installation
 
-# Installing
+### PyPI
 
-### Locally
-```sh
-pip3 install virtualenv
-# Make sure pip is up to date
-curl https://bootstrap.pypa.io/get-pip.py | python3
-
-# Install virtualenv
-pip3 install --upgrade virtualenv
-pip3 install --upgrade virtualenvwrapper
-
-echo 'export WORKON_HOME=$HOME/.virtualenvs' >> ~/.bash_profile
-echo 'source /usr/local/bin/virtualenvwrapper.sh' >> ~/.bash_profile
-source ~/.bash_profile
-
-# create virtualenv
-mkvirtualenv kompos
-workon kompos
-
-# uninstall previous `kompos` version (if you have it)
-pip3 uninstall kompos --yes
-
-# install kompos stable release
-pip3 install --upgrade kompos
+```bash
+pip install kompos
 ```
 
-### Nix integration
+### Locally for development
+
+Using virtualenv
+
+```bash
+pip install virtualenv
+virtualenv .env
+source .env/bin/activate
+(env) cd kompos/
+(env) pip install --editable .
+```
+
+## Hierarchical configuration
+
+Kompos leverages [himl](https://github.com/adobe/himl) to provide a
+[hiera](https://puppet.com/docs/puppet/latest/hiera_intro.html#concept-7256)-like
+configuration structure.
+
+Checkout the [examples](./examples) for more information.
+
+## Nix integration
 
 With kompos you can leverage [nix](https://nixos.org/nix/) to pin your
 infrastructure code (i.e terraform & helmfile releases) on a specific version.
