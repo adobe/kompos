@@ -15,7 +15,9 @@ Below is a graphical representation of the data flow.
 
 ## Installation
 
-### PyPI
+_**NOTE**: Only Python 3 is supported._
+
+### PyPI 
 
 ```bash
 pip install kompos
