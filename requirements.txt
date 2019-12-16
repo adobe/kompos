@@ -2,4 +2,4 @@ simpledi>=0.2
 PyYAML==5.1
 himl==0.5.1
 fastjsonschema==2.14.*
-awscli==1.16.298
+awscli==1.16.303
