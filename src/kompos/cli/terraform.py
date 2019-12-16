@@ -181,25 +181,24 @@ class TerraformRunner(object):
         self.execute = execute
 
     def run(self, args, extra_args):
-        logger.info("Found extra_args %s", extra_args)
+        if not os.path.isdir(self.cluster_config_path):
+            raise Exception("Provide a valid composition directory path.")
 
         # Stop processing if an incompatible version is detected.
         validate_terraform_version(self.kompos_config.terraform_version())
 
-        if os.path.isdir(self.cluster_config_path):
-            return self.run_v2_integration(args, extra_args)
+        logger.info("Found extra_args %s", extra_args)
+        return self.run_v2_integration(args, extra_args)
 
 
     def run_v2_integration(self, args, extra_args):
         logging.basicConfig(level=logging.INFO)
-
         all_compositions = self.kompos_config.terraform_composition_order()
 
         compositions = CompositionSorter(all_compositions) \
                            .get_sorted_compositions(
                                 self.cluster_config_path, reverse=("destroy" == args.subcommand)
                            )
-
         if not compositions:
             raise Exception(
                 "No terraform compositions were detected in {}.".format(self.cluster_config_path))

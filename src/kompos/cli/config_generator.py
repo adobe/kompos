@@ -43,6 +43,9 @@ class ConfigGeneratorRunner(HierarchicalConfigGenerator, object):
         self.cluster_config_path = cluster_config_path
 
     def run(self, args, extra_args):
+        if not os.path.isdir(self.cluster_config_path):
+            raise Exception("Provide a valid composition directory path.")
+
         config_path = os.path.join(self.cluster_config_path, "")
 
         composition_order = discover_all_compositions(config_path)
@@ -50,7 +53,7 @@ class ConfigGeneratorRunner(HierarchicalConfigGenerator, object):
             config_path
         )
         if not 0 < len(compositions) < 2:
-            raise Exception("Please provide the full path to a single composition")
+            raise Exception("Provide the path to a single valid composition directory")
         composition = compositions[0]
 
         filtered_output_keys = self.kompos_config.filtered_output_keys(composition)

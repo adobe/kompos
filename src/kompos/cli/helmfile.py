@@ -64,12 +64,15 @@ class HelmfileRunner(HierarchicalConfigGenerator, object):
         self.execute = execute
 
     def run(self, args, extra_args):
+        if not os.path.isdir(self.cluster_config_path):
+            raise Exception("Provide a valid composition directory path.")
+
         compositions = CompositionSorter(
             self.kompos_config.helmfile_composition_order()
         ).get_sorted_compositions(self.cluster_config_path)
 
         if not compositions or compositions[0] != HELMFILE_COMPOSITION_NAME:
-            raise Exception("Please provide the full path to composition=%s".format(HELMFILE_COMPOSITION_NAME))
+            raise Exception("No helmfile compositions where detected in {}".format(self.cluster_config_path))
 
         # We're assuming local path by default.
         helmfile_path = os.path.join(
