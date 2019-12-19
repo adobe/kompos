@@ -12,10 +12,10 @@ import os
 import yaml
 import logging
 import fastjsonschema
-import pkg_resources
 
 from functools import reduce
 from distutils.version import StrictVersion
+from kompos import __version__
 
 CONFIG_SCHEMA_PATH = "data/config_schema.json"
 
@@ -100,12 +100,10 @@ class KomposConfig(object):
         if not min_kompos_version:
             return
 
-        current_kompos_version = pkg_resources.get_distribution("kompos").version
-
-        if StrictVersion(current_kompos_version) < StrictVersion(min_kompos_version):
+        if StrictVersion(__version__) < StrictVersion(min_kompos_version):
             raise Exception(
                 "The current kompos version '{}' is lower than the minimum required version '{}'".format(
-                    current_kompos_version, min_kompos_version,
+                    __version__, min_kompos_version,
                 )
             )
 
