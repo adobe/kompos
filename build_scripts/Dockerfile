@@ -25,6 +25,7 @@ ARG AWS_IAM_AUTHENTICATOR_VERSION="1.13.7/2019-06-11"
 ARG HELM_VERSION="v2.14.3"
 ARG HELM_FILE_VERSION="v0.81.3"
 ARG HELM_DIFF_VERSION="2.11.0%2B5"
+ARG AWSCLI_VERSION="1.16.266"
 
 
 COPY --from=compile-image /sources/dist /dist
@@ -35,6 +36,7 @@ RUN adduser kompos -Du 2342 -h /home/kompos \
     && apk add --virtual=build gcc libffi-dev musl-dev openssl-dev make \
     # Install kompos python package
     && pip --no-cache-dir install --upgrade /dist/kompos-*.tar.gz \
+    && pip --no-cache-dir install --upgrade awscli==${AWSCLI_VERSION} \
     && rm -rf /dist \
     && apk del --purge build \
     && wget -q https://storage.googleapis.com/kubernetes-release/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl -O /usr/local/bin/kubectl \

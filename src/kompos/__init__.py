@@ -14,6 +14,9 @@ from subprocess import call, Popen, PIPE
 from .cli import display
 
 
+__version__ = "0.2.6"
+
+
 class Executor(object):
     """ All cli commands usually return a dict(command=...) that will be executed by this handler"""
 

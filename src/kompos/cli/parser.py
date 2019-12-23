@@ -9,9 +9,9 @@
 # governing permissions and limitations under the License.
 
 import argparse
-import pkg_resources
-
 import sys
+
+from kompos import __version__
 
 
 class RootParser(object):
@@ -43,9 +43,7 @@ class RootParser(object):
         parser.add_argument(
             '--version',
             action='version',
-            version='%(prog)s v{version}'.format(
-                version=pkg_resources.get_distribution("kompos").version
-            )
+            version='%(prog)s v{version}'.format(version=__version__)
         )
 
         subparsers = parser.add_subparsers(dest='command')
