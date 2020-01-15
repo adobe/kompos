@@ -36,7 +36,7 @@ class ConfigGeneratorParserConfig(SubParserConfig):
         '''
 
 
-class ConfigGeneratorRunner(HierarchicalConfigGenerator, object):
+class ConfigGeneratorRunner(HierarchicalConfigGenerator):
     def __init__(self, kompos_config, cluster_config_path):
         super(ConfigGeneratorRunner, self).__init__()
         self.kompos_config = kompos_config

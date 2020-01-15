@@ -66,7 +66,7 @@ def get_composition_path(path_prefix, composition):
         prefix, composition)
 
 
-class CompositionSorter(object):
+class CompositionSorter():
     def __init__(self, composition_order):
         self.composition_order = composition_order
 
@@ -83,7 +83,7 @@ class CompositionSorter(object):
         return tuple(reversed(result)) if reverse else result
 
 
-class HierarchicalConfigGenerator(object):
+class HierarchicalConfigGenerator():
     def __init__(self):
         self.config_processor = ConfigProcessor()
 
@@ -163,7 +163,7 @@ class HierarchicalConfigGenerator(object):
         return command
 
 
-class PreConfigGenerator(HierarchicalConfigGenerator, object):
+class PreConfigGenerator(HierarchicalConfigGenerator):
 
     def __init__(self, excluded_config_keys, filtered_output_keys):
         super(PreConfigGenerator, self).__init__()
@@ -176,7 +176,7 @@ class PreConfigGenerator(HierarchicalConfigGenerator, object):
                                     filters=self.filtered_output_keys)
 
 
-class TerraformConfigGenerator(HierarchicalConfigGenerator, object):
+class TerraformConfigGenerator(HierarchicalConfigGenerator):
 
     def __init__(self, excluded_config_keys, filtered_output_keys):
         super(TerraformConfigGenerator, self).__init__()

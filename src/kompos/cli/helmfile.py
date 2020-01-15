@@ -55,7 +55,7 @@ class HelmfileParserConfig(SubParserConfig):
         '''
 
 
-class HelmfileRunner(HierarchicalConfigGenerator, object):
+class HelmfileRunner(HierarchicalConfigGenerator):
     def __init__(self, kompos_config, cluster_config_path, execute):
         super(HelmfileRunner, self).__init__()
         logging.basicConfig(level=logging.INFO)
@@ -118,7 +118,6 @@ class HelmfileRunner(HierarchicalConfigGenerator, object):
 
         return dict(command=self.get_helmfile_command(helmfile_path, extra_args))
 
-
     def setup_kube_config(self, data):
         if data['helm']['global']['clusterType'] == 'eks':
             cluster_name = data['helm']['global']['fqdn']
@@ -143,13 +142,11 @@ class HelmfileRunner(HierarchicalConfigGenerator, object):
                 "Unable to generate EKS kube config. Exit code was {}".format(return_code))
         return file_location
 
-
     @staticmethod
     def get_tmp_file():
         import tempfile
         with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
             return tmp_file.name
-
 
     def generate_helmfile_config(self, path, helmfile_path):
         output_file = os.path.join(helmfile_path, HELMFILE_CONFIG_FILENAME)
@@ -164,7 +161,6 @@ class HelmfileRunner(HierarchicalConfigGenerator, object):
                                     output_format="yaml",
                                     output_file=output_file,
                                     print_data=True)
-
 
     def get_helmfile_command(self, helmfile_path, extra_args):
         helmfile_args = ' '.join(extra_args)

@@ -17,7 +17,7 @@ from .cli import display
 __version__ = "0.2.6"
 
 
-class Executor(object):
+class Executor():
     """ All cli commands usually return a dict(command=...) that will be executed by this handler"""
 
     def __call__(self, result, pass_trough=True, cwd=None):
@@ -37,6 +37,8 @@ class Executor(object):
                 color='dark gray')
 
     def _execute(self, result, pass_trough=True, cwd=None):
+        exit_code = 0
+
         if not result or not isinstance(result, dict):
             return
 
@@ -44,7 +46,7 @@ class Executor(object):
             shell_command = result['command']
             display(
                 "%s" %
-                self.shadow_credentials(shell_command),
+                shell_command,
                 stderr=True,
                 color='yellow')
             if pass_trough:
@@ -61,7 +63,7 @@ class Executor(object):
                 if errors:
                     display(
                         "%s" %
-                        self.shadow_credentials(errors),
+                        shell_command,
                         stderr=True,
                         color='red')
                 exit_code = p.returncode
@@ -71,9 +73,3 @@ class Executor(object):
                 callback()
 
         return exit_code
-
-    def shadow_credentials(self, cmd):
-        cmd = re.sub(r"secret_key=.{20}", "secret_key=****", cmd)
-        cmd = re.sub(r'access_key=.{10}', 'access_key=****', cmd)
-
-        return cmd

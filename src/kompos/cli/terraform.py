@@ -173,7 +173,7 @@ class TerraformParserConfig(SubParserConfig):
         '''
 
 
-class TerraformRunner(object):
+class TerraformRunner():
     def __init__(self, root_dir, cluster_config_path, kompos_config, execute):
         self.cluster_config_path = cluster_config_path
         self.root_dir = root_dir
@@ -190,7 +190,6 @@ class TerraformRunner(object):
         logger.info("Found extra_args %s", extra_args)
         return self.run_v2_integration(args, extra_args)
 
-
     def run_v2_integration(self, args, extra_args):
         logging.basicConfig(level=logging.INFO)
         all_compositions = self.kompos_config.terraform_composition_order()
@@ -204,7 +203,6 @@ class TerraformRunner(object):
                 "No terraform compositions were detected in {}.".format(self.cluster_config_path))
 
         return self.run_v2_compositions(args, extra_args, self.cluster_config_path, compositions)
-
 
     def run_v2_compositions(self, args, extra_args, config_path, compositions):
         return_code = 0
@@ -274,9 +272,7 @@ class TerraformRunner(object):
 
     def run_v2_composition(self, args, extra_args, terraform_path, composition):
         terraform_path = os.path.join(terraform_path, composition)
-
         var_file = '-var-file="{}"'.format(TERRAFORM_CONFIG_FILENAME) if args.subcommand in SUBCMDS_WITH_VARS else ''
-
         cmd = "cd {terraform_path} && " \
               "{remove_local_cache} " \
               "terraform {subcommand} {tf_args} {extra_args} {var_file}".format(
