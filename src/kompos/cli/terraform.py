@@ -10,10 +10,12 @@
 
 import os
 import logging
+import argparse
 import json
 
 from subprocess import Popen, PIPE
 
+from himl.main import ConfigRunner
 from kompos.nix import nix_install, nix_out_path, writeable_nix_out_path
 from kompos.komposconfig import (
     TERRAFORM_CONFIG_FILENAME,
@@ -111,6 +113,12 @@ class TerraformParserConfig(SubParserConfig):
                             help='for use with "apply". Proceeds with the apply without'
                                  'waiting for user confirmation.',
                             action='store_true')
+        parser.add_argument('--himl',
+                            action='store',
+                            dest='himl_args',
+                            default=None,
+                            help='for passing arguments to himl'
+                                 '--himl="--skip-interpolation-validation --skip-secrets"')
         parser.add_argument(
             'terraform_args',
             type=str,
@@ -246,7 +254,16 @@ class TerraformRunner():
                     cloud_type
                 )
 
+            parser = ConfigRunner.get_parser(argparse.ArgumentParser())
+
+            if args.himl_args:
+                himl_args = parser.parse_args(args.himl_args.split())
+                logger.info("Extra himl arguments: %s", args.himl_args.split())
+            else:
+                himl_args = parser.parse_args(extra_args)
+
             tf_config_generator.generate_files(
+                himl_args,
                 config_path,
                 terraform_composition_path,
                 composition
