@@ -200,10 +200,10 @@ class TerraformConfigGenerator(HierarchicalConfigGenerator):
         logger.info('Generating terraform config %s', output_file)
 
         filters = self.filtered_output_keys.copy() + ["provider", "terraform"]
-        try:
+
+        excluded = self.excluded_config_keys.copy()
+        if himl_args.exclude:
             excluded = self.excluded_config_keys.copy() + himl_args.exclude
-        except:
-            excluded = self.excluded_config_keys.copy()
 
         self.generate_config(
             config_path=config_path,
