@@ -14,7 +14,7 @@ import sys
 from kompos import __version__
 
 
-class RootParser(object):
+class RootParser():
     def __init__(self, sub_parsers=None):
         """
         :type sub_parsers: list[SubParserConfig]
@@ -79,7 +79,7 @@ class RootParser(object):
         return self._get_parser().parse_known_args(args)
 
 
-class SubParserConfig(object):
+class SubParserConfig():
     def get_name(self):
         pass
 

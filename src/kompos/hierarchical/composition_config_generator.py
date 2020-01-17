@@ -12,6 +12,7 @@ from himl.config_generator import ConfigProcessor
 
 from kompos import Executor, display
 from kompos.komposconfig import TERRAFORM_CONFIG_FILENAME, TERRAFORM_PROVIDER_FILENAME
+
 import logging
 import os
 
@@ -66,7 +67,7 @@ def get_composition_path(path_prefix, composition):
         prefix, composition)
 
 
-class CompositionSorter(object):
+class CompositionSorter():
     def __init__(self, composition_order):
         self.composition_order = composition_order
 
@@ -83,7 +84,7 @@ class CompositionSorter(object):
         return tuple(reversed(result)) if reverse else result
 
 
-class HierarchicalConfigGenerator(object):
+class HierarchicalConfigGenerator():
     def __init__(self):
         self.config_processor = ConfigProcessor()
 
@@ -163,7 +164,7 @@ class HierarchicalConfigGenerator(object):
         return command
 
 
-class PreConfigGenerator(HierarchicalConfigGenerator, object):
+class PreConfigGenerator(HierarchicalConfigGenerator):
 
     def __init__(self, excluded_config_keys, filtered_output_keys):
         super(PreConfigGenerator, self).__init__()
@@ -171,46 +172,66 @@ class PreConfigGenerator(HierarchicalConfigGenerator, object):
         self.filtered_output_keys = filtered_output_keys
 
     def pre_generate_config(self, config_path, composition):
-        return self.generate_config(config_path=get_config_path(config_path, composition),
-                                    exclude_keys=self.excluded_config_keys,
-                                    filters=self.filtered_output_keys)
+        return self.generate_config(
+            config_path=get_config_path(config_path, composition),
+            exclude_keys=self.excluded_config_keys,
+            filters=self.filtered_output_keys,
+            skip_interpolation_validation=True,
+            skip_secrets=True
+        )
 
 
-class TerraformConfigGenerator(HierarchicalConfigGenerator, object):
+class TerraformConfigGenerator(HierarchicalConfigGenerator):
 
     def __init__(self, excluded_config_keys, filtered_output_keys):
         super(TerraformConfigGenerator, self).__init__()
         self.excluded_config_keys = excluded_config_keys
         self.filtered_output_keys = filtered_output_keys
 
-    def generate_files(self, config_path, composition_path, composition):
+    def generate_files(self, himl_args, config_path, composition_path, composition):
         config_path = get_config_path(config_path, composition)
         composition_path = get_composition_path(composition_path, composition)
-        self.generate_provider_config(config_path, composition_path)
-        self.generate_variables_config(config_path, composition_path)
 
-    def generate_provider_config(self, config_path, composition_path):
+        self.generate_provider_config(himl_args, config_path, composition_path)
+        self.generate_variables_config(himl_args, config_path, composition_path)
+
+    def generate_provider_config(self, himl_args, config_path, composition_path):
         output_file = os.path.join(composition_path, TERRAFORM_PROVIDER_FILENAME)
         logger.info('Generating terraform config %s', output_file)
 
         filters = self.filtered_output_keys.copy() + ["provider", "terraform"]
 
-        self.generate_config(config_path=config_path,
-                             exclude_keys=self.excluded_config_keys,
-                             filters=filters,
-                             output_format="json",
-                             output_file=output_file)
+        excluded = self.excluded_config_keys.copy()
+        if himl_args.exclude:
+            excluded = self.excluded_config_keys.copy() + himl_args.exclude
 
-    def generate_variables_config(self, config_path, composition_path):
+        self.generate_config(
+            config_path=config_path,
+            exclude_keys=excluded,
+            filters=filters,
+            output_format="json",
+            output_file=output_file,
+            print_data=False,
+            skip_interpolation_resolving=himl_args.skip_interpolation_resolving,
+            skip_interpolation_validation=himl_args.skip_interpolation_validation,
+            skip_secrets=himl_args.skip_secrets
+        )
+
+    def generate_variables_config(self, himl_args, config_path, composition_path):
         output_file = os.path.join(composition_path, TERRAFORM_CONFIG_FILENAME)
         logger.info('Generating terraform config %s', output_file)
 
         excluded = self.excluded_config_keys.copy() + ["helm", "provider"]
 
-        self.generate_config(config_path=config_path,
-                             exclude_keys=excluded,
-                             filters=self.filtered_output_keys,
-                             enclosing_key="config",
-                             output_format="json",
-                             output_file=os.path.expanduser(output_file),
-                             print_data=True)
+        self.generate_config(
+            config_path=config_path,
+            exclude_keys=excluded,
+            filters=self.filtered_output_keys,
+            enclosing_key="config",
+            output_format="json",
+            output_file=os.path.expanduser(output_file),
+            print_data=True,
+            skip_interpolation_resolving=himl_args.skip_interpolation_resolving,
+            skip_interpolation_validation=himl_args.skip_interpolation_validation,
+            skip_secrets=himl_args.skip_secrets
+        )

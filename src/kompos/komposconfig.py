@@ -42,7 +42,7 @@ def get_value_or(dictionary, x_path, default=None):
         if isinstance(d, dict) else default, keys, dictionary)
 
 
-class KomposConfig(object):
+class KomposConfig():
     """
     Parses all the available configuration files in order and merges them together.
     """

@@ -10,10 +10,12 @@
 
 import os
 import logging
+import argparse
 import json
 
 from subprocess import Popen, PIPE
 
+from himl.main import ConfigRunner
 from kompos.nix import nix_install, nix_out_path, writeable_nix_out_path
 from kompos.komposconfig import (
     TERRAFORM_CONFIG_FILENAME,
@@ -111,6 +113,12 @@ class TerraformParserConfig(SubParserConfig):
                             help='for use with "apply". Proceeds with the apply without'
                                  'waiting for user confirmation.',
                             action='store_true')
+        parser.add_argument('--himl',
+                            action='store',
+                            dest='himl_args',
+                            default=None,
+                            help='for passing arguments to himl'
+                                 '--himl="--arg1 --arg2" any himl argument is supported wrapped in quotes')
         parser.add_argument(
             'terraform_args',
             type=str,
@@ -173,7 +181,7 @@ class TerraformParserConfig(SubParserConfig):
         '''
 
 
-class TerraformRunner(object):
+class TerraformRunner():
     def __init__(self, root_dir, cluster_config_path, kompos_config, execute):
         self.cluster_config_path = cluster_config_path
         self.root_dir = root_dir
@@ -190,7 +198,6 @@ class TerraformRunner(object):
         logger.info("Found extra_args %s", extra_args)
         return self.run_v2_integration(args, extra_args)
 
-
     def run_v2_integration(self, args, extra_args):
         logging.basicConfig(level=logging.INFO)
         all_compositions = self.kompos_config.terraform_composition_order()
@@ -204,7 +211,6 @@ class TerraformRunner(object):
                 "No terraform compositions were detected in {}.".format(self.cluster_config_path))
 
         return self.run_v2_compositions(args, extra_args, self.cluster_config_path, compositions)
-
 
     def run_v2_compositions(self, args, extra_args, config_path, compositions):
         return_code = 0
@@ -248,7 +254,16 @@ class TerraformRunner(object):
                     cloud_type
                 )
 
+            parser = ConfigRunner.get_parser(argparse.ArgumentParser())
+
+            if args.himl_args:
+                himl_args = parser.parse_args(args.himl_args.split())
+                logger.info("Extra himl arguments: %s", args.himl_args.split())
+            else:
+                himl_args = parser.parse_args(extra_args)
+
             tf_config_generator.generate_files(
+                himl_args,
                 config_path,
                 terraform_composition_path,
                 composition
@@ -274,9 +289,7 @@ class TerraformRunner(object):
 
     def run_v2_composition(self, args, extra_args, terraform_path, composition):
         terraform_path = os.path.join(terraform_path, composition)
-
         var_file = '-var-file="{}"'.format(TERRAFORM_CONFIG_FILENAME) if args.subcommand in SUBCMDS_WITH_VARS else ''
-
         cmd = "cd {terraform_path} && " \
               "{remove_local_cache} " \
               "terraform {subcommand} {tf_args} {extra_args} {var_file}".format(
