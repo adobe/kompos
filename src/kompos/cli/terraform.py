@@ -21,6 +21,7 @@ from kompos.komposconfig import (
     TERRAFORM_CONFIG_FILENAME,
     TERRAFORM_PROVIDER_FILENAME,
     get_value_or,
+    check_local_config_dir
 )
 from kompos.cli.parser import SubParserConfig
 from kompos.hierarchical.composition_config_generator import (
@@ -194,11 +195,12 @@ class TerraformRunner():
 
         # Stop processing if an incompatible version is detected.
         validate_terraform_version(self.kompos_config.terraform_version())
+        check_local_config_dir()
 
         logger.info("Found extra_args %s", extra_args)
-        return self.run_v2_integration(args, extra_args)
+        return self.check_compositions(args, extra_args)
 
-    def run_v2_integration(self, args, extra_args):
+    def check_compositions(self, args, extra_args):
         logging.basicConfig(level=logging.INFO)
         all_compositions = self.kompos_config.terraform_composition_order()
 
@@ -210,9 +212,9 @@ class TerraformRunner():
             raise Exception(
                 "No terraform compositions were detected in {}.".format(self.cluster_config_path))
 
-        return self.run_v2_compositions(args, extra_args, self.cluster_config_path, compositions)
+        return self.run_compositions(args, extra_args, self.cluster_config_path, compositions)
 
-    def run_v2_compositions(self, args, extra_args, config_path, compositions):
+    def run_compositions(self, args, extra_args, config_path, compositions):
         return_code = 0
 
         for composition in compositions:
@@ -270,7 +272,7 @@ class TerraformRunner():
             )
 
             return_code = self.execute(
-                self.run_v2_composition(
+                self.run_terraform(
                     args,
                     extra_args,
                     terraform_composition_path,
@@ -287,18 +289,21 @@ class TerraformRunner():
 
         return return_code
 
-    def run_v2_composition(self, args, extra_args, terraform_path, composition):
+    def run_terraform(self, args, extra_args, terraform_path, composition):
         terraform_path = os.path.join(terraform_path, composition)
         var_file = '-var-file="{}"'.format(TERRAFORM_CONFIG_FILENAME) if args.subcommand in SUBCMDS_WITH_VARS else ''
+        terraform_env_config = 'export TF_PLUGIN_CACHE_DIR="$HOME/.kompos/.terraform.d/plugin-cache"'
+
         cmd = "cd {terraform_path} && " \
               "{remove_local_cache} " \
-              "terraform {subcommand} {tf_args} {extra_args} {var_file}".format(
+              "{env_config} ; terraform {subcommand} {tf_args} {extra_args} {var_file}".format(
                 terraform_path=terraform_path,
                 remove_local_cache=remove_local_cache_cmd(args.subcommand),
                 subcommand=args.subcommand,
                 extra_args=' '.join(extra_args),
                 tf_args=' '.join(args.terraform_args),
-                var_file=var_file
+                var_file=var_file,
+                env_config=terraform_env_config
               )
 
         return dict(command=cmd, post_actions=[])
