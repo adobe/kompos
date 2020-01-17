@@ -12,15 +12,15 @@ import os
 import yaml
 import logging
 import fastjsonschema
+from pathlib import Path
 
 from functools import reduce
 from distutils.version import StrictVersion
 from kompos import __version__
 
-CONFIG_SCHEMA_PATH = "data/config_schema.json"
-
-
 logger = logging.getLogger(__name__)
+
+CONFIG_SCHEMA_PATH = "data/config_schema.json"
 
 # The filename of the generated hierarchical configuration for Terrraform.
 TERRAFORM_CONFIG_FILENAME = "variables.tfvars.json"
@@ -30,6 +30,16 @@ TERRAFORM_PROVIDER_FILENAME = "provider.tf.json"
 
 # The filename of the generated hierarchical configuration for Helmfile.
 HELMFILE_CONFIG_FILENAME = "hiera-generated.yaml"
+
+# Directory to store terraform plugin cache
+TERRAFORM_CACHE_DIR = "~/.kompos/.terraform.d/plugin-cache"
+
+
+def local_config_dir(directory=TERRAFORM_CACHE_DIR):
+    try:
+        Path(Path.expanduser(Path(directory))).mkdir(parents=True, exist_ok=True)
+    except IOError:
+        logging.error("Failed to create dir in path: %s", directory)
 
 
 def get_value_or(dictionary, x_path, default=None):
