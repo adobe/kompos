@@ -66,7 +66,7 @@ class ConfigGeneratorRunner(HierarchicalConfigGenerator):
             filters=filtered_output_keys,
             exclude_keys=excluded_config_keys,
             enclosing_key=args.enclosing_key,
-            output_format="yaml",
+            output_format=args.output_format,
             output_file=args.output_file,
             print_data=True,
             skip_interpolation_resolving=args.skip_interpolation_resolving,

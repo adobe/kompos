@@ -118,7 +118,7 @@ class TerraformParserConfig(SubParserConfig):
                             dest='himl_args',
                             default=None,
                             help='for passing arguments to himl'
-                                 '--himl="--skip-interpolation-validation --skip-secrets"')
+                                 '--himl="--arg1 --arg2" any himl argument is supported wrapped in quotes')
         parser.add_argument(
             'terraform_args',
             type=str,
