@@ -20,7 +20,6 @@ from kompos.nix import nix_install, nix_out_path, writeable_nix_out_path
 from kompos.komposconfig import (
     TERRAFORM_CONFIG_FILENAME,
     TERRAFORM_PROVIDER_FILENAME,
-    TERRAFORM_CACHE_DIR,
     get_value_or,
     local_config_dir
 )
@@ -196,7 +195,6 @@ class TerraformRunner():
 
         # Stop processing if an incompatible version is detected.
         validate_terraform_version(self.kompos_config.terraform_version())
-        local_config_dir()
 
         logger.info("Found extra_args %s", extra_args)
         return self.check_compositions(args, extra_args)
@@ -293,7 +291,8 @@ class TerraformRunner():
     def run_terraform(self, args, extra_args, terraform_path, composition):
         terraform_path = os.path.join(terraform_path, composition)
         var_file = '-var-file="{}"'.format(TERRAFORM_CONFIG_FILENAME) if args.subcommand in SUBCMDS_WITH_VARS else ''
-        terraform_env_config = 'export TF_PLUGIN_CACHE_DIR="{}"'.format(TERRAFORM_CACHE_DIR)
+
+        terraform_env_config = 'export TF_PLUGIN_CACHE_DIR="{}"'.format(local_config_dir())
 
         cmd = "cd {terraform_path} && " \
               "{remove_local_cache} " \

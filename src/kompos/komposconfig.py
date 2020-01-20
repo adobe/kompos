@@ -38,6 +38,8 @@ TERRAFORM_CACHE_DIR = "~/.kompos/.terraform.d/plugin-cache"
 def local_config_dir(directory=TERRAFORM_CACHE_DIR):
     try:
         Path(Path.expanduser(Path(directory))).mkdir(parents=True, exist_ok=True)
+        return Path.expanduser(Path(directory))
+
     except IOError:
         logging.error("Failed to create dir in path: %s", directory)
 
