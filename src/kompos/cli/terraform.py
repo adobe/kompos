@@ -292,8 +292,7 @@ class TerraformRunner():
         terraform_path = os.path.join(terraform_path, composition)
         var_file = '-var-file="{}"'.format(TERRAFORM_CONFIG_FILENAME) if args.subcommand in SUBCMDS_WITH_VARS else ''
 
-        config_dir = local_config_dir()
-        terraform_env_config = 'export TF_PLUGIN_CACHE_DIR="{}"'.format(config_dir)
+        terraform_env_config = 'export TF_PLUGIN_CACHE_DIR="{}"'.format(local_config_dir())
 
         cmd = "cd {terraform_path} && " \
               "{remove_local_cache} " \
