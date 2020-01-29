@@ -296,7 +296,7 @@ class TerraformRunner():
 
         cmd = "cd {terraform_path} && " \
               "{remove_local_cache} " \
-              "{env_config} ; terraform {subcommand} {tf_args} {extra_args} {var_file}".format(
+              "{env_config} ; terraform init && terraform {subcommand} {tf_args} {extra_args} {var_file}".format(
                 terraform_path=terraform_path,
                 remove_local_cache=remove_local_cache_cmd(args.subcommand),
                 subcommand=args.subcommand,
@@ -311,7 +311,7 @@ class TerraformRunner():
 
 def remove_local_cache_cmd(subcommand):
     if subcommand in SUBCMDS_WITH_INIT:
-        return 'rm -rf .terraform && terraform init && '
+        return 'rm -rf .terraform &&'
 
     return ''
 
