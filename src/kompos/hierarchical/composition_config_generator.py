@@ -94,6 +94,7 @@ class HierarchicalConfigGenerator():
         filters=(),
         exclude_keys=(),
         enclosing_key=None,
+        remove_enclosing_key=None,
         output_format="yaml",
         print_data=False,
         output_file=None,
@@ -106,6 +107,7 @@ class HierarchicalConfigGenerator():
             filters,
             exclude_keys,
             enclosing_key,
+            remove_enclosing_key,
             output_format,
             print_data,
             output_file,
@@ -121,6 +123,7 @@ class HierarchicalConfigGenerator():
             filters=filters,
             exclude_keys=exclude_keys,
             enclosing_key=enclosing_key,
+            remove_enclosing_key=remove_enclosing_key,
             output_format=output_format,
             output_file=output_file,
             print_data=print_data,
@@ -135,6 +138,7 @@ class HierarchicalConfigGenerator():
         filters=(),
         exclude_keys=(),
         enclosing_key=None,
+        remove_enclosing_key=None,
         output_format="yaml",
         print_data=False,
         output_file=None,
@@ -150,6 +154,8 @@ class HierarchicalConfigGenerator():
             command += " --exclude {}".format(exclude)
         if enclosing_key:
             command += " --enclosing-key {}".format(enclosing_key)
+        if remove_enclosing_key:
+            command += " --remove-enclosing-key {}".format(remove_enclosing_key)
         if output_file:
             command += " --output-file {}".format(output_file)
         if print_data:

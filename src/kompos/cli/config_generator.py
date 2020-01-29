@@ -66,6 +66,7 @@ class ConfigGeneratorRunner(HierarchicalConfigGenerator):
             filters=filtered_output_keys,
             exclude_keys=excluded_config_keys,
             enclosing_key=args.enclosing_key,
+            remove_enclosing_key=args.remove_enclosing_key,
             output_format=args.output_format,
             output_file=args.output_file,
             print_data=True,
