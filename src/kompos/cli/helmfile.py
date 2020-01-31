@@ -72,7 +72,7 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         ).get_sorted_compositions(self.cluster_config_path)
 
         if not compositions or compositions[0] != HELMFILE_COMPOSITION_NAME:
-            raise Exception("No helmfile compositions where detected in {}".format(self.cluster_config_path))
+            raise Exception("No helmfiles compositions where detected in {}".format(self.cluster_config_path))
 
         # We're assuming local path by default.
         helmfile_path = os.path.join(
@@ -152,8 +152,8 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         output_file = os.path.join(helmfile_path, HELMFILE_CONFIG_FILENAME)
         logger.info('Generating helmfiles config %s', output_file)
 
-        filtered_keys = self.kompos_config.filtered_output_keys("helmfile")
-        excluded_keys = self.kompos_config.excluded_config_keys("helmfile")
+        filtered_keys = self.kompos_config.filtered_output_keys(HELMFILE_COMPOSITION_NAME)
+        excluded_keys = self.kompos_config.excluded_config_keys(HELMFILE_COMPOSITION_NAME)
 
         return self.generate_config(config_path=path,
                                     filters=filtered_keys,
