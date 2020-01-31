@@ -59,8 +59,6 @@ class ConfigGeneratorRunner(HierarchicalConfigGenerator):
         filtered_output_keys = self.kompos_config.filtered_output_keys(composition)
         excluded_config_keys = self.kompos_config.excluded_config_keys(composition)
 
-        excluded_config_keys += ["helm", "provider"]
-
         self.generate_config(
             config_path=self.cluster_config_path,
             filters=filtered_output_keys,
