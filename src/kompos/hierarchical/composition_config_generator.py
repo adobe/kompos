@@ -177,13 +177,13 @@ class PreConfigGenerator(HierarchicalConfigGenerator):
         self.excluded_config_keys = excluded_config_keys
         self.filtered_output_keys = filtered_output_keys
 
-    def pre_generate_config(self, config_path, composition):
+    def pre_generate_config(self, config_path, composition, skip_secrets=True):
         return self.generate_config(
             config_path=get_config_path(config_path, composition),
             exclude_keys=self.excluded_config_keys,
             filters=self.filtered_output_keys,
             skip_interpolation_validation=True,
-            skip_secrets=True
+            skip_secrets=skip_secrets
         )
 
 

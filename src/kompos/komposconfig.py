@@ -135,6 +135,13 @@ class KomposConfig():
     def all(self):
         return self.config
 
+    def vault_backend(self):
+        if get_value_or(self.config, "vault/enabled"):
+            os.environ["VAULT_ADDR"] = get_value_or(self.config, "vault/url")
+            os.environ["VAULT_NAMESPACE"] = get_value_or(self.config, "vault/vault_namespace")
+            os.environ["VAULT_USERNAME"] = get_value_or(self.config, "vault/svc_ldap_user")
+            os.environ["VAULT_ROLE"] = get_value_or(self.config, "vault/svc_ldap_user_role")
+            logger.info("Vault backend enabled")
 
     def excluded_config_keys(self, composition, default=[]):
         return get_value_or(self.config, "compositions/config_keys/excluded/{}".format(composition), default)
