@@ -50,6 +50,7 @@ class AppContainer(Container):
 
         self.configure()
         self.kompos_config.validate_version()
+        self.kompos_config.vault_backend()
 
     def configure_parsers(self):
         self.root_parser = auto(RootParser)
