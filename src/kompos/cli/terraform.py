@@ -261,7 +261,7 @@ class TerraformRunner():
                 himl_args = parser.parse_args(args.himl_args.split())
                 logger.info("Extra himl arguments: %s", args.himl_args.split())
             else:
-                himl_args = parser.parse_args(extra_args)
+                himl_args = parser.parse_args([])
 
             tf_config_generator.generate_files(
                 himl_args,
