@@ -119,7 +119,7 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         return dict(command=self.get_helmfile_command(helmfile_path, extra_args))
 
     def setup_kube_config(self, data):
-        if data['helm']['global']['clusterType'] == 'eks':
+        if data['helm']['global']['cluster']['type'] == 'eks':
             cluster_name = data['helm']['global']['fqdn']
             aws_profile = data['helm']['global']['aws']['profile']
             region = data['helm']['global']['region']['location']
