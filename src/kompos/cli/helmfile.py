@@ -89,9 +89,9 @@ class HelmfileRunner(HierarchicalConfigGenerator):
             pname = self.kompos_config.helmfile_repo_name()
 
             raw_config = self.generate_config(
-                config_path=get_config_path(self.cluster_config_path, 'helmfile'),
-                filters=self.kompos_config.filtered_output_keys('helmfile'),
-                exclude_keys = self.kompos_config.excluded_config_keys('helmfile')
+                config_path=get_config_path(self.cluster_config_path, HELMFILE_COMPOSITION_NAME),
+                filters=self.kompos_config.filtered_output_keys(HELMFILE_COMPOSITION_NAME),
+                exclude_keys = self.kompos_config.excluded_config_keys(HELMFILE_COMPOSITION_NAME)
             )
 
             nix_install(
