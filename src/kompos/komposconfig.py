@@ -197,3 +197,9 @@ class KomposConfig():
 
     def helmfile_local_path(self):
         return os.path.expanduser(self.config['helmfile']['local_path'])
+
+    def helmfile_version(self):
+        return get_value_or(self.config, "helmfile/version", 'latest')
+
+    def helm_version(self):
+        return get_value_or(self.config, "helm/version", 'latest')

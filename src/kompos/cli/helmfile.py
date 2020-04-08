@@ -13,6 +13,8 @@ import logging
 import os
 import sys
 
+from subprocess import Popen, PIPE
+
 from kompos.komposconfig import HELMFILE_CONFIG_FILENAME, get_value_or
 from kompos.nix import nix_install, nix_out_path, writeable_nix_out_path
 from kompos.cli.parser import SubParserConfig
@@ -66,6 +68,12 @@ class HelmfileRunner(HierarchicalConfigGenerator):
     def run(self, args, extra_args):
         if not os.path.isdir(self.cluster_config_path):
             raise Exception("Provide a valid composition directory path.")
+
+        # Stop processing if an incompatible version of helmfile is detected.
+        validate_helmfile_version(self.kompos_config.helmfile_version())
+
+        # Stop processing if an incompatible version of helm is detected.
+        validate_helm_version(self.kompos_config.helm_version())
 
         compositions = CompositionSorter(
             self.kompos_config.helmfile_composition_order()
@@ -167,3 +175,62 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         return "cd {helmfile_path} && helmfile {helmfile_args}".format(
             helmfile_path=helmfile_path,
             helmfile_args=helmfile_args)
+
+
+def validate_helmfile_version(expected_version):
+    """
+    Check if the helmfile binary version is compatible with the
+    version specified by the kompos configuration.
+    """
+    try:
+        execution = Popen(['helmfile', '--version'],
+                          stdin=PIPE,
+                          stdout=PIPE,
+                          stderr=PIPE)
+    except Exception as e:
+        logging.exception("Helmfile does not appear to be installed, "
+                          "please ensure helmfile is in your PATH")
+        exit(1)
+
+    current_version, execution_error = execution.communicate()
+    current_version = current_version.decode('utf-8').replace(
+        'helmfile version ', '').split('\n', 1)[0]
+
+    if expected_version == 'latest':
+        return current_version
+
+    if current_version != expected_version and execution.returncode == 0:
+        raise Exception("Helmfile should be %s, but you have %s. Please change your version."\
+                        % (expected_version, current_version)
+        )
+
+    return current_version
+
+
+def validate_helm_version(expected_version):
+    """
+    Check if the helm binary version is compatible with the
+    version specified by the kompos configuration.
+    """
+    try:
+        execution = Popen(['helm', 'version', '--client', '--short', '--template', '{{ println .Client.SemVer }}'],
+                          stdin=PIPE,
+                          stdout=PIPE,
+                          stderr=PIPE)
+    except Exception as e:
+        logging.exception("Helm does not appear to be installed, "
+                          "please ensure helm is in your PATH")
+        exit(1)
+
+    current_version, execution_error = execution.communicate()
+    current_version = current_version.decode('utf-8').strip()
+
+    if expected_version == 'latest':
+        return current_version
+
+    if current_version != expected_version and execution.returncode == 0:
+        raise Exception("Helm should be %s, but you have %s. Please change your version."\
+                        % (expected_version, current_version)
+        )
+
+    return current_version
