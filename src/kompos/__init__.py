@@ -14,7 +14,7 @@ from subprocess import call, Popen, PIPE
 from .cli import display
 
 
-__version__ = "0.2.17"
+__version__ = "0.2.18"
 
 
 class Executor():
