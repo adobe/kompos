@@ -56,13 +56,18 @@ class ConfigGeneratorRunner(HierarchicalConfigGenerator):
             raise Exception("Provide the path to a single valid composition directory")
         composition = compositions[0]
 
-        filtered_output_keys = self.kompos_config.filtered_output_keys(composition)
-        excluded_config_keys = self.kompos_config.excluded_config_keys(composition)
+        filtered = self.kompos_config.filtered_output_keys(composition).copy()
+        if args.filter:
+            filtered = filtered + args.filter
+
+        excluded = self.kompos_config.excluded_config_keys(composition).copy()
+        if args.exclude:
+            excluded = excluded + args.exclude
 
         self.generate_config(
             config_path=self.cluster_config_path,
-            filters=filtered_output_keys,
-            exclude_keys=excluded_config_keys,
+            filters=filtered,
+            exclude_keys=excluded,
             enclosing_key=args.enclosing_key,
             remove_enclosing_key=args.remove_enclosing_key,
             output_format=args.output_format,
