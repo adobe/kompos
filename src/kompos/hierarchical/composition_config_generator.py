@@ -228,11 +228,12 @@ class TerraformConfigGenerator(HierarchicalConfigGenerator):
         logger.info('Generating terraform config %s', output_file)
 
         excluded = self.excluded_config_keys.copy() + ["helm", "provider"]
+        filtered = self.filtered_output_keys.copy()
 
         self.generate_config(
             config_path=config_path,
             exclude_keys=excluded,
-            filters=self.filtered_output_keys,
+            filters=filtered,
             enclosing_key="config",
             output_format="json",
             output_file=os.path.expanduser(output_file),
