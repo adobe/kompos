@@ -13,6 +13,7 @@ import json
 import tempfile
 import logging
 import subprocess
+import uuid
 
 from distutils.dir_util import copy_tree, remove_tree
 from string import Template
@@ -128,7 +129,7 @@ def writeable_nix_out_path(name):
     Copy a nix derivation to a temporary writeable directory.
     """
     out_path = nix_out_path(name)
-    tmp_dir = os.path.join(tempfile.gettempdir(), name)
+    tmp_dir = os.path.join(tempfile.gettempdir(), str(uuid.uuid1()))
 
     logging.info("Creating writeable directory '%s'", tmp_dir)
 
