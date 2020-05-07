@@ -227,6 +227,11 @@ class TerraformRunner():
             raw_config = pre_config_generator.pre_generate_config(config_path, composition)
             cloud_type = raw_config["cloud"]["type"]
 
+            if composition == "custom":
+                custom_composition = raw_config["custom"]["type"]
+                composition = composition + "/" + custom_composition
+                logger.info("Using custom composition: %s", custom_composition)
+
             # Use the default local repo (not versioned).
             terraform_composition_path = os.path.join(
                 self.kompos_config.terraform_local_path(),
@@ -252,7 +257,7 @@ class TerraformRunner():
                 terraform_composition_path = os.path.join(
                     writeable_nix_out_path(pname),
                     self.kompos_config.terraform_root_path(),
-                    cloud_type
+                    cloud_type,
                 )
 
             parser = ConfigRunner.get_parser(argparse.ArgumentParser())
