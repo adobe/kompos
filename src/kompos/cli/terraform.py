@@ -36,17 +36,19 @@ logger = logging.getLogger(__name__)
 
 # Terraform subcommands that will need re-initialization
 SUBCMDS_WITH_INIT = [
+    'plan',
     'apply',
     'destroy',
-    'plan',
+    'import',
     'state'
 ]
 
 # Terraform subcommands that use the variables file.
 SUBCMDS_WITH_VARS = [
-    'apply',
     'plan',
-    'destroy'
+    'apply',
+    'destroy',
+    'import'
 ]
 
 
@@ -301,7 +303,7 @@ class TerraformRunner():
 
         cmd = "cd {terraform_path} && " \
               "{remove_local_cache} " \
-              "{env_config} ; terraform init && terraform {subcommand} {tf_args} {extra_args} {var_file}".format(
+              "{env_config} ; terraform init && terraform {subcommand} {var_file} {tf_args} {extra_args}".format(
                 terraform_path=terraform_path,
                 remove_local_cache=remove_local_cache_cmd(args.subcommand),
                 subcommand=args.subcommand,

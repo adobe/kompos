@@ -100,7 +100,8 @@ class HierarchicalConfigGenerator():
         output_file=None,
         skip_interpolation_resolving=False,
         skip_interpolation_validation=False,
-        skip_secrets=False
+        skip_secrets=False,
+        multi_line_string=False
     ):
         cmd = self.get_sh_command(
             config_path,
@@ -113,7 +114,8 @@ class HierarchicalConfigGenerator():
             output_file,
             skip_interpolation_resolving,
             skip_interpolation_validation,
-            skip_secrets
+            skip_secrets,
+            multi_line_string
         )
 
         display(cmd, color="yellow")
@@ -129,7 +131,8 @@ class HierarchicalConfigGenerator():
             print_data=print_data,
             skip_interpolations=skip_interpolation_resolving,
             skip_interpolation_validation=skip_interpolation_validation,
-            skip_secrets=skip_secrets
+            skip_secrets=skip_secrets,
+            multi_line_string=multi_line_string
         )
 
     @staticmethod
@@ -144,7 +147,8 @@ class HierarchicalConfigGenerator():
         output_file=None,
         skip_interpolation_resolving=False,
         skip_interpolation_validation=False,
-        skip_secrets=False
+        skip_secrets=False,
+        multi_line_string=False
     ):
         command = "kompos {} config --format {}".format(
             config_path, output_format)
@@ -166,6 +170,8 @@ class HierarchicalConfigGenerator():
             command += " --skip-interpolation-validation"
         if skip_secrets:
             command += " --skip-secrets"
+        if multi_line_string:
+            command += "--multi-line-string"
 
         return command
 
