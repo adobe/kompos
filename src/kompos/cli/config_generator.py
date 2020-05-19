@@ -75,5 +75,6 @@ class ConfigGeneratorRunner(HierarchicalConfigGenerator):
             print_data=True,
             skip_interpolation_resolving=args.skip_interpolation_resolving,
             skip_interpolation_validation=args.skip_interpolation_validation,
-            skip_secrets=args.skip_secrets
+            skip_secrets=args.skip_secrets,
+            multi_line_string=True
         )
