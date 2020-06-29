@@ -135,6 +135,9 @@ class KomposConfig():
     def all(self):
         return self.config
 
+    def nix(self):
+        return get_value_or(self.config, "nix")
+
     def vault_backend(self):
         if get_value_or(self.config, "vault/enabled"):
             os.environ["VAULT_ADDR"] = get_value_or(self.config, "vault/url")

@@ -41,6 +41,11 @@ class RootParser():
             help='Enable nix integration for remote resources'
         )
         parser.add_argument(
+            '--no-nix',
+            action='store_true',
+            help='Disable nix integration for remote resources'
+        )
+        parser.add_argument(
             '--version',
             action='version',
             version='%(prog)s v{version}'.format(version=__version__)

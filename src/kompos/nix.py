@@ -145,3 +145,16 @@ def writeable_nix_out_path(name):
     copy_tree(out_path, tmp_dir)
 
     return tmp_dir
+
+
+def is_nix_enabled(cli_opts, cfg_opt):
+    """
+    Decide if nix should be enabled. CLI takes precedence over configuration file.
+    """
+    if cli_opts.nix:
+        return True
+
+    if cli_opts.no_nix:
+        return False
+
+    return cfg_opt
