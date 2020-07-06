@@ -16,7 +16,7 @@ import json
 from subprocess import Popen, PIPE
 
 from himl.main import ConfigRunner
-from kompos.nix import nix_install, nix_out_path, writeable_nix_out_path
+from kompos.nix import nix_install, nix_out_path, writeable_nix_out_path, is_nix_enabled
 from kompos.komposconfig import (
     TERRAFORM_CONFIG_FILENAME,
     TERRAFORM_PROVIDER_FILENAME,
@@ -242,7 +242,7 @@ class TerraformRunner():
             )
 
             # Overwrite with the nix output, if the nix integration is enabled.
-            if args.nix:
+            if is_nix_enabled(args, self.kompos_config.nix()):
                 pname = self.kompos_config.terraform_repo_name()
 
                 nix_install(

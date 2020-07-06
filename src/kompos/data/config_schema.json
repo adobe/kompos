@@ -114,6 +114,11 @@
     "min_version": {
       "type": "string",
       "description": "The minimum kompos version allowed"
+    },
+    "nix": {
+      "type": "boolean",
+      "description": "Whether to enable versioning with nix",
+      "default": false
     }
   },
   "required": [

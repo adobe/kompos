@@ -14,7 +14,7 @@ import os
 import sys
 
 from kompos.komposconfig import HELMFILE_CONFIG_FILENAME, get_value_or
-from kompos.nix import nix_install, nix_out_path, writeable_nix_out_path
+from kompos.nix import nix_install, nix_out_path, writeable_nix_out_path, is_nix_enabled
 from kompos.cli.parser import SubParserConfig
 from kompos.hierarchical.composition_config_generator import (
     HierarchicalConfigGenerator,
@@ -85,7 +85,7 @@ class HelmfileRunner(HierarchicalConfigGenerator):
             helmfile_path = args.helmfile_path
 
         # Overwrite if nix is enabled.
-        if args.nix:
+        if is_nix_enabled(args, self.kompos_config.nix()):
             pname = self.kompos_config.helmfile_repo_name()
 
             raw_config = self.generate_config(
