@@ -171,7 +171,7 @@ class HierarchicalConfigGenerator():
         if skip_secrets:
             command += " --skip-secrets"
         if multi_line_string:
-            command += "--multi-line-string"
+            command += " --multi-line-string"
 
         return command
 
