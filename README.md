@@ -58,7 +58,7 @@ Install `nix` and `nix-prefetch-git`.
 ```bash
 $ curl -L https://nixos.org/nix/install | bash
 
-nix-env -i nix-prefetch-git
+$ nix-env -f '<nixpkgs>' -iA nix-prefetch-git
 ```
 
 #### Configuration
