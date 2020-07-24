@@ -300,8 +300,9 @@ class TerraformRunner():
                 custom_composition = raw_config["custom"]["type"]
                 terraform_composition_path = os.path.join(terraform_path, composition, custom_composition)
                 logger.info("Using custom composition: %s", custom_composition)
-            except CustumCompositionNotFound:
+            except KeyError:
                 logger.info("No custom composition type found")
+                raise
         else:
             terraform_composition_path = os.path.join(terraform_path, composition)
 

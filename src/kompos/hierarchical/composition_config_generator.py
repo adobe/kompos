@@ -72,8 +72,9 @@ def get_composition_path(path_prefix, composition, raw_config):
             custom_composition = raw_config["custom"]["type"]
             logger.info("Appending custom composition: %s", custom_composition)
             return "{}{}/{}/".format(prefix, composition, custom_composition)
-        except CustumCompositionNotFound:
+        except KeyError:
             logger.info("No custom composition type found")
+            raise
     elif composition in path_prefix:
         return path_prefix
     else:
