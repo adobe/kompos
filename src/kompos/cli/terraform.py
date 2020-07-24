@@ -229,10 +229,7 @@ class TerraformRunner():
             raw_config = pre_config_generator.pre_generate_config(config_path, composition)
             cloud_type = raw_config["cloud"]["type"]
 
-            if composition == "custom":
-                custom_composition = raw_config["custom"]["type"]
-                composition = composition + "/" + custom_composition
-                logger.info("Using custom composition: %s", custom_composition)
+
 
             # Use the default local repo (not versioned).
             terraform_composition_path = os.path.join(
@@ -274,7 +271,8 @@ class TerraformRunner():
                 himl_args,
                 config_path,
                 terraform_composition_path,
-                composition
+                composition,
+                raw_config
             )
 
             return_code = self.execute(
@@ -282,7 +280,8 @@ class TerraformRunner():
                     args,
                     extra_args,
                     terraform_composition_path,
-                    composition
+                    composition,
+                    raw_config
                 )
             )
 
@@ -295,16 +294,25 @@ class TerraformRunner():
 
         return return_code
 
-    def run_terraform(self, args, extra_args, terraform_path, composition):
-        terraform_path = os.path.join(terraform_path, composition)
-        var_file = '-var-file="{}"'.format(TERRAFORM_CONFIG_FILENAME) if args.subcommand in SUBCMDS_WITH_VARS else ''
+    def run_terraform(self, args, extra_args, terraform_path, composition, raw_config):
+        if composition == "custom":
+            try:
+                custom_composition = raw_config["custom"]["type"]
+                terraform_composition_path = os.path.join(terraform_path, composition, custom_composition)
+                logger.info("Using custom composition: %s", custom_composition)
+            except KeyError:
+                logger.info("No custom composition type found")
+                raise
+        else:
+            terraform_composition_path = os.path.join(terraform_path, composition)
 
+        var_file = '-var-file="{}"'.format(TERRAFORM_CONFIG_FILENAME) if args.subcommand in SUBCMDS_WITH_VARS else ''
         terraform_env_config = 'export TF_PLUGIN_CACHE_DIR="{}"'.format(local_config_dir())
 
         cmd = "cd {terraform_path} && " \
               "{remove_local_cache} " \
               "{env_config} ; terraform init && terraform {subcommand} {var_file} {tf_args} {extra_args}".format(
-                terraform_path=terraform_path,
+                terraform_path=terraform_composition_path,
                 remove_local_cache=remove_local_cache_cmd(args.subcommand),
                 subcommand=args.subcommand,
                 extra_args=' '.join(extra_args),

@@ -55,16 +55,30 @@ def split_path(value, separator='='):
     return [value, ""]
 
 
+# Get hiera config path
 def get_config_path(path_prefix, composition):
     prefix = os.path.join(path_prefix, '')
-    return path_prefix if "composition=" in path_prefix else "{}composition={}".format(
-        prefix, composition)
+    if "composition=" in path_prefix:
+        return path_prefix
+    else:
+        return "{}composition={}".format(prefix, composition)
 
 
-def get_composition_path(path_prefix, composition):
+# Get target composition path
+def get_composition_path(path_prefix, composition, raw_config):
     prefix = os.path.join(path_prefix, '')
-    return path_prefix if composition in path_prefix else "{}{}/".format(
-        prefix, composition)
+    if composition not in path_prefix and composition == "custom":
+        try:
+            custom_composition = raw_config["custom"]["type"]
+            logger.info("Appending custom composition: %s", custom_composition)
+            return "{}{}/{}/".format(prefix, composition, custom_composition)
+        except KeyError:
+            logger.info("No custom composition type found")
+            raise
+    elif composition in path_prefix:
+        return path_prefix
+    else:
+        return "{}{}/".format(prefix, composition)
 
 
 class CompositionSorter():
@@ -200,9 +214,9 @@ class TerraformConfigGenerator(HierarchicalConfigGenerator):
         self.excluded_config_keys = excluded_config_keys
         self.filtered_output_keys = filtered_output_keys
 
-    def generate_files(self, himl_args, config_path, composition_path, composition):
+    def generate_files(self, himl_args, config_path, composition_path, composition, raw_config):
         config_path = get_config_path(config_path, composition)
-        composition_path = get_composition_path(composition_path, composition)
+        composition_path = get_composition_path(composition_path, composition, raw_config)
 
         self.generate_provider_config(himl_args, config_path, composition_path)
         self.generate_variables_config(himl_args, config_path, composition_path)
