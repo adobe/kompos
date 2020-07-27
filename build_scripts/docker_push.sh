@@ -2,5 +2,5 @@
 set -e
 
 echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-docker tag kompos adobe/kompos:0.2.22
-docker push adobe/kompos:0.2.22
+docker tag kompos adobe/kompos:0.2.23
+docker push adobe/kompos:0.2.23
