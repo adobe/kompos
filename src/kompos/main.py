@@ -14,7 +14,7 @@ import os
 
 from simpledi import Container, auto, cache, instance, ListInstanceProvider
 
-from .cli.config_generator import ConfigGeneratorParserConfig, ConfigGeneratorRunner
+from .cli.config import ConfigGeneratorParserConfig, ConfigGeneratorRunner
 from .cli.parser import RootParser
 from .cli.terraform import TerraformParserConfig, TerraformRunner
 from .cli.helmfile import HelmfileParserConfig, HelmfileRunner

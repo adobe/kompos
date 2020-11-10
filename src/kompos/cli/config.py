@@ -13,7 +13,8 @@ import os
 
 from himl.main import ConfigRunner
 from kompos.cli.parser import SubParserConfig
-from kompos.hierarchical.composition_config_generator import discover_all_compositions, HierarchicalConfigGenerator, CompositionSorter
+from kompos.hierarchical.composition_helper import discover_compositions
+from kompos.hierarchical.config_generator import HierarchicalConfigGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +49,8 @@ class ConfigGeneratorRunner(HierarchicalConfigGenerator):
 
         config_path = os.path.join(self.cluster_config_path, "")
 
-        composition_order = discover_all_compositions(config_path)
-        compositions = CompositionSorter(composition_order).get_sorted_compositions(
-            config_path
-        )
+        compositions = discover_compositions(config_path)
+
         if not 0 < len(compositions) < 2:
             raise Exception("Provide the path to a single valid composition directory")
         composition = compositions[0]
