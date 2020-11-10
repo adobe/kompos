@@ -256,9 +256,9 @@ class TerraformRunner:
 
             if composition == "custom":
                 logger.info("Run custom compositions")
-
-                custom_compositions = discover_compositions(self.cluster_config_path, composition_type="type")
-                self.run_compositions(args, extra_args, config_path, custom_compositions, custom=True)
+                custom_path = self.cluster_config_path + "/composition=custom"
+                custom_compositions = discover_compositions(custom_path, composition_type="type")
+                self.run_compositions(args, extra_args, custom_path, custom_compositions, custom=True)
 
                 break
 
@@ -267,6 +267,8 @@ class TerraformRunner:
             pre_config_generator = PreConfigGenerator(excluded_config_keys, filtered_output_keys)
             raw_config = pre_config_generator.pre_generate_config(config_path, composition)
             cloud_type = raw_config["cloud"]["type"]
+
+            # Generate output paths for configs
             terraform_composition_path = self.get_composition_path(nix, cloud_type, raw_config, custom=custom)
 
             parser = ConfigRunner.get_parser(argparse.ArgumentParser())
@@ -287,6 +289,7 @@ class TerraformRunner:
                 raw_config
             )
 
+            # Run terraform
             return_code = self.execute(
                 self.run_terraform(
                     args,
