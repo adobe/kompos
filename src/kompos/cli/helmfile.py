@@ -13,12 +13,11 @@ import logging
 import os
 import sys
 
-from kompos.komposconfig import HELMFILE_CONFIG_FILENAME, get_value_or
-from kompos.nix import nix_install, nix_out_path, writeable_nix_out_path, is_nix_enabled
 from kompos.cli.parser import SubParserConfig
-
 from kompos.hierarchical.composition_helper import discover_compositions, get_config_path
 from kompos.hierarchical.config_generator import HierarchicalConfigGenerator
+from kompos.komposconfig import HELMFILE_CONFIG_FILENAME, get_value_or
+from kompos.nix import nix_install, writeable_nix_out_path, is_nix_enabled
 
 logger = logging.getLogger(__name__)
 

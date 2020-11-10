@@ -8,14 +8,12 @@
 # OF ANY KIND, either express or implied. See the License for the specific language
 # governing permissions and limitations under the License.
 
-from kompos.hierarchical.config_generator import HierarchicalConfigGenerator
-from kompos.hierarchical.composition_helper import get_config_path, get_composition_path
-
-from kompos.komposconfig import TERRAFORM_CONFIG_FILENAME, TERRAFORM_PROVIDER_FILENAME
-
 import logging
 import os
 
+from kompos.hierarchical.composition_helper import get_config_path, get_composition_path
+from kompos.hierarchical.config_generator import HierarchicalConfigGenerator
+from kompos.komposconfig import TERRAFORM_CONFIG_FILENAME, TERRAFORM_PROVIDER_FILENAME
 
 logger = logging.getLogger(__name__)
 

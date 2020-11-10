@@ -8,24 +8,22 @@
 # OF ANY KIND, either express or implied. See the License for the specific language
 # governing permissions and limitations under the License.
 
-import os
-import logging
 import argparse
-
+import logging
+import os
 from subprocess import Popen, PIPE
 
 from himl.main import ConfigRunner
-from kompos.nix import nix_install, nix_out_path, writeable_nix_out_path, is_nix_enabled
+
+from kompos.cli.parser import SubParserConfig
+from kompos.hierarchical.composition_helper import PreConfigGenerator, discover_compositions, sorted_compositions
+from kompos.hierarchical.terraform_config_generator import TerraformConfigGenerator
 from kompos.komposconfig import (
     TERRAFORM_CONFIG_FILENAME,
-    TERRAFORM_PROVIDER_FILENAME,
     get_value_or,
     local_config_dir
 )
-from kompos.cli.parser import SubParserConfig
-from kompos.hierarchical.terraform_config_generator import TerraformConfigGenerator
-from kompos.hierarchical.composition_helper import PreConfigGenerator, discover_compositions, sorted_compositions
-
+from kompos.nix import nix_install, writeable_nix_out_path, is_nix_enabled
 
 logger = logging.getLogger(__name__)
 

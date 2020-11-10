@@ -12,6 +12,7 @@ import logging
 import os
 
 from himl.main import ConfigRunner
+
 from kompos.cli.parser import SubParserConfig
 from kompos.hierarchical.composition_helper import discover_compositions
 from kompos.hierarchical.config_generator import HierarchicalConfigGenerator

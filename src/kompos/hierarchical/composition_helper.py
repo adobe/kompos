@@ -8,10 +8,10 @@
 # OF ANY KIND, either express or implied. See the License for the specific language
 # governing permissions and limitations under the License.
 
-from kompos.hierarchical.config_generator import HierarchicalConfigGenerator
-
 import logging
 import os
+
+from kompos.hierarchical.config_generator import HierarchicalConfigGenerator
 
 logger = logging.getLogger(__name__)
 
