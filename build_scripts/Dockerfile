@@ -55,8 +55,6 @@ RUN adduser kompos -Du 2342 -h /home/kompos \
     && chmod +x /usr/local/bin/aws-iam-authenticator \
     && wget -q https://github.com/roboll/helmfile/releases/download/${HELM_FILE_VERSION}/helmfile_linux_amd64 -O /usr/local/bin/helmfile \
     && chmod +x /usr/local/bin/helmfile
-# Fix https://github.com/kubernetes-client/python-base/pull/126/files
-COPY build_scripts/patches/kube_config.py /usr/local/lib/python3.7/site-packages/kubernetes/config/kube_config.py
 
 # install utils under `kompos` user
 USER kompos
