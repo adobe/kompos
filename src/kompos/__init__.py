@@ -8,11 +8,9 @@
 # OF ANY KIND, either express or implied. See the License for the specific language
 # governing permissions and limitations under the License.
 
-import re
 from subprocess import call, Popen, PIPE
 
 from .cli import display
-
 
 __version__ = "0.2.23"
 

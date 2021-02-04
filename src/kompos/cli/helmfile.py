@@ -13,14 +13,11 @@ import logging
 import os
 import sys
 
-from kompos.komposconfig import HELMFILE_CONFIG_FILENAME, get_value_or
-from kompos.nix import nix_install, nix_out_path, writeable_nix_out_path, is_nix_enabled
 from kompos.cli.parser import SubParserConfig
-from kompos.hierarchical.composition_config_generator import (
-    HierarchicalConfigGenerator,
-    CompositionSorter,
-    get_config_path,
-)
+from kompos.hierarchical.composition_helper import discover_compositions, get_config_path
+from kompos.hierarchical.config_generator import HierarchicalConfigGenerator
+from kompos.komposconfig import HELMFILE_CONFIG_FILENAME, get_value_or
+from kompos.nix import nix_install, writeable_nix_out_path, is_nix_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -67,11 +64,10 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         if not os.path.isdir(self.cluster_config_path):
             raise Exception("Provide a valid composition directory path.")
 
-        compositions = CompositionSorter(
-            self.kompos_config.helmfile_composition_order()
-        ).get_sorted_compositions(self.cluster_config_path)
+        # composition_order = self.kompos_config.helmfile_composition_order()
+        compositions = discover_compositions(self.cluster_config_path)
 
-        if not compositions or compositions[0] != HELMFILE_COMPOSITION_NAME:
+        if not compositions or compositions[0] != HELMFILE_COMPOSITION_NAME or len(compositions) > 1:
             raise Exception("No helmfiles compositions where detected in {}".format(self.cluster_config_path))
 
         # We're assuming local path by default.

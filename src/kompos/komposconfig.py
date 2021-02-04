@@ -8,14 +8,15 @@
 # OF ANY KIND, either express or implied. See the License for the specific language
 # governing permissions and limitations under the License.
 
-import os
-import yaml
 import logging
-import fastjsonschema
+import os
+from distutils.version import StrictVersion
+from functools import reduce
 from pathlib import Path
 
-from functools import reduce
-from distutils.version import StrictVersion
+import fastjsonschema
+import yaml
+
 from kompos import __version__
 
 logger = logging.getLogger(__name__)

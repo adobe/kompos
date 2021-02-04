@@ -20,7 +20,7 @@ RUN apk del --purge build
 FROM python:3.7-alpine3.10
 ARG TERRAFORM_VERSION="0.12.25"
 ARG VAULT_VERSION="1.1.3"
-ARG KUBECTL_VERSION="v1.13.7"
+ARG KUBECTL_VERSION="v1.16.13"
 ARG AWS_IAM_AUTHENTICATOR_VERSION="1.13.7/2019-06-11"
 ARG HELM_VERSION="v2.16.1"
 ARG HELM_FILE_VERSION="v0.90.8"
@@ -55,8 +55,6 @@ RUN adduser kompos -Du 2342 -h /home/kompos \
     && chmod +x /usr/local/bin/aws-iam-authenticator \
     && wget -q https://github.com/roboll/helmfile/releases/download/${HELM_FILE_VERSION}/helmfile_linux_amd64 -O /usr/local/bin/helmfile \
     && chmod +x /usr/local/bin/helmfile
-# Fix https://github.com/kubernetes-client/python-base/pull/126/files
-COPY build_scripts/patches/kube_config.py /usr/local/lib/python3.7/site-packages/kubernetes/config/kube_config.py
 
 # install utils under `kompos` user
 USER kompos

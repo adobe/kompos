@@ -8,13 +8,12 @@
 # OF ANY KIND, either express or implied. See the License for the specific language
 # governing permissions and limitations under the License.
 
-import os
 import json
-import tempfile
 import logging
+import os
 import subprocess
+import tempfile
 import uuid
-
 from distutils.dir_util import copy_tree, remove_tree
 from string import Template
 
