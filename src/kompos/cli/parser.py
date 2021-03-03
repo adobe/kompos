@@ -46,6 +46,11 @@ class RootParser():
             help='Disable nix integration for remote resources'
         )
         parser.add_argument(
+            '--skip-custom-composition',
+            action='store_true',
+            help='Skip custom compositions'
+        )
+        parser.add_argument(
             '--version',
             action='version',
             version='%(prog)s v{version}'.format(version=__version__)

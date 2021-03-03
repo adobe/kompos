@@ -254,9 +254,15 @@ class TerraformRunner:
         for composition in compositions:
             logger.info("Running composition: %s", composition)
 
-            if composition == "custom":
+            if composition == "custom" and args.skip_custom_composition:
+                logger.info("Custom compositions skipped")
+                break
+            elif composition == "custom" and not args.skip_custom_composition:
                 logger.info("Run custom compositions")
-                custom_path = self.cluster_config_path + "/composition=custom"
+                if "/composition=custom" not in self.cluster_config_path:
+                    custom_path = self.cluster_config_path + "/composition=custom"
+                else:
+                    custom_path = self.cluster_config_path
                 custom_compositions = discover_compositions(custom_path, composition_type="type")
                 self.run_compositions(args, extra_args, custom_path, custom_compositions, custom=True)
 
