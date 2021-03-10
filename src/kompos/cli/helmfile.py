@@ -14,7 +14,7 @@ import os
 import sys
 
 from kompos.cli.parser import SubParserConfig
-from kompos.hierarchical.composition_helper import discover_compositions, get_config_path
+from kompos.hierarchical.composition_helper import get_config_path, get_compositions
 from kompos.hierarchical.config_generator import HierarchicalConfigGenerator
 from kompos.komposconfig import HELMFILE_CONFIG_FILENAME, get_value_or
 from kompos.nix import nix_install, writeable_nix_out_path, is_nix_enabled
@@ -64,11 +64,9 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         if not os.path.isdir(self.cluster_config_path):
             raise Exception("Provide a valid composition directory path.")
 
-        # composition_order = self.kompos_config.helmfile_composition_order()
-        compositions = discover_compositions(self.cluster_config_path)
-
-        if not compositions or compositions[0] != HELMFILE_COMPOSITION_NAME or len(compositions) > 1:
-            raise Exception("No helmfiles compositions where detected in {}".format(self.cluster_config_path))
+        composition_order = self.kompos_config.helmfile_composition_order()
+        compositions = get_compositions(self.cluster_config_path, composition_order, path_type="composition",
+                                        composition_type="helmfile", reverse=False)
 
         # We're assuming local path by default.
         helmfile_path = os.path.join(
@@ -87,7 +85,7 @@ class HelmfileRunner(HierarchicalConfigGenerator):
             raw_config = self.generate_config(
                 config_path=get_config_path(self.cluster_config_path, HELMFILE_COMPOSITION_NAME),
                 filters=self.kompos_config.filtered_output_keys(HELMFILE_COMPOSITION_NAME),
-                exclude_keys = self.kompos_config.excluded_config_keys(HELMFILE_COMPOSITION_NAME)
+                exclude_keys=self.kompos_config.excluded_config_keys(HELMFILE_COMPOSITION_NAME)
             )
 
             nix_install(

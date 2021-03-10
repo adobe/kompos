@@ -16,7 +16,7 @@ from subprocess import Popen, PIPE
 from himl.main import ConfigRunner
 
 from kompos.cli.parser import SubParserConfig
-from kompos.hierarchical.composition_helper import PreConfigGenerator, discover_compositions, sorted_compositions
+from kompos.hierarchical.composition_helper import PreConfigGenerator, discover_compositions, get_compositions
 from kompos.hierarchical.terraform_config_generator import TerraformConfigGenerator
 from kompos.komposconfig import (
     TERRAFORM_CONFIG_FILENAME,
@@ -195,21 +195,10 @@ class TerraformRunner:
         reverse = ("destroy" == args.subcommand)
 
         composition_order = self.kompos_config.terraform_composition_order()
-        compositions = self.check_compositions(composition_order, reverse)
+        compositions = get_compositions(self.cluster_config_path, composition_order, path_type="composition",
+                                        composition_type="terraform", reverse=reverse)
 
         return self.run_compositions(args, extra_args, self.cluster_config_path, compositions)
-
-    def check_compositions(self, composition_order, reverse, composition_type="composition"):
-        logging.basicConfig(level=logging.INFO)
-
-        compositions = discover_compositions(self.cluster_config_path, composition_type=composition_type)
-        compositions = sorted_compositions(compositions, composition_order, reverse)
-
-        if not compositions:
-            raise Exception(
-                "No terraform compositions were detected in {}.".format(self.cluster_config_path))
-
-        return compositions
 
     def get_composition_path(self, nix, cloud_type, raw_config, custom):
         # Use the default local repo (not versioned).
@@ -263,7 +252,7 @@ class TerraformRunner:
                     custom_path = self.cluster_config_path + "/composition=custom"
                 else:
                     custom_path = self.cluster_config_path
-                custom_compositions = discover_compositions(custom_path, composition_type="type")
+                custom_compositions = discover_compositions(custom_path, path_type="type")
                 self.run_compositions(args, extra_args, custom_path, custom_compositions, custom=True)
 
                 break
@@ -323,14 +312,14 @@ class TerraformRunner:
         cmd = "cd {terraform_path} && " \
               "{remove_local_cache} " \
               "{env_config} ; terraform init && terraform {subcommand} {var_file} {tf_args} {extra_args}".format(
-                terraform_path=terraform_composition_path,
-                remove_local_cache=remove_local_cache_cmd(args.subcommand),
-                subcommand=args.subcommand,
-                extra_args=' '.join(extra_args),
-                tf_args=' '.join(args.terraform_args),
-                var_file=var_file,
-                env_config=terraform_env_config
-              )
+            terraform_path=terraform_composition_path,
+            remove_local_cache=remove_local_cache_cmd(args.subcommand),
+            subcommand=args.subcommand,
+            extra_args=' '.join(extra_args),
+            tf_args=' '.join(args.terraform_args),
+            var_file=var_file,
+            env_config=terraform_env_config
+        )
 
         return dict(command=cmd, post_actions=[])
 
@@ -365,8 +354,8 @@ def validate_terraform_version(expected_version):
         return current_version
 
     if current_version != expected_version and execution.returncode == 0:
-        raise Exception("Terraform should be %s, but you have %s. Please change your version."\
+        raise Exception("Terraform should be %s, but you have %s. Please change your version." \
                         % (expected_version, current_version)
-        )
+                        )
 
     return current_version

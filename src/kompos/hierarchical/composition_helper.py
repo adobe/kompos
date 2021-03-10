@@ -33,10 +33,23 @@ class PreConfigGenerator(HierarchicalConfigGenerator):
         )
 
 
-def discover_compositions(path, composition_type="composition"):
+def get_compositions(path, composition_order, path_type, composition_type, reverse=False):
+    logging.basicConfig(level=logging.INFO)
+
+    compositions = discover_compositions(path, path_type)
+    compositions = sorted_compositions(compositions, composition_order, reverse)
+
+    if not compositions:
+        raise Exception(
+            "No terraform {} were detected in {}.".format(composition_type, path))
+
+    return compositions
+
+
+def discover_compositions(path, path_type="composition"):
     # check single composition selected
     path_params = dict(split_path(x) for x in path.split('/'))
-    composition = path_params.get(composition_type, None)
+    composition = path_params.get(path_type, None)
     if composition:
         return [composition]
 
@@ -44,7 +57,7 @@ def discover_compositions(path, composition_type="composition"):
     compositions = []
     subpaths = os.listdir(path)
     for subpath in subpaths:
-        if composition_type + "=" in subpath:
+        if path_type + "=" in subpath:
             composition = split_path(subpath)[1]
             compositions.append(composition)
 
