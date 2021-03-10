@@ -199,10 +199,10 @@ class TerraformRunner:
 
         return self.run_compositions(args, extra_args, self.cluster_config_path, compositions)
 
-    def check_compositions(self, composition_order, reverse, composition_type="composition"):
+    def check_compositions(self, composition_order, reverse):
         logging.basicConfig(level=logging.INFO)
 
-        compositions = discover_compositions(self.cluster_config_path, composition_type=composition_type)
+        compositions = discover_compositions(self.cluster_config_path, path_type="composition")
         compositions = sorted_compositions(compositions, composition_order, reverse)
 
         if not compositions:
@@ -263,7 +263,7 @@ class TerraformRunner:
                     custom_path = self.cluster_config_path + "/composition=custom"
                 else:
                     custom_path = self.cluster_config_path
-                custom_compositions = discover_compositions(custom_path, composition_type="type")
+                custom_compositions = discover_compositions(custom_path, path_type="type")
                 self.run_compositions(args, extra_args, custom_path, custom_compositions, custom=True)
 
                 break

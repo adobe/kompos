@@ -33,10 +33,10 @@ class PreConfigGenerator(HierarchicalConfigGenerator):
         )
 
 
-def discover_compositions(path, composition_type="composition"):
+def discover_compositions(path, path_type="composition"):
     # check single composition selected
     path_params = dict(split_path(x) for x in path.split('/'))
-    composition = path_params.get(composition_type, None)
+    composition = path_params.get(path_type, None)
     if composition:
         return [composition]
 
@@ -44,7 +44,7 @@ def discover_compositions(path, composition_type="composition"):
     compositions = []
     subpaths = os.listdir(path)
     for subpath in subpaths:
-        if composition_type + "=" in subpath:
+        if path_type + "=" in subpath:
             composition = split_path(subpath)[1]
             compositions.append(composition)
 
