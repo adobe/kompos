@@ -8,66 +8,35 @@
 # OF ANY KIND, either express or implied. See the License for the specific language
 # governing permissions and limitations under the License.
 
-from subprocess import call, Popen, PIPE
+from subprocess import call
+from termcolor import colored
 
-from .cli import display
+
+def display(msg, color):
+    print(colored(msg, color))
+
 
 __version__ = "0.3.3"
 
 
-class Executor():
+class Executor:
     """ All cli commands usually return a dict(command=...) that will be executed by this handler"""
 
-    def __call__(self, result, pass_trough=True, cwd=None):
+    def __call__(self, cmd, cwd=None):
         try:
-            return self._execute(result, pass_trough, cwd)
+            return self._execute(cmd, cwd)
         except Exception as ex:
-            display(str(ex), stderr=True, color='red')
-            display(
-                '------- TRACEBACK ----------',
-                stderr=True,
-                color='dark gray')
+            display(str(ex), color='red')
+            display('------- TRACEBACK ----------', color='yellow')
             import traceback
             traceback.print_exc()
-            display(
-                '------ END TRACEBACK -------',
-                stderr=True,
-                color='dark gray')
+            display('------ END TRACEBACK -------', color='yellow')
 
-    def _execute(self, result, pass_trough=True, cwd=None):
-        exit_code = 0
-
-        if not result or not isinstance(result, dict):
+    def _execute(self, cmd, cwd=None):
+        if not cmd or not isinstance(cmd, dict):
             return
 
-        if 'command' in result:
-            shell_command = result['command']
-            display(
-                "%s" %
-                shell_command,
-                stderr=True,
-                color='yellow')
-            if pass_trough:
-                exit_code = call(shell_command, shell=True, cwd=cwd)
-            else:
-                p = Popen(
-                    shell_command,
-                    shell=True,
-                    stdout=PIPE,
-                    stderr=PIPE,
-                    cwd=cwd)
-                output, errors = p.communicate()
-                display(str(output))
-                if errors:
-                    display(
-                        "%s" %
-                        shell_command,
-                        stderr=True,
-                        color='red')
-                exit_code = p.returncode
-
-        if 'post_actions' in result:
-            for callback in result['post_actions']:
-                callback()
-
-        return exit_code
+        if 'command' in cmd:
+            shell_command = cmd['command']
+            display(shell_command, color='yellow')
+            return call(shell_command, shell=True, cwd=cwd)
