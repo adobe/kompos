@@ -312,14 +312,13 @@ class TerraformRunner:
         cmd = "cd {terraform_path} && " \
               "{remove_local_cache} " \
               "{env_config} ; terraform init && terraform {subcommand} {var_file} {tf_args} {extra_args}".format(
-            terraform_path=terraform_composition_path,
-            remove_local_cache=remove_local_cache_cmd(args.subcommand),
-            subcommand=args.subcommand,
-            extra_args=' '.join(extra_args),
-            tf_args=' '.join(args.terraform_args),
-            var_file=var_file,
-            env_config=terraform_env_config
-        )
+                terraform_path=terraform_composition_path,
+                remove_local_cache=remove_local_cache_cmd(args.subcommand),
+                subcommand=args.subcommand,
+                extra_args=' '.join(extra_args),
+                tf_args=' '.join(args.terraform_args),
+                var_file=var_file,
+                env_config=terraform_env_config)
 
         return dict(command=cmd, post_actions=[])
 
@@ -341,7 +340,7 @@ def validate_terraform_version(expected_version):
                           stdin=PIPE,
                           stdout=PIPE,
                           stderr=PIPE)
-    except Exception as e:
+    except Exception:
         logging.exception("Terraform does not appear to be installed, "
                           "please ensure terraform is in your PATH")
         exit(1)
@@ -354,7 +353,7 @@ def validate_terraform_version(expected_version):
         return current_version
 
     if current_version != expected_version and execution.returncode == 0:
-        raise Exception("Terraform should be %s, but you have %s. Please change your version." \
+        raise Exception("Terraform should be %s, but you have %s. Please change your version."
                         % (expected_version, current_version)
                         )
 

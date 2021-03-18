@@ -21,7 +21,6 @@ from kompos.nix import nix_install, writeable_nix_out_path, is_nix_enabled
 
 logger = logging.getLogger(__name__)
 
-
 HELMFILE_COMPOSITION_NAME = 'helmfiles'
 
 
