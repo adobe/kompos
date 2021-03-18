@@ -32,11 +32,11 @@ class Executor:
             traceback.print_exc()
             display('------ END TRACEBACK -------', color='yellow')
 
-    def _execute(self, cmd, cwd=None):
-        if not cmd or not isinstance(cmd, dict):
-            return
-
+    @staticmethod
+    def _execute(cmd, cwd=None):
         if 'command' in cmd:
             shell_command = cmd['command']
             display(shell_command, color='yellow')
             return call(shell_command, shell=True, cwd=cwd)
+        else:
+            return 1

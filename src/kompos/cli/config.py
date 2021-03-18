@@ -43,6 +43,7 @@ class ConfigGeneratorRunner(HierarchicalConfigGenerator):
         super(ConfigGeneratorRunner, self).__init__()
         self.kompos_config = kompos_config
         self.cluster_config_path = cluster_config_path
+        logging.basicConfig(level=logging.INFO)
 
     def run(self, args, extra_args):
         if not os.path.isdir(self.cluster_config_path):
