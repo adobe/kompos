@@ -65,7 +65,7 @@ class AppContainer(Container):
         args, extra_args = self.root_parser.parse_known_args(self.argv)
         configure_logging(args)
 
-        logger.debug('cli args: %s, extra_args: %s', args, extra_args)
+        logger.debug('cli args: {}, extra_args: {}'.format(args, extra_args))
 
         # Bind some very useful dependencies
         self.console_args = cache(instance(args))
@@ -78,7 +78,7 @@ class AppContainer(Container):
         self.package_dir = lambda c: os.path.dirname(__file__)
 
         # change path to the root_dir
-        logger.info('root dir: %s', self.root_dir)
+        logger.info('root dir: {}'.format(self.root_dir))
         os.chdir(self.root_dir)
 
         return args
@@ -93,13 +93,7 @@ class AppContainer(Container):
 def run(args=None):
     """ App entry point """
     app_container = AppContainer(args)
-
-    output = app_container.run()
-
-    if isinstance(output, int):
-        return output
-    ret = app_container.execute(output)
-    sys.exit(ret)
+    sys.exit(app_container.run())
 
 
 def get_cluster_config_path(root_dir, console_args):
@@ -116,9 +110,7 @@ def get_root_dir(args):
     if args.root_dir:
         if not os.path.isdir(os.path.realpath(args.root_dir)):
             raise ValueError(
-                "Specified root dir '%s' does not exists" %
-                os.path.realpath(
-                    args.root_dir))
+                "Specified root dir {} does not exists".format(os.path.realpath(args.root_dir)))
 
         return os.path.realpath(args.root_dir)
 

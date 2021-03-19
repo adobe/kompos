@@ -236,7 +236,6 @@ class TerraformRunner:
         return path
 
     def run_compositions(self, args, extra_args, config_path, compositions, custom=False):
-        return_code = 0
 
         nix = is_nix_enabled(args, self.kompos_config.nix())
 
@@ -252,8 +251,9 @@ class TerraformRunner:
                     custom_path = self.cluster_config_path + "/composition=custom"
                 else:
                     custom_path = self.cluster_config_path
+
                 custom_compositions = discover_compositions(custom_path, path_type="type")
-                self.run_compositions(args, extra_args, custom_path, custom_compositions, custom=True)
+                return_code = self.run_compositions(args, extra_args, custom_path, custom_compositions, custom=True)
 
                 break
 
@@ -276,22 +276,12 @@ class TerraformRunner:
             tf_config_generator = TerraformConfigGenerator(excluded_config_keys, filtered_output_keys)
 
             # Generate configs
-            tf_config_generator.generate_files(
-                himl_args,
-                config_path,
-                terraform_composition_path,
-                composition,
-                raw_config
-            )
+            tf_config_generator.generate_files(himl_args, config_path, terraform_composition_path, composition,
+                                               raw_config)
 
             # Run terraform
             return_code = self.execute(
-                self.run_terraform(
-                    args,
-                    extra_args,
-                    terraform_composition_path,
-                    composition
-                )
+                self.run_terraform(args, extra_args, terraform_composition_path, composition)
             )
 
             if return_code != 0:
@@ -318,10 +308,9 @@ class TerraformRunner:
             extra_args=' '.join(extra_args),
             tf_args=' '.join(args.terraform_args),
             var_file=var_file,
-            env_config=terraform_env_config
-        )
+            env_config=terraform_env_config)
 
-        return dict(command=cmd, post_actions=[])
+        return dict(command=cmd)
 
 
 def remove_local_cache_cmd(subcommand):
@@ -341,7 +330,7 @@ def validate_terraform_version(expected_version):
                           stdin=PIPE,
                           stdout=PIPE,
                           stderr=PIPE)
-    except Exception as e:
+    except Exception:
         logging.exception("Terraform does not appear to be installed, "
                           "please ensure terraform is in your PATH")
         exit(1)
@@ -354,7 +343,7 @@ def validate_terraform_version(expected_version):
         return current_version
 
     if current_version != expected_version and execution.returncode == 0:
-        raise Exception("Terraform should be %s, but you have %s. Please change your version." \
+        raise Exception("Terraform should be %s, but you have %s. Please change your version."
                         % (expected_version, current_version)
                         )
 
