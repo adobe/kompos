@@ -109,7 +109,11 @@ class HelmfileRunner(HierarchicalConfigGenerator):
             )
         )
 
-        return dict(command=self.get_helmfile_command(helmfile_path, extra_args))
+        return_code = self.execute(
+            self.run_helmfile(helmfile_path, extra_args)
+        )
+
+        return return_code
 
     def setup_kube_config(self, data):
         if data['helm']['global']['cluster']['type'] == 'eks':
@@ -155,8 +159,9 @@ class HelmfileRunner(HierarchicalConfigGenerator):
                                     output_file=output_file,
                                     print_data=True)
 
-    def get_helmfile_command(self, helmfile_path, extra_args):
+    def run_helmfile(self, helmfile_path, extra_args):
         helmfile_args = ' '.join(extra_args)
-        return "cd {helmfile_path} && helmfile {helmfile_args}".format(
-            helmfile_path=helmfile_path,
-            helmfile_args=helmfile_args)
+        cmd = "cd {helmfile_path} && helmfile {helmfile_args}".format(
+            helmfile_path=helmfile_path, helmfile_args=helmfile_args)
+
+        return dict(command=cmd)
