@@ -12,6 +12,7 @@
 import logging
 import os
 import sys
+from kubeconfig import KubeConfig
 
 from kompos.cli.parser import SubParserConfig
 from kompos.hierarchical.composition_helper import get_config_path, get_compositions
@@ -116,15 +117,33 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         return return_code
 
     def setup_kube_config(self, data):
-        if data['helm']['global']['cluster']['type'] == 'eks':
+        if data['helm']['global']['cluster']['type'] == 'k8s':
+            if all(k in data['helm']['global']['cluster']['kubeconfig'] for k in ("path", "context")):
+                if os.path.isfile(data['helm']['global']['cluster']['kubeconfig']['path']):
+                    logger.info('Using kubecofig file: %s', data['helm']['global']['cluster']['kubeconfig']['path'])
+                else:
+                    logger.warning('kubeconfig file not found: %s', data['helm']['global']['cluster']['kubeconfig']['path'])
+                    sys.exit(1)
+
+                kubeconfig_abs_path = os.path.abspath(data['helm']['global']['cluster']['kubeconfig']['path'])
+                conf = KubeConfig(kubeconfig_abs_path)
+                conf.use_context(data['helm']['global']['cluster']['kubeconfig']['context'])
+                os.environ['KUBECONFIG'] = kubeconfig_abs_path
+                logger.info('Current context: %s', conf.current_context())
+            else:
+                logger.warning('path or context keys not found in helm.global.cluster.kubeconfig')
+                sys.exit(1)
+
+        elif data['helm']['global']['cluster']['type'] == 'eks':
             cluster_name = data['helm']['global']['fqdn']
             aws_profile = data['helm']['global']['aws']['profile']
             region = data['helm']['global']['region']['location']
             file_location = self.generate_eks_kube_config(
                 cluster_name, aws_profile, region)
             os.environ['KUBECONFIG'] = file_location
+
         else:
-            logger.warning('currently only eks type clusters supported')
+            logger.warning('cluster type must be k8s or eks')
             sys.exit(1)
 
     def generate_eks_kube_config(self, cluster_name, aws_profile, region):
