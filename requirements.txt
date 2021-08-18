@@ -3,4 +3,4 @@ PyYAML>=5.1
 himl>=0.7.2
 fastjsonschema==2.14.*
 termcolor>=1.1.0
-kubeconfig=>1.1.1
+kubeconfig>=1.1.1
