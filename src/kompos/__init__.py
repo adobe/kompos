@@ -16,7 +16,7 @@ def display(msg, color):
     print(colored(msg, color))
 
 
-__version__ = "0.3.5"
+__version__ = "0.3.4"
 
 
 class Executor:
