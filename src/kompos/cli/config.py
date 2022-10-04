@@ -39,17 +39,17 @@ class ConfigGeneratorParserConfig(SubParserConfig):
 
 
 class ConfigGeneratorRunner(HierarchicalConfigGenerator):
-    def __init__(self, kompos_config, cluster_config_path):
+    def __init__(self, kompos_config, config_path):
         super(ConfigGeneratorRunner, self).__init__()
         self.kompos_config = kompos_config
-        self.cluster_config_path = cluster_config_path
+        self.config_path = config_path
         logging.basicConfig(level=logging.INFO)
 
     def run(self, args, extra_args):
-        if not os.path.isdir(self.cluster_config_path):
+        if not os.path.isdir(self.config_path):
             raise Exception("Provide a valid composition directory path.")
 
-        config_path = os.path.join(self.cluster_config_path, "")
+        config_path = os.path.join(self.config_path, "")
 
         compositions = discover_compositions(config_path)
 
@@ -66,7 +66,7 @@ class ConfigGeneratorRunner(HierarchicalConfigGenerator):
             excluded = excluded + args.exclude
 
         self.generate_config(
-            config_path=self.cluster_config_path,
+            config_path=self.config_path,
             filters=filtered,
             exclude_keys=excluded,
             enclosing_key=args.enclosing_key,

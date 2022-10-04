@@ -71,9 +71,8 @@ class AppContainer(Container):
         self.console_args = cache(instance(args))
         self.console_extra_args = cache(instance(extra_args))
         self.command = lambda c: self.console_args.command
-        self.cluster_config_path = cache(
-            lambda c: get_cluster_config_path(
-                c.root_dir, c.console_args))
+        self.config_path = cache(
+            lambda c: get_config_path(c.root_dir, c.console_args))
         self.root_dir = cache(lambda c: get_root_dir(c.console_args))
         self.package_dir = lambda c: os.path.dirname(__file__)
 
@@ -96,12 +95,12 @@ def run(args=None):
     sys.exit(app_container.run())
 
 
-def get_cluster_config_path(root_dir, console_args):
+def get_config_path(root_dir, console_args):
     """ Return config path + root_dir if path is relative """
 
-    if os.path.isabs(console_args.cluster_config_path):
-        return console_args.cluster_config_path
-    return os.path.join(root_dir, console_args.cluster_config_path)
+    if os.path.isabs(console_args.config_path):
+        return console_args.config_path
+    return os.path.join(root_dir, console_args.config_path)
 
 
 def get_root_dir(args):

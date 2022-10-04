@@ -37,7 +37,7 @@ class HelmfileParserConfig(SubParserConfig):
             '--helmfile-path',
             type=str,
             default=None,
-            help='Dir to where helmfile.yaml is located')
+            help='Dir where helmfile.yaml is located')
         return parser
 
     def get_epilog(self):
@@ -53,37 +53,33 @@ class HelmfileParserConfig(SubParserConfig):
 
 
 class HelmfileRunner(HierarchicalConfigGenerator):
-    def __init__(self, kompos_config, cluster_config_path, execute):
+    def __init__(self, kompos_config, config_path, execute):
         super(HelmfileRunner, self).__init__()
         logging.basicConfig(level=logging.INFO)
         self.kompos_config = kompos_config
-        self.cluster_config_path = cluster_config_path
+        self.config_path = config_path
         self.execute = execute
 
     def run(self, args, extra_args):
-        if not os.path.isdir(self.cluster_config_path):
+        if not os.path.isdir(self.config_path):
             raise Exception("Provide a valid composition directory path.")
 
         composition_order = self.kompos_config.helmfile_composition_order()
-        compositions = get_compositions(self.cluster_config_path, composition_order, path_type="composition",
+        compositions = get_compositions(self.config_path, composition_order, path_type="composition",
                                         composition_type="helmfile", reverse=False)
 
         # We're assuming local path by default.
-        helmfile_path = os.path.join(
+        path = os.path.join(
             self.kompos_config.helmfile_local_path(),
             self.kompos_config.helmfile_root_path(),
         )
-
-        # Overwrite if CLI flag is set.
-        if args.helmfile_path:
-            helmfile_path = args.helmfile_path
 
         # Overwrite if nix is enabled.
         if is_nix_enabled(args, self.kompos_config.nix()):
             pname = self.kompos_config.helmfile_repo_name()
 
             raw_config = self.generate_config(
-                config_path=get_config_path(self.cluster_config_path, HELMFILE_COMPOSITION_NAME),
+                config_path=get_config_path(self.config_path, HELMFILE_COMPOSITION_NAME),
                 filters=self.kompos_config.filtered_output_keys(HELMFILE_COMPOSITION_NAME),
                 exclude_keys=self.kompos_config.excluded_config_keys(HELMFILE_COMPOSITION_NAME)
             )
@@ -99,30 +95,45 @@ class HelmfileRunner(HierarchicalConfigGenerator):
             # the generated config, so as a workaround we're using a temporary directory
             # with the contents of the derivation so helmfile can create the config file.
 
-            helmfile_path = os.path.join(
+            path = os.path.join(
                 writeable_nix_out_path(pname),
                 self.kompos_config.helmfile_root_path()
             )
 
         self.setup_kube_config(
             self.generate_helmfile_config(
-                get_config_path(self.cluster_config_path, compositions[0]), helmfile_path
+                get_config_path(self.config_path, compositions[0]), path
             )
         )
 
-        return_code = self.execute(
-            self.run_helmfile(helmfile_path, extra_args)
-        )
+        return self.run_compositions(args, extra_args, compositions)
 
-        return return_code
+    def run_compositions(self, args, extra_args, compositions):
+        for composition in compositions:
+            composition_path = self.config_path + "/helmfile=" + composition
+
+            # Run helmfile
+            return_code = self.execute(
+                self.run_helmfile(composition_path, extra_args)
+            )
+
+            if return_code != 0:
+                logger.error(
+                    "Command finished with nonzero exit code for composition '%s'."
+                    "Will skip remaining compositions.", composition
+                )
+                return return_code
+
+            return return_code
 
     def setup_kube_config(self, data):
         if data['helm']['global']['cluster']['type'] == 'k8s':
             if all(k in data['helm']['global']['cluster']['kubeconfig'] for k in ("path", "context")):
                 if os.path.isfile(data['helm']['global']['cluster']['kubeconfig']['path']):
-                    logger.info('Using kubecofig file: %s', data['helm']['global']['cluster']['kubeconfig']['path'])
+                    logger.info('Using kubeconfig file: %s', data['helm']['global']['cluster']['kubeconfig']['path'])
                 else:
-                    logger.warning('kubeconfig file not found: %s', data['helm']['global']['cluster']['kubeconfig']['path'])
+                    logger.warning('kubeconfig file not found: %s',
+                                   data['helm']['global']['cluster']['kubeconfig']['path'])
                     sys.exit(1)
 
                 kubeconfig_abs_path = os.path.abspath(data['helm']['global']['cluster']['kubeconfig']['path'])

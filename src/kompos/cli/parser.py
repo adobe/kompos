@@ -26,11 +26,11 @@ class RootParser:
 
     def _get_parser(self):
         parser = argparse.ArgumentParser(
-            description='Run commands against a cluster definition', prog='kompos')
+            description='Run commands against a definition', prog='kompos')
         parser.add_argument(
-            'cluster_config_path',
+            'config_path',
             type=str,
-            help='The cluster config path cluster.yaml')
+            help='The config path from where to run compositions or generate a flat config file.')
         parser.add_argument('--root-dir', type=str, help='The root of the resource tree - '
                                                          'it can be an absolute path or relative to the current dir')
         parser.add_argument('--verbose', '-v', action='count',
