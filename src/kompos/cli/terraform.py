@@ -200,7 +200,7 @@ class TerraformRunner:
 
         return self.run_compositions(args, extra_args, compositions)
 
-    def get_composition_path(self, nix, cloud_type, raw_config):
+    def get_composition_path(self, args, cloud_type, raw_config):
         # Use the default local repo (not versioned).
         path = os.path.join(
             self.kompos_config.terraform_local_path(),
@@ -209,7 +209,7 @@ class TerraformRunner:
         )
 
         # Overwrite with the nix output, if the nix integration is enabled.
-        if nix:
+        if is_nix_enabled(args, self.kompos_config.nix()):
             pname = self.kompos_config.terraform_repo_name()
 
             nix_install(
@@ -232,7 +232,6 @@ class TerraformRunner:
         return path
 
     def run_compositions(self, args, extra_args, compositions):
-        nix = is_nix_enabled(args, self.kompos_config.nix())
 
         for composition in compositions:
             composition_path = self.config_path + "/terraform=" + composition
@@ -244,8 +243,7 @@ class TerraformRunner:
             raw_config = pre_config_generator.pre_generate_config(composition_path, composition)
             cloud_type = raw_config["cloud"]["type"]
 
-            # Generate output paths for configs
-            tf_cloud_comp_path = self.get_composition_path(nix, cloud_type, raw_config)
+            tf_composition_source = self.get_composition_path(args, cloud_type, raw_config)
 
             parser = ConfigRunner.get_parser(argparse.ArgumentParser())
             if args.himl_args:
@@ -254,15 +252,14 @@ class TerraformRunner:
             else:
                 himl_args = parser.parse_args([])
 
-            tf_config_generator = TerraformConfigGenerator(excluded_config_keys, filtered_output_keys)
-
             # Generate configs
-            tf_config_generator.generate_files(himl_args, composition_path, tf_cloud_comp_path, composition,
+            tf_config_generator = TerraformConfigGenerator(excluded_config_keys, filtered_output_keys)
+            tf_config_generator.generate_files(himl_args, composition_path, tf_composition_source, composition,
                                                raw_config)
 
             # Run terraform
             return_code = self.execute(
-                self.run_terraform(args, extra_args, tf_cloud_comp_path, composition)
+                self.run_terraform(args, extra_args, tf_composition_source, composition)
             )
 
             if return_code != 0:

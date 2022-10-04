@@ -15,7 +15,8 @@ import sys
 from kubeconfig import KubeConfig
 
 from kompos.cli.parser import SubParserConfig
-from kompos.hierarchical.composition_helper import get_config_path, get_compositions
+from kompos.hierarchical.composition_helper import get_config_path, get_compositions, PreConfigGenerator, \
+    get_composition_path
 from kompos.hierarchical.config_generator import HierarchicalConfigGenerator
 from kompos.komposconfig import HELMFILE_CONFIG_FILENAME, get_value_or
 from kompos.nix import nix_install, writeable_nix_out_path, is_nix_enabled
@@ -68,6 +69,9 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         compositions = get_compositions(self.config_path, composition_order, path_type="composition",
                                         composition_type="helmfile", reverse=False)
 
+        return self.run_compositions(args, extra_args, compositions)
+
+    def get_composition_path(self, args, raw_config):
         # We're assuming local path by default.
         path = os.path.join(
             self.kompos_config.helmfile_local_path(),
@@ -77,12 +81,6 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         # Overwrite if nix is enabled.
         if is_nix_enabled(args, self.kompos_config.nix()):
             pname = self.kompos_config.helmfile_repo_name()
-
-            raw_config = self.generate_config(
-                config_path=get_config_path(self.config_path, HELMFILE_COMPOSITION_NAME),
-                filters=self.kompos_config.filtered_output_keys(HELMFILE_COMPOSITION_NAME),
-                exclude_keys=self.kompos_config.excluded_config_keys(HELMFILE_COMPOSITION_NAME)
-            )
 
             nix_install(
                 pname,
@@ -100,17 +98,25 @@ class HelmfileRunner(HierarchicalConfigGenerator):
                 self.kompos_config.helmfile_root_path()
             )
 
-        self.setup_kube_config(
-            self.generate_helmfile_config(
-                get_config_path(self.config_path, compositions[0]), path
-            )
-        )
-
-        return self.run_compositions(args, extra_args, compositions)
+        return path
 
     def run_compositions(self, args, extra_args, compositions):
+
         for composition in compositions:
             composition_path = self.config_path + "/helmfile=" + composition
+            logger.info("Running composition: %s", composition)
+
+            filtered_output_keys = self.kompos_config.filtered_output_keys(composition)
+            excluded_config_keys = self.kompos_config.excluded_config_keys(composition)
+            pre_config_generator = PreConfigGenerator(excluded_config_keys, filtered_output_keys)
+            raw_config = pre_config_generator.pre_generate_config(composition_path, composition)
+
+            # Generate output paths for configs
+            hf_composition_source = self.get_composition_path(args, raw_config)
+
+            # Generate configs
+            self.generate_helmfile_config(composition_path, hf_composition_source, composition, raw_config)
+            self.setup_kube_config(raw_config)
 
             # Run helmfile
             return_code = self.execute(
@@ -175,14 +181,17 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
             return tmp_file.name
 
-    def generate_helmfile_config(self, path, helmfile_path):
-        output_file = os.path.join(helmfile_path, HELMFILE_CONFIG_FILENAME)
+    def generate_helmfile_config(self, composition_path, composition_source_path, composition, raw_config):
+        config_path = get_config_path(composition_path, composition)
+        composition_path = get_composition_path(composition_source_path, composition, raw_config)
+        output_file = os.path.join(composition_path, HELMFILE_CONFIG_FILENAME)
+
         logger.info('Generating helmfiles config %s', output_file)
 
         filtered_keys = self.kompos_config.filtered_output_keys(HELMFILE_COMPOSITION_NAME)
         excluded_keys = self.kompos_config.excluded_config_keys(HELMFILE_COMPOSITION_NAME)
 
-        return self.generate_config(config_path=path,
+        return self.generate_config(config_path=config_path,
                                     filters=filtered_keys,
                                     exclude_keys=excluded_keys,
                                     output_format="yaml",

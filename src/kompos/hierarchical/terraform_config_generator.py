@@ -25,9 +25,9 @@ class TerraformConfigGenerator(HierarchicalConfigGenerator):
         self.excluded_config_keys = excluded_config_keys
         self.filtered_output_keys = filtered_output_keys
 
-    def generate_files(self, himl_args, config_path, composition_path, composition, raw_config):
+    def generate_files(self, himl_args, config_path, composition_source_path, composition, raw_config):
         config_path = get_config_path(config_path, composition)
-        composition_path = get_composition_path(composition_path, composition, raw_config)
+        composition_path = get_composition_path(composition_source_path, composition, raw_config)
 
         self.generate_provider_config(himl_args, config_path, composition_path)
         self.generate_variables_config(himl_args, config_path, composition_path)
