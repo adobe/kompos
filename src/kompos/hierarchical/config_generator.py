@@ -31,8 +31,12 @@ class HierarchicalConfigGenerator:
             skip_interpolation_resolving=False,
             skip_interpolation_validation=False,
             skip_secrets=False,
-            multi_line_string=False
+            multi_line_string=False,
+            type_strategies=[(list, ["append"]), (dict, ["merge"])],
+            fallback_strategies=["override"],
+            type_conflict_strategies=["override"]
     ):
+
         cmd = self.get_sh_command(
             config_path,
             filters,
@@ -45,7 +49,7 @@ class HierarchicalConfigGenerator:
             skip_interpolation_resolving,
             skip_interpolation_validation,
             skip_secrets,
-            multi_line_string
+            multi_line_string,
         )
 
         display(cmd, color="yellow")
@@ -62,7 +66,10 @@ class HierarchicalConfigGenerator:
             skip_interpolations=skip_interpolation_resolving,
             skip_interpolation_validation=skip_interpolation_validation,
             skip_secrets=skip_secrets,
-            multi_line_string=multi_line_string
+            multi_line_string=multi_line_string,
+            type_strategies=type_strategies,
+            fallback_strategies=fallback_strategies,
+            type_conflict_strategies=type_conflict_strategies
         )
 
     @staticmethod
@@ -78,7 +85,8 @@ class HierarchicalConfigGenerator:
             skip_interpolation_resolving=False,
             skip_interpolation_validation=False,
             skip_secrets=False,
-            multi_line_string=False
+            multi_line_string=False,
+
     ):
         command = "kompos {} config --format {}".format(
             config_path, output_format)
