@@ -38,18 +38,21 @@ def get_compositions(path, composition_order, path_type, composition_type, rever
 
     compositions = discover_compositions(path, path_type)
     compositions = sorted_compositions(compositions, composition_order, reverse)
-
     if not compositions:
         raise Exception(
-            "No terraform {} were detected in {}.".format(composition_type, path))
+            "No {} compositions were detected in {}.".format(composition_type, path))
 
     return compositions
 
 
 def discover_compositions(path, path_type="composition"):
-    # check single composition selected
     path_params = dict(split_path(x) for x in path.split('/'))
-    composition = path_params.get(path_type, None)
+    composition_type = path_params.get(path_type, None)
+    if not composition_type:
+        raise Exception("No composition type detected in path.")
+
+    # check if single composition selected
+    composition = path_params.get(composition_type, None)
     if composition:
         return [composition]
 
@@ -57,7 +60,7 @@ def discover_compositions(path, path_type="composition"):
     compositions = []
     subpaths = os.listdir(path)
     for subpath in subpaths:
-        if path_type + "=" in subpath:
+        if composition_type + "=" in subpath:
             composition = split_path(subpath)[1]
             compositions.append(composition)
 
