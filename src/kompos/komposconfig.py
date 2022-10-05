@@ -55,7 +55,7 @@ def get_value_or(dictionary, x_path, default=None):
         if isinstance(d, dict) else default, keys, dictionary)
 
 
-class KomposConfig():
+class KomposConfig:
     """
     Parses all the available configuration files in order and merges them together.
     """
@@ -150,54 +150,41 @@ class KomposConfig():
     def excluded_config_keys(self, composition, default=[]):
         return get_value_or(self.config, "compositions/config_keys/excluded/{}".format(composition), default)
 
-
     def filtered_output_keys(self, composition, default=[]):
         return get_value_or(self.config, "compositions/config_keys/filtered/{}".format(composition), default)
-
 
     def terraform_composition_order(self, default=[]):
         return self.composition_order("terraform")
 
-
     def helmfile_composition_order(self, default=[]):
         return self.composition_order("helmfile")
-
 
     def composition_order(self, composition, default=[]):
         return get_value_or(self.config, "compositions/order/{}".format(composition), default)
 
-
     def terraform_version(self):
         return get_value_or(self.config, "terraform/version", 'latest')
-
 
     def terraform_repo_url(self):
         return self.config['terraform']['repo']['url']
 
-
     def terraform_repo_name(self):
         return self.config['terraform']['repo']['name']
-
 
     def terraform_root_path(self):
         return self.config['terraform']['root_path']
 
-
     def terraform_local_path(self):
         return os.path.expanduser(self.config['terraform']['local_path'])
-
 
     def helmfile_repo_url(self):
         return self.config['helmfile']['repo']['url']
 
-
     def helmfile_repo_name(self):
         return self.config['helmfile']['repo']['name']
 
-
     def helmfile_root_path(self):
         return self.config['helmfile']['root_path']
-
 
     def helmfile_local_path(self):
         return os.path.expanduser(self.config['helmfile']['local_path'])

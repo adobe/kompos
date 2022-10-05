@@ -11,12 +11,11 @@
 from subprocess import call
 from termcolor import colored
 
+__version__ = "0.3.6-local"
+
 
 def display(msg, color):
     print(colored(msg, color))
-
-
-__version__ = "0.3.6"
 
 
 class Executor:
