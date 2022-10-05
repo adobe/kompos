@@ -234,8 +234,12 @@ class TerraformRunner:
     def run_compositions(self, args, extra_args, compositions):
 
         for composition in compositions:
-            composition_path = self.config_path + "/terraform=" + composition
             logger.info("Running composition: %s", composition)
+
+            # Check if composition has a complete path
+            composition_path = self.config_path
+            if composition not in self.config_path:
+                composition_path = self.config_path + "/terraform=" + composition
 
             filtered_output_keys = self.kompos_config.filtered_output_keys(composition)
             excluded_config_keys = self.kompos_config.excluded_config_keys(composition)
