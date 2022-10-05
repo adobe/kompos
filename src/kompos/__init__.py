@@ -11,7 +11,7 @@
 from subprocess import call
 from termcolor import colored
 
-__version__ = "0.3.6-local"
+__version__ = "0.3.7-local"
 
 
 def display(msg, color):
