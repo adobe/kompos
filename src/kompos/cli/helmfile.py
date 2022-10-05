@@ -120,7 +120,7 @@ class HelmfileRunner(HierarchicalConfigGenerator):
 
             # Run helmfile
             return_code = self.execute(
-                self.run_helmfile(composition_path, extra_args)
+                self.run_helmfile(extra_args, hf_composition_source, composition)
             )
 
             if return_code != 0:
@@ -198,9 +198,10 @@ class HelmfileRunner(HierarchicalConfigGenerator):
                                     output_file=output_file,
                                     print_data=True)
 
-    def run_helmfile(self, helmfile_path, extra_args):
+    def run_helmfile(self, extra_args, helmfile_path, composition):
+        helmfile_composition_path = os.path.join(helmfile_path, composition)
         helmfile_args = ' '.join(extra_args)
         cmd = "cd {helmfile_path} && helmfile {helmfile_args}".format(
-            helmfile_path=helmfile_path, helmfile_args=helmfile_args)
+            helmfile_path=helmfile_composition_path, helmfile_args=helmfile_args)
 
         return dict(command=cmd)
