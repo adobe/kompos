@@ -15,10 +15,10 @@ import sys
 from simpledi import Container, auto, cache, instance, ListInstanceProvider
 
 from . import Executor
-from .cli.config import ConfigGeneratorParserConfig, ConfigGeneratorRunner
-from .cli.helmfile import HelmfileParserConfig, HelmfileRunner
+from .cli.config import ConfigRenderParserConfig, ConfigRenderRunner
+from .cli.helmfile import HelmfileParser, HelmfileRunner
 from .cli.parser import RootParser
-from .cli.terraform import TerraformParserConfig, TerraformRunner
+from .cli.terraform import TerraformParser, TerraformRunner
 from .komposconfig import KomposConfig
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ class AppContainer(Container):
         self.kompos_config = cache(auto(KomposConfig))
         self.terraform_runner = auto(TerraformRunner)
         self.helmfile_runner = auto(HelmfileRunner)
-        self.config_runner = auto(ConfigGeneratorRunner)
+        self.config_runner = auto(ConfigRenderRunner)
 
         # bind the command executor
         self.execute = auto(Executor)
@@ -56,9 +56,9 @@ class AppContainer(Container):
         self.root_parser = auto(RootParser)
 
         parsers = ListInstanceProvider()
-        parsers.add(auto(TerraformParserConfig))
-        parsers.add(auto(HelmfileParserConfig))
-        parsers.add(auto(ConfigGeneratorParserConfig))
+        parsers.add(auto(TerraformParser))
+        parsers.add(auto(HelmfileParser))
+        parsers.add(auto(ConfigRenderParserConfig))
         self.sub_parsers = parsers
 
     def configure(self):

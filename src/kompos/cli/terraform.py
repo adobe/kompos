@@ -43,7 +43,7 @@ SUBCMDS_WITH_VARS = [
 RUNNER_TYPE = "terraform"
 
 
-class TerraformParserConfig(SubParserConfig):
+class TerraformParser(SubParserConfig):
     def get_name(self):
         return RUNNER_TYPE
 

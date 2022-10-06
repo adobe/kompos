@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 RUNNER_TYPE = "helmfile"
 
 
-class HelmfileParserConfig(SubParserConfig):
+class HelmfileParser(SubParserConfig):
     def get_name(self):
         return RUNNER_TYPE
 
@@ -55,6 +55,7 @@ class HelmfileParserConfig(SubParserConfig):
 class HelmfileRunner(HierarchicalConfigGenerator):
     def __init__(self, kompos_config, config_path, execute):
         super(HelmfileRunner, self).__init__()
+
         logging.basicConfig(level=logging.INFO)
 
         self.kompos_config = kompos_config
@@ -166,7 +167,8 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         excluded_keys = self.kompos_config.excluded_config_keys(composition)
 
         if himl_args.exclude:
-            excluded = self.kompos_config.excluded_config_keys(composition) + himl_args.exclude
+            filtered_keys = self.kompos_config.filtered_output_keys(composition) + himl_args.filter
+            excluded_keys = self.kompos_config.excluded_config_keys(composition) + himl_args.exclude
 
         return self.generate_config(config_path=config_path,
                                     filters=filtered_keys,
