@@ -34,11 +34,8 @@ class HelmfileParserConfig(SubParserConfig):
         return 'Wrap common helmfile tasks using hierarchical configuration support'
 
     def configure(self, parser):
-        parser.add_argument(
-            '--helmfile-path',
-            type=str,
-            default=None,
-            help='Dir where helmfile.yaml is located')
+        parser.add_argument('subcommand', help='One of the helmfile commands', type=str)
+
         return parser
 
     def get_epilog(self):
@@ -68,7 +65,8 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         # Stop processing if an incompatible version is detected.
         validate_runner_version(self.kompos_config, RUNNER_TYPE)
 
-        logger.info("Found extra_args %s", extra_args)
+        if len(extra_args) > 1:
+            logger.info("Found extra_args %s", extra_args)
 
         reverse = ("delete" == args.subcommand)
         detected_type, compositions = get_compositions(self.kompos_config, self.config_path,
@@ -97,7 +95,7 @@ class HelmfileRunner(HierarchicalConfigGenerator):
             self.setup_kube_config(raw_config)
 
             # Run helmfile
-            return_code = self.execute(self.run_helmfile(extra_args, config_destination, composition))
+            return_code = self.execute(self.run_helmfile(args, extra_args, config_destination, composition))
 
             if return_code != 0:
                 logger.error(
@@ -167,6 +165,9 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         filtered_keys = self.kompos_config.filtered_output_keys(composition)
         excluded_keys = self.kompos_config.excluded_config_keys(composition)
 
+        if himl_args.exclude:
+            excluded = self.kompos_config.excluded_config_keys(composition) + himl_args.exclude
+
         return self.generate_config(config_path=config_path,
                                     filters=filtered_keys,
                                     exclude_keys=excluded_keys,
@@ -175,10 +176,12 @@ class HelmfileRunner(HierarchicalConfigGenerator):
                                     print_data=True)
 
     @staticmethod
-    def run_helmfile(extra_args, helmfile_path, composition):
+    def run_helmfile(args, extra_args, helmfile_path, composition):
         helmfile_composition_path = os.path.join(helmfile_path, composition)
-        helmfile_args = ' '.join(extra_args)
-        cmd = "cd {helmfile_path} && helmfile {helmfile_args}".format(
-            helmfile_path=helmfile_composition_path, helmfile_args=helmfile_args)
+
+        cmd = "cd {helmfile_path} && helmfile {subcommand} {extra_args}".format(
+            helmfile_path=helmfile_composition_path,
+            subcommand=args.subcommand,
+            extra_args=' '.join(extra_args),)
 
         return dict(command=cmd)

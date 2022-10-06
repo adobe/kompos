@@ -46,16 +46,16 @@ class RootParser:
             help='Disable nix integration for remote resources'
         )
         parser.add_argument(
-            '--skip-custom-composition',
-            action='store_true',
-            help='Skip custom compositions'
-        )
-        parser.add_argument(
             '--version',
             action='version',
             version='%(prog)s v{version}'.format(version=__version__)
         )
-
+        parser.add_argument('--himl',
+                            action='store',
+                            dest='himl_args',
+                            default=None,
+                            help='for passing arguments to himl'
+                                 '--himl="--arg1 --arg2" any himl argument is supported wrapped in quotes')
         subparsers = parser.add_subparsers(dest='command')
 
         for subparser_conf in self.sub_parsers:

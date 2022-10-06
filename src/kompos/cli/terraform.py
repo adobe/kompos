@@ -11,11 +11,10 @@
 import logging
 import os
 
+from kompos.cli.parser import SubParserConfig
 from kompos.helpers.composition_helper import get_compositions, get_config_path, \
     get_composition_path, get_raw_config, get_himl_args, get_output_path
 from kompos.helpers.himl_helper import HierarchicalConfigGenerator
-
-from kompos.cli.parser import SubParserConfig
 from kompos.helpers.runner_helper import validate_runner_version
 from kompos.komposconfig import (
     TERRAFORM_CONFIG_FILENAME,
@@ -53,69 +52,6 @@ class TerraformParserConfig(SubParserConfig):
 
     def configure(self, parser):
         parser.add_argument('subcommand', help='One of the terraform commands', type=str)
-        parser.add_argument('--var',
-                            help='the output var to show',
-                            type=str,
-                            default='')
-        parser.add_argument('--module',
-                            help='for use with "taint", "untaint" and "import". '
-                                 'The module to use. e.g.: vpc', type=str)
-        parser.add_argument('--resource',
-                            help='for use with "taint", "untaint" and "import".'
-                                 'The resource to target. e.g.: aws_instance.nat',
-                            type=str)
-        parser.add_argument('--name',
-                            help='for use with "import". The name or ID of the imported resource. '
-                                 'e.g.: i-abcd1234',
-                            type=str)
-        parser.add_argument('--plan', help='for use with "show", '
-                                           'show the plan instead of the statefile',
-                            action='store_true')
-        parser.add_argument('--state-location', help='control how the remote states are used',
-                            choices=['local', 'remote', 'any'], default='any', type=str)
-        parser.add_argument('--force-copy',
-                            help='for use with "plan" to do force state change '
-                                 'automatically during init phase',
-                            action='store_true')
-        parser.add_argument('--template-location',
-                            help='for use with "template". The folder where to save the tf files, '
-                                 'without showing',
-                            type=str)
-        parser.add_argument('--skip-refresh', help='for use with "plan". Skip refresh of statefile',
-                            action='store_false', dest='do_refresh')
-        parser.set_defaults(do_refresh=True)
-        parser.add_argument('--raw-output',
-                            help='for use with "plan". Show raw plan output without piping through '
-                                 'terraform landscape - https://github.com/coinbase/terraform-landscape '
-                                 '(if terraform landscape is not enabled in komposconfig.yaml '
-                                 'this will have no impact)', action='store_true',
-                            dest='raw_plan_output')
-        parser.set_defaults(raw_plan_output=False)
-        parser.add_argument('--path-name',
-                            help='in case multiple terraform paths are defined, '
-                                 'this allows to specify which one to use when running terraform',
-                            type=str)
-        parser.add_argument('--terraform-path',
-                            type=str,
-                            default=None,
-                            help='Path to terraform files')
-        parser.add_argument('--skip-plan',
-                            help='for use with "apply"; runs terraform apply without running a plan first',
-                            action='store_true')
-        parser.add_argument('--auto-approve',
-                            help='for use with "apply". Proceeds with the apply without'
-                                 'waiting for user confirmation.',
-                            action='store_true')
-        parser.add_argument('--himl',
-                            action='store',
-                            dest='himl_args',
-                            default=None,
-                            help='for passing arguments to himl'
-                                 '--himl="--arg1 --arg2" any himl argument is supported wrapped in quotes')
-        parser.add_argument('terraform_args',
-                            type=str,
-                            nargs='*',
-                            help='Extra terraform args')
 
         return parser
 
@@ -142,7 +78,8 @@ class TerraformRunner(HierarchicalConfigGenerator):
         # Stop processing if an incompatible version is detected.
         validate_runner_version(self.kompos_config, RUNNER_TYPE)
 
-        logger.info("Found extra_args %s", extra_args)
+        if len(extra_args) > 1:
+            logger.info("Found extra_args %s", extra_args)
 
         reverse = ("destroy" == args.subcommand)
         detected_type, compositions = get_compositions(self.kompos_config, self.config_path,
@@ -181,26 +118,6 @@ class TerraformRunner(HierarchicalConfigGenerator):
                 return return_code
 
         return 0
-
-    @staticmethod
-    def run_terraform(args, extra_args, terraform_path, composition):
-        terraform_composition_path = os.path.join(terraform_path, composition)
-
-        var_file = '-var-file="{}"'.format(TERRAFORM_CONFIG_FILENAME) if args.subcommand in SUBCMDS_WITH_VARS else ''
-        terraform_env_config = 'export TF_PLUGIN_CACHE_DIR="{}"'.format(local_config_dir())
-
-        cmd = "cd {terraform_path} && " \
-              "{remove_local_cache} " \
-              "{env_config} ; terraform init && terraform {subcommand} {var_file} {tf_args} {extra_args}".format(
-            terraform_path=terraform_composition_path,
-            remove_local_cache=remove_local_cache_cmd(args.subcommand),
-            subcommand=args.subcommand,
-            extra_args=' '.join(extra_args),
-            tf_args=' '.join(args.terraform_args),
-            var_file=var_file,
-            env_config=terraform_env_config)
-
-        return dict(command=cmd)
 
     def generate_terraform_configs(self, himl_args, config_path, config_destination, composition):
         config_path = get_config_path(config_path, composition)
@@ -250,6 +167,26 @@ class TerraformRunner(HierarchicalConfigGenerator):
             skip_interpolation_validation=himl_args.skip_interpolation_validation,
             skip_secrets=himl_args.skip_secrets
         )
+
+    @staticmethod
+    def run_terraform(args, extra_args, terraform_path, composition):
+        terraform_composition_path = os.path.join(terraform_path, composition)
+
+        var_file = '-var-file="{}"'.format(TERRAFORM_CONFIG_FILENAME) if args.subcommand in SUBCMDS_WITH_VARS else ''
+        terraform_env_config = 'export TF_PLUGIN_CACHE_DIR="{}"'.format(local_config_dir())
+
+        cmd = "cd {terraform_path} && " \
+              "{remove_local_cache} " \
+              "{env_config} ; terraform init && terraform {subcommand} {var_file} {tf_args} {extra_args}".format(
+                terraform_path=terraform_composition_path,
+                remove_local_cache=remove_local_cache_cmd(args.subcommand),
+                subcommand=args.subcommand,
+                extra_args=' '.join(extra_args),
+                tf_args=' '.join(args.terraform_args),
+                var_file=var_file,
+                env_config=terraform_env_config)
+
+        return dict(command=cmd)
 
 
 def remove_local_cache_cmd(subcommand):

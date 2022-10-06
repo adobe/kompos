@@ -3,7 +3,6 @@ from subprocess import Popen, PIPE
 
 
 def validate_runner_version(kompos_config, runner):
-    expected_version = kompos_config.runner_version(runner)
     """
     Check if runner binary version is compatible with the
     version specified by the kompos configuration.
@@ -18,10 +17,9 @@ def validate_runner_version(kompos_config, runner):
                           "please ensure terraform is in your PATH".format(runner))
         exit(1)
 
+    expected_version = kompos_config.runner_version(runner)
     current_version, execution_error = execution.communicate()
-
     current_version = current_version.decode('utf-8').split('\n', 1)[0]
-    print(current_version)
 
     if expected_version not in current_version:
         raise Exception("Runner [{}] should be {}, but you have {}. Please change your version.".format(
