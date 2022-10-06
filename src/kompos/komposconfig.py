@@ -155,8 +155,8 @@ class KomposConfig:
     def composition_order(self, composition, default=[]):
         return get_value_or(self.config, "compositions/order/{}".format(composition), default)
 
-    def terraform_version(self):
-        return get_value_or(self.config, "terraform/version", 'latest')
+    def runner_version(self, runner):
+        return get_value_or(self.config, "{}/version".format(runner), 'latest')
 
     def repo_url(self, runner):
         return self.config[runner]['repo']['url']

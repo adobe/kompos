@@ -10,12 +10,13 @@
 
 import logging
 import os
-from subprocess import Popen, PIPE
+
+from kompos.helpers.composition_helper import get_compositions, get_config_path, \
+    get_composition_path, get_raw_config, get_himl_args, get_output_path
+from kompos.helpers.himl_helper import HierarchicalConfigGenerator
 
 from kompos.cli.parser import SubParserConfig
-from kompos.hierarchical.composition_helper import get_compositions, get_config_path, \
-    get_composition_path, get_raw_config, get_himl_args, get_output_path
-from kompos.hierarchical.himl_helper import HierarchicalConfigGenerator
+from kompos.helpers.runner_helper import validate_runner_version
 from kompos.komposconfig import (
     TERRAFORM_CONFIG_FILENAME,
     local_config_dir, TERRAFORM_PROVIDER_FILENAME
@@ -120,55 +121,11 @@ class TerraformParserConfig(SubParserConfig):
 
     def get_epilog(self):
         return '''
-    Examples:
-        # Create/update a new cluster with Terraform
-        kompos clusters/qe1.yaml terraform plan
-        kompos clusters/qe1.yaml terraform apply
-
-        # Run Terraform apply without running a plan first
-        kompos clusters/qe1.yaml terraform apply --skip-plan
-
-        # Get rid of a cluster and all of its components
-        kompos clusters/qe1.yaml terraform destroy
-
-        # Retrieve all output from a previously created Terraform cluster
-        kompos clusters/qe1.yaml terraform output
-
-        # Retrieve a specific output from a previously created Terraform cluster
-        kompos clusters/qe1.yaml terraform output --var nat_public_ip
-
-        # Refresh a statefile (no longer part of plan)
-        kompos clusters/qe1.yaml terraform refresh
-
-        # Taint a resource- forces a destroy, then recreate on next plan/apply
-        kompos clusters/qe1.yaml terraform taint --module vpc --resource aws_instance.nat
-
-        # Untaint a resource
-        kompos clusters/qe1.yaml terraform untaint --module vpc --resource aws_instance.nat
-
-        # Show the statefile in human-readable form
-        kompos clusters/qe1.yaml terraform show
-
-        # Show the plan in human-readable form
-        kompos clusters/qe1.yaml terraform show --plan
-
-        # View parsed jinja on the terminal
-        kompos clusters/qe1.yaml terraform template
-
-        # Import an unmanaged existing resource to a statefile
-        kompos clusters/qe1.yaml terraform import --module vpc --resource aws_instance.nat --name i-abcd1234
-
-        # Use the Terraform Console on a cluster
-        kompos clusters/qe1.yaml terraform console
-
-        # Validate the syntax of Terraform files
-        kompos clusters/qe1.yaml terraform validate
-
-        # Specify which terraform path to use
-        kompos clusters/qe1.yaml terraform plan --path-name terraformFolder1
-
-        # Run terraform integration
-        kompos data/env=dev/region=va6/project=ee/cluster=experiments terraform plan
+        Examples:
+            # Run helmfile sync
+            kompos data/env=dev/region=va6/project=ee/cluster=experiments/composition=terraform terraform plan 
+            # Run helmfile sync on a single composition
+            kompos data/env=dev/region=va6/project=ee/cluster=experiments/composition=terraform/terraform=myterraformcomposition terraform plan
         '''
 
 
@@ -183,7 +140,8 @@ class TerraformRunner(HierarchicalConfigGenerator):
 
     def run(self, args, extra_args):
         # Stop processing if an incompatible version is detected.
-        validate_terraform_version(self.kompos_config.terraform_version())
+        validate_runner_version(self.kompos_config, RUNNER_TYPE)
+
         logger.info("Found extra_args %s", extra_args)
 
         reverse = ("destroy" == args.subcommand)
@@ -199,7 +157,7 @@ class TerraformRunner(HierarchicalConfigGenerator):
             # Check if composition has a complete path
             composition_path = self.config_path
             if composition not in composition_path:
-                composition_path = self.config_path + "/terraform=" + composition
+                composition_path = self.config_path + "/{}=".format(RUNNER_TYPE) + composition
 
             raw_config = get_raw_config(composition_path, composition,
                                         self.kompos_config.excluded_config_keys(composition),
@@ -213,9 +171,7 @@ class TerraformRunner(HierarchicalConfigGenerator):
             self.generate_terraform_configs(get_himl_args(args), composition_path, config_destination, composition)
 
             # Run terraform
-            return_code = self.execute(
-                self.run_terraform(args, extra_args, config_destination, composition)
-            )
+            return_code = self.execute(self.run_terraform(args, extra_args, config_destination, composition))
 
             if return_code != 0:
                 logger.error(
@@ -301,33 +257,3 @@ def remove_local_cache_cmd(subcommand):
         return 'rm -rf .terraform &&'
 
     return ''
-
-
-def validate_terraform_version(expected_version):
-    """
-    Check if the terraform binary version is compatible with the
-    version specified by the kompos configuration.
-    """
-    try:
-        execution = Popen(['terraform', '--version'],
-                          stdin=PIPE,
-                          stdout=PIPE,
-                          stderr=PIPE)
-    except Exception:
-        logging.exception("Terraform does not appear to be installed, "
-                          "please ensure terraform is in your PATH")
-        exit(1)
-
-    current_version, execution_error = execution.communicate()
-    current_version = current_version.decode('utf-8').replace(
-        'Terraform ', '').split('\n', 1)[0]
-
-    if expected_version == 'latest':
-        return current_version
-
-    if current_version != expected_version and execution.returncode == 0:
-        raise Exception("Terraform should be %s, but you have %s. Please change your version."
-                        % (expected_version, current_version)
-                        )
-
-    return current_version

@@ -15,9 +15,10 @@ import sys
 from kubeconfig import KubeConfig
 
 from kompos.cli.parser import SubParserConfig
-from kompos.hierarchical.composition_helper import get_config_path, get_compositions, get_composition_path, \
+from kompos.helpers.composition_helper import get_config_path, get_compositions, get_composition_path, \
     get_raw_config, get_himl_args, get_output_path
-from kompos.hierarchical.himl_helper import HierarchicalConfigGenerator
+from kompos.helpers.himl_helper import HierarchicalConfigGenerator
+from kompos.helpers.runner_helper import validate_runner_version
 from kompos.komposconfig import HELMFILE_CONFIG_FILENAME
 
 logger = logging.getLogger(__name__)
@@ -64,7 +65,9 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         self.execute = execute
 
     def run(self, args, extra_args):
-        # TODO validate helmfile version
+        # Stop processing if an incompatible version is detected.
+        validate_runner_version(self.kompos_config, RUNNER_TYPE)
+
         logger.info("Found extra_args %s", extra_args)
 
         reverse = ("delete" == args.subcommand)
@@ -75,8 +78,12 @@ class HelmfileRunner(HierarchicalConfigGenerator):
 
     def run_compositions(self, args, extra_args, compositions):
         for composition in compositions:
-            composition_path = self.config_path + "/helmfile=" + composition
             logger.info("Running composition: %s", composition)
+
+            # Check if composition has a complete path
+            composition_path = self.config_path
+            if composition not in composition_path:
+                composition_path = self.config_path + "/{}=".format(RUNNER_TYPE) + composition
 
             raw_config = get_raw_config(composition_path, composition,
                                         self.kompos_config.excluded_config_keys(composition),
@@ -90,9 +97,7 @@ class HelmfileRunner(HierarchicalConfigGenerator):
             self.setup_kube_config(raw_config)
 
             # Run helmfile
-            return_code = self.execute(
-                self.run_helmfile(extra_args, config_destination, composition)
-            )
+            return_code = self.execute(self.run_helmfile(extra_args, config_destination, composition))
 
             if return_code != 0:
                 logger.error(

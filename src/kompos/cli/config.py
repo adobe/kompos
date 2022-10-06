@@ -14,7 +14,7 @@ from himl import ConfigProcessor
 from himl.main import ConfigRunner
 
 from kompos.cli.parser import SubParserConfig
-from kompos.hierarchical.composition_helper import discover_compositions
+from kompos.helpers.composition_helper import discover_compositions
 
 logger = logging.getLogger(__name__)
 

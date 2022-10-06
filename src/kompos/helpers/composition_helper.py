@@ -13,7 +13,7 @@ import os
 
 from himl import ConfigRunner
 
-from kompos.hierarchical.himl_helper import HierarchicalConfigGenerator
+from kompos.helpers.himl_helper import HierarchicalConfigGenerator
 from kompos.komposconfig import get_value_or
 from kompos.nix import is_nix_enabled, nix_install, writeable_nix_out_path
 
