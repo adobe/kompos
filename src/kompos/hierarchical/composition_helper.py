@@ -14,10 +14,46 @@ import os
 from himl import ConfigRunner
 
 from kompos.hierarchical.himl_helper import HierarchicalConfigGenerator
+from kompos.komposconfig import get_value_or
+from kompos.nix import is_nix_enabled, nix_install, writeable_nix_out_path
 
 logger = logging.getLogger(__name__)
 
-composition_key = "composition"
+COMPOSITION_KEY = "composition"
+
+
+def get_output_path(args, raw_config, kompos_config, runner):
+    # Use the default local repo (not versioned).
+    path = os.path.join(
+        kompos_config.local_path(runner),
+        kompos_config.root_path(runner),
+    )
+
+    # Overwrite with the nix output, if the nix integration is enabled.
+    if is_nix_enabled(args, kompos_config.nix()):
+        pname = kompos_config.repo_name()
+
+        nix_install(
+            pname,
+            kompos_config.repo_url(runner),
+            get_value_or(raw_config, 'infrastructure/{}/version', 'master'.format(runner)),
+            get_value_or(raw_config, 'infrastructure/{}/sha256'.format(runner)),
+        )
+
+        # Nix store is read-only, and terraform doesn't work properly outside
+        # of the module directory, so as a workaround we're using a temporary directory
+        # with the contents of the derivation so terraform can create new files.
+        # See: https://github.com/hashicorp/terraform/issues/18030
+        # FIXME: Nix store is read-only, and helmfile configuration has a hardcoded path for
+        # the generated config, so as a workaround we're using a temporary directory
+        # with the contents of the derivation so helmfile can create the config file.
+
+        path = os.path.join(
+            writeable_nix_out_path(pname),
+            kompos_config.root_path(runner),
+        )
+
+    return path
 
 
 def get_himl_args(args):
@@ -42,7 +78,8 @@ def get_raw_config(config_path, composition, excluded_config_keys, filtered_outp
     )
 
 
-def get_compositions(path, composition_order, comp_type, reverse=False):
+def get_compositions(kompos_config, path, comp_type, reverse=False):
+    composition_order = kompos_config.composition_order(comp_type)
     logging.basicConfig(level=logging.INFO)
 
     detected_type, compositions = discover_compositions(path)
@@ -59,7 +96,7 @@ def get_compositions(path, composition_order, comp_type, reverse=False):
 
 def discover_compositions(path):
     path_params = dict(split_path(x) for x in path.split('/'))
-    composition_type = path_params.get(composition_key, None)
+    composition_type = path_params.get(COMPOSITION_KEY, None)
 
     if not composition_type:
         raise Exception("No composition detected in path.")
@@ -94,7 +131,7 @@ def split_path(value, separator='='):
 # Get hiera config path - source config leaf
 def get_config_path(path_prefix, composition):
     prefix = os.path.join(path_prefix, '')
-    if composition_key + "=" in path_prefix:
+    if COMPOSITION_KEY + "=" in path_prefix:
         return path_prefix
     else:
         return "{}composition={}".format(prefix, composition)

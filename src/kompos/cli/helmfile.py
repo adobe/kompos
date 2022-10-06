@@ -16,17 +16,18 @@ from kubeconfig import KubeConfig
 
 from kompos.cli.parser import SubParserConfig
 from kompos.hierarchical.composition_helper import get_config_path, get_compositions, get_composition_path, \
-    get_raw_config, get_himl_args
+    get_raw_config, get_himl_args, get_output_path
 from kompos.hierarchical.himl_helper import HierarchicalConfigGenerator
-from kompos.komposconfig import HELMFILE_CONFIG_FILENAME, get_value_or
-from kompos.nix import nix_install, writeable_nix_out_path, is_nix_enabled
+from kompos.komposconfig import HELMFILE_CONFIG_FILENAME
 
 logger = logging.getLogger(__name__)
+
+RUNNER_TYPE = "helmfile"
 
 
 class HelmfileParserConfig(SubParserConfig):
     def get_name(self):
-        return 'helmfile'
+        return RUNNER_TYPE
 
     def get_help(self):
         return 'Wrap common helmfile tasks using hierarchical configuration support'
@@ -43,11 +44,13 @@ class HelmfileParserConfig(SubParserConfig):
         return '''
         Examples:
             # Run helmfile sync
-            kompos data/env=dev/region=va6/project=ee/cluster=experiments/composition=helmfiles helmfile sync
+            kompos data/env=dev/region=va6/project=ee/cluster=experiments/composition=helmfile helmfile sync
+            # Run helmfile sync on a single composition
+            kompos data/env=dev/region=va6/project=ee/cluster=experiments/composition=helmfile/helmfile=myhelmcomposition helmfile sync
             # Run helmfile sync for a single chart
-            kompos data/env=dev/region=va6/project=ee/cluster=experiments/composition=helmfiles helmfile --selector chart=nginx-controller sync
+            kompos data/env=dev/region=va6/project=ee/cluster=experiments/composition=helmfile helmfile --selector chart=nginx-controller sync
             # Run helmfile sync with concurrency flag
-            kompos data/env=dev/region=va6/project=ee/cluster=experiments/composition=helmfiles helmfile --selector chart=nginx-controller sync --concurrency=1
+            kompos data/env=dev/region=va6/project=ee/cluster=experiments/composition=helmfile helmfile --selector chart=nginx-controller sync --concurrency=1
         '''
 
 
@@ -62,43 +65,13 @@ class HelmfileRunner(HierarchicalConfigGenerator):
 
     def run(self, args, extra_args):
         # TODO validate helmfile version
-        # logger.info("Found extra_args %s", extra_args)
+        logger.info("Found extra_args %s", extra_args)
 
         reverse = ("delete" == args.subcommand)
-        composition_order = self.kompos_config.helmfile_composition_order()
-        detected_type, compositions = get_compositions(self.config_path, composition_order,
-                                                       comp_type="helmfile", reverse=reverse)
+        detected_type, compositions = get_compositions(self.kompos_config, self.config_path,
+                                                       comp_type=RUNNER_TYPE, reverse=reverse)
 
         return self.run_compositions(args, extra_args, compositions)
-
-    def get_composition_path(self, args, raw_config):
-        # We're assuming local path by default.
-        path = os.path.join(
-            self.kompos_config.helmfile_local_path(),
-            self.kompos_config.helmfile_root_path(),
-        )
-
-        # Overwrite if nix is enabled.
-        if is_nix_enabled(args, self.kompos_config.nix()):
-            pname = self.kompos_config.helmfile_repo_name()
-
-            nix_install(
-                pname,
-                self.kompos_config.helmfile_repo_url(),
-                get_value_or(raw_config, 'infrastructure/helmfile/version', 'master'),
-                get_value_or(raw_config, 'infrastructure/helmfile/sha256'),
-            )
-
-            # FIXME: Nix store is read-only, and helmfile configuration has a hardcoded path for
-            # the generated config, so as a workaround we're using a temporary directory
-            # with the contents of the derivation so helmfile can create the config file.
-
-            path = os.path.join(
-                writeable_nix_out_path(pname),
-                self.kompos_config.helmfile_root_path()
-            )
-
-        return path
 
     def run_compositions(self, args, extra_args, compositions):
         for composition in compositions:
@@ -110,11 +83,10 @@ class HelmfileRunner(HierarchicalConfigGenerator):
                                         self.kompos_config.filtered_output_keys(composition))
 
             # Generate output paths for configs
-            config_destination = self.get_composition_path(args, raw_config)
+            config_destination = get_output_path(args, raw_config, self.kompos_config, RUNNER_TYPE)
 
             # Generate configs
             self.generate_helmfile_config(get_himl_args(args), composition_path, config_destination, composition)
-
             self.setup_kube_config(raw_config)
 
             # Run helmfile

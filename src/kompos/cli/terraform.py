@@ -14,14 +14,12 @@ from subprocess import Popen, PIPE
 
 from kompos.cli.parser import SubParserConfig
 from kompos.hierarchical.composition_helper import get_compositions, get_config_path, \
-    get_composition_path, get_raw_config, get_himl_args
+    get_composition_path, get_raw_config, get_himl_args, get_output_path
 from kompos.hierarchical.himl_helper import HierarchicalConfigGenerator
 from kompos.komposconfig import (
     TERRAFORM_CONFIG_FILENAME,
-    get_value_or,
     local_config_dir, TERRAFORM_PROVIDER_FILENAME
 )
-from kompos.nix import nix_install, writeable_nix_out_path, is_nix_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -42,21 +40,22 @@ SUBCMDS_WITH_VARS = [
     'import'
 ]
 
+RUNNER_TYPE = "terraform"
+
 
 class TerraformParserConfig(SubParserConfig):
     def get_name(self):
-        return 'terraform'
+        return RUNNER_TYPE
 
     def get_help(self):
         return 'Wrap common terraform tasks with full templated configuration support'
 
     def configure(self, parser):
         parser.add_argument('subcommand', help='One of the terraform commands', type=str)
-        parser.add_argument(
-            '--var',
-            help='the output var to show',
-            type=str,
-            default='')
+        parser.add_argument('--var',
+                            help='the output var to show',
+                            type=str,
+                            default='')
         parser.add_argument('--module',
                             help='for use with "taint", "untaint" and "import". '
                                  'The module to use. e.g.: vpc', type=str)
@@ -95,11 +94,10 @@ class TerraformParserConfig(SubParserConfig):
                             help='in case multiple terraform paths are defined, '
                                  'this allows to specify which one to use when running terraform',
                             type=str)
-        parser.add_argument(
-            '--terraform-path',
-            type=str,
-            default=None,
-            help='Path to terraform files')
+        parser.add_argument('--terraform-path',
+                            type=str,
+                            default=None,
+                            help='Path to terraform files')
         parser.add_argument('--skip-plan',
                             help='for use with "apply"; runs terraform apply without running a plan first',
                             action='store_true')
@@ -113,11 +111,10 @@ class TerraformParserConfig(SubParserConfig):
                             default=None,
                             help='for passing arguments to himl'
                                  '--himl="--arg1 --arg2" any himl argument is supported wrapped in quotes')
-        parser.add_argument(
-            'terraform_args',
-            type=str,
-            nargs='*',
-            help='Extra terraform args')
+        parser.add_argument('terraform_args',
+                            type=str,
+                            nargs='*',
+                            help='Extra terraform args')
 
         return parser
 
@@ -170,7 +167,7 @@ class TerraformParserConfig(SubParserConfig):
         # Specify which terraform path to use
         kompos clusters/qe1.yaml terraform plan --path-name terraformFolder1
 
-        # Run terraform v2 integration
+        # Run terraform integration
         kompos data/env=dev/region=va6/project=ee/cluster=experiments terraform plan
         '''
 
@@ -190,42 +187,10 @@ class TerraformRunner(HierarchicalConfigGenerator):
         logger.info("Found extra_args %s", extra_args)
 
         reverse = ("destroy" == args.subcommand)
-        composition_order = self.kompos_config.terraform_composition_order()
-        detected_type, compositions = get_compositions(self.config_path, composition_order,
-                                                       comp_type="terraform", reverse=reverse)
+        detected_type, compositions = get_compositions(self.kompos_config, self.config_path,
+                                                       comp_type=RUNNER_TYPE, reverse=reverse)
 
         return self.run_compositions(args, extra_args, compositions)
-
-    def get_composition_path(self, args, cloud_type, raw_config):
-        # Use the default local repo (not versioned).
-        path = os.path.join(
-            self.kompos_config.terraform_local_path(),
-            self.kompos_config.terraform_root_path(),
-            cloud_type,
-        )
-
-        # Overwrite with the nix output, if the nix integration is enabled.
-        if is_nix_enabled(args, self.kompos_config.nix()):
-            pname = self.kompos_config.terraform_repo_name()
-
-            nix_install(
-                pname,
-                self.kompos_config.terraform_repo_url(),
-                get_value_or(raw_config, 'infrastructure/terraform/version', 'master'),
-                get_value_or(raw_config, 'infrastructure/terraform/sha256'),
-            )
-
-            # Nix store is read-only, and terraform doesn't work properly outside
-            # of the module directory, so as a workaround we're using a temporary directory
-            # with the contents of the derivation so terraform can create new files.
-            # See: https://github.com/hashicorp/terraform/issues/18030
-            path = os.path.join(
-                writeable_nix_out_path(pname),
-                self.kompos_config.terraform_root_path(),
-                cloud_type,
-            )
-
-        return path
 
     def run_compositions(self, args, extra_args, compositions):
         for composition in compositions:
@@ -241,7 +206,8 @@ class TerraformRunner(HierarchicalConfigGenerator):
                                         self.kompos_config.filtered_output_keys(composition))
 
             # Generate output paths for configs
-            config_destination = self.get_composition_path(args, raw_config["cloud"]["type"], raw_config)
+            config_destination = os.path.join(get_output_path(args, raw_config, self.kompos_config, RUNNER_TYPE),
+                                              raw_config["cloud"]["type"])
 
             # Generate configs
             self.generate_terraform_configs(get_himl_args(args), composition_path, config_destination, composition)
