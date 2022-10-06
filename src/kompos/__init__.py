@@ -9,6 +9,7 @@
 # governing permissions and limitations under the License.
 
 from subprocess import call
+
 from termcolor import colored
 
 __version__ = "0.3.7-local"

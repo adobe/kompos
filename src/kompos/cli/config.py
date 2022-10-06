@@ -9,14 +9,12 @@
 # governing permissions and limitations under the License.
 
 import logging
-import os
 
 from himl import ConfigProcessor
 from himl.main import ConfigRunner
 
 from kompos.cli.parser import SubParserConfig
 from kompos.hierarchical.composition_helper import discover_compositions
-from kompos.hierarchical.himl_helper import HierarchicalConfigGenerator
 
 logger = logging.getLogger(__name__)
 

@@ -103,7 +103,7 @@ def git_drv_info(url, version):
         rev = ["--rev", version]
 
     ret = run_cmd(
-        ["nix-prefetch-git", "--no-deepClone", "--quiet", "--url", url,] + rev
+        ["nix-prefetch-git", "--no-deepClone", "--quiet", "--url", url, ] + rev
     )
 
     return json.loads(ret.stdout)
