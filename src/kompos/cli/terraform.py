@@ -8,20 +8,18 @@
 # OF ANY KIND, either express or implied. See the License for the specific language
 # governing permissions and limitations under the License.
 
-import argparse
 import logging
 import os
 from subprocess import Popen, PIPE
 
-from himl.main import ConfigRunner
-
 from kompos.cli.parser import SubParserConfig
-from kompos.hierarchical.composition_helper import PreConfigGenerator, discover_compositions, get_compositions
-from kompos.hierarchical.terraform_config_generator import TerraformConfigGenerator
+from kompos.hierarchical.composition_helper import get_compositions, get_config_path, \
+    get_composition_path, get_raw_config, get_himl_args
+from kompos.hierarchical.himl_helper import HierarchicalConfigGenerator
 from kompos.komposconfig import (
     TERRAFORM_CONFIG_FILENAME,
     get_value_or,
-    local_config_dir
+    local_config_dir, TERRAFORM_PROVIDER_FILENAME
 )
 from kompos.nix import nix_install, writeable_nix_out_path, is_nix_enabled
 
@@ -177,30 +175,28 @@ class TerraformParserConfig(SubParserConfig):
         '''
 
 
-class TerraformRunner:
-    def __init__(self, root_dir, cluster_config_path, kompos_config, execute):
-        self.cluster_config_path = cluster_config_path
-        self.root_dir = root_dir
+class TerraformRunner(HierarchicalConfigGenerator):
+    def __init__(self, config_path, kompos_config, execute):
+        super(TerraformRunner, self).__init__()
+        logging.basicConfig(level=logging.INFO)
+
         self.kompos_config = kompos_config
+        self.config_path = config_path
         self.execute = execute
 
     def run(self, args, extra_args):
-        if not os.path.isdir(self.cluster_config_path):
-            raise Exception("Provide a valid composition directory path.")
-
         # Stop processing if an incompatible version is detected.
         validate_terraform_version(self.kompos_config.terraform_version())
         logger.info("Found extra_args %s", extra_args)
 
         reverse = ("destroy" == args.subcommand)
-
         composition_order = self.kompos_config.terraform_composition_order()
-        compositions = get_compositions(self.cluster_config_path, composition_order, path_type="composition",
-                                        composition_type="terraform", reverse=reverse)
+        detected_type, compositions = get_compositions(self.config_path, composition_order,
+                                                       comp_type="terraform", reverse=reverse)
 
-        return self.run_compositions(args, extra_args, self.cluster_config_path, compositions)
+        return self.run_compositions(args, extra_args, compositions)
 
-    def get_composition_path(self, nix, cloud_type, raw_config, custom):
+    def get_composition_path(self, args, cloud_type, raw_config):
         # Use the default local repo (not versioned).
         path = os.path.join(
             self.kompos_config.terraform_local_path(),
@@ -209,7 +205,7 @@ class TerraformRunner:
         )
 
         # Overwrite with the nix output, if the nix integration is enabled.
-        if nix:
+        if is_nix_enabled(args, self.kompos_config.nix()):
             pname = self.kompos_config.terraform_repo_name()
 
             nix_install(
@@ -229,59 +225,30 @@ class TerraformRunner:
                 cloud_type,
             )
 
-        if custom:
-            path = os.path.join(
-                path, "custom")
-
         return path
 
-    def run_compositions(self, args, extra_args, config_path, compositions, custom=False):
-
-        nix = is_nix_enabled(args, self.kompos_config.nix())
-
+    def run_compositions(self, args, extra_args, compositions):
         for composition in compositions:
             logger.info("Running composition: %s", composition)
 
-            if composition == "custom" and args.skip_custom_composition:
-                logger.info("Custom compositions skipped")
-                break
-            elif composition == "custom" and not args.skip_custom_composition:
-                logger.info("Run custom compositions")
-                if "/composition=custom" not in self.cluster_config_path:
-                    custom_path = self.cluster_config_path + "/composition=custom"
-                else:
-                    custom_path = self.cluster_config_path
+            # Check if composition has a complete path
+            composition_path = self.config_path
+            if composition not in composition_path:
+                composition_path = self.config_path + "/terraform=" + composition
 
-                custom_compositions = discover_compositions(custom_path, path_type="type")
-                return_code = self.run_compositions(args, extra_args, custom_path, custom_compositions, custom=True)
-
-                break
-
-            filtered_output_keys = self.kompos_config.filtered_output_keys(composition)
-            excluded_config_keys = self.kompos_config.excluded_config_keys(composition)
-            pre_config_generator = PreConfigGenerator(excluded_config_keys, filtered_output_keys)
-            raw_config = pre_config_generator.pre_generate_config(config_path, composition)
-            cloud_type = raw_config["cloud"]["type"]
+            raw_config = get_raw_config(composition_path, composition,
+                                        self.kompos_config.excluded_config_keys(composition),
+                                        self.kompos_config.filtered_output_keys(composition))
 
             # Generate output paths for configs
-            terraform_composition_path = self.get_composition_path(nix, cloud_type, raw_config, custom=custom)
-
-            parser = ConfigRunner.get_parser(argparse.ArgumentParser())
-            if args.himl_args:
-                himl_args = parser.parse_args(args.himl_args.split())
-                logger.info("Extra himl arguments: %s", args.himl_args.split())
-            else:
-                himl_args = parser.parse_args([])
-
-            tf_config_generator = TerraformConfigGenerator(excluded_config_keys, filtered_output_keys)
+            config_destination = self.get_composition_path(args, raw_config["cloud"]["type"], raw_config)
 
             # Generate configs
-            tf_config_generator.generate_files(himl_args, config_path, terraform_composition_path, composition,
-                                               raw_config)
+            self.generate_terraform_configs(get_himl_args(args), composition_path, config_destination, composition)
 
             # Run terraform
             return_code = self.execute(
-                self.run_terraform(args, extra_args, terraform_composition_path, composition)
+                self.run_terraform(args, extra_args, config_destination, composition)
             )
 
             if return_code != 0:
@@ -291,9 +258,10 @@ class TerraformRunner:
                 )
                 return return_code
 
-        return return_code
+        return 0
 
-    def run_terraform(self, args, extra_args, terraform_path, composition):
+    @staticmethod
+    def run_terraform(args, extra_args, terraform_path, composition):
         terraform_composition_path = os.path.join(terraform_path, composition)
 
         var_file = '-var-file="{}"'.format(TERRAFORM_CONFIG_FILENAME) if args.subcommand in SUBCMDS_WITH_VARS else ''
@@ -311,6 +279,55 @@ class TerraformRunner:
             env_config=terraform_env_config)
 
         return dict(command=cmd)
+
+    def generate_terraform_configs(self, himl_args, config_path, config_destination, composition):
+        config_path = get_config_path(config_path, composition)
+        config_destination = get_composition_path(config_destination, composition)
+
+        self.provider_config(himl_args, config_path, config_destination, composition)
+        self.variables_config(himl_args, config_path, config_destination, composition)
+
+    def provider_config(self, himl_args, config_path, composition_path, composition):
+        output_file = os.path.join(composition_path, TERRAFORM_PROVIDER_FILENAME)
+        logger.info('Generating terraform config %s', output_file)
+
+        filters = self.kompos_config.filtered_output_keys(composition) + ["provider", "terraform"]
+        excluded = self.kompos_config.excluded_config_keys(composition)
+
+        if himl_args.exclude:
+            excluded = self.kompos_config.excluded_config_keys(composition) + himl_args.exclude
+
+        self.generate_config(
+            config_path=config_path,
+            exclude_keys=excluded,
+            filters=filters,
+            output_format="json",
+            output_file=output_file,
+            print_data=False,
+            skip_interpolation_resolving=himl_args.skip_interpolation_resolving,
+            skip_interpolation_validation=himl_args.skip_interpolation_validation,
+            skip_secrets=himl_args.skip_secrets
+        )
+
+    def variables_config(self, himl_args, config_path, composition_path, composition):
+        output_file = os.path.join(composition_path, TERRAFORM_CONFIG_FILENAME)
+        logger.info('Generating terraform config %s', output_file)
+
+        excluded = self.kompos_config.excluded_config_keys(composition) + ["provider"]
+        filtered = self.kompos_config.filtered_output_keys(composition)
+
+        self.generate_config(
+            config_path=config_path,
+            exclude_keys=excluded,
+            filters=filtered,
+            enclosing_key="config",
+            output_format="json",
+            output_file=os.path.expanduser(output_file),
+            print_data=True,
+            skip_interpolation_resolving=himl_args.skip_interpolation_resolving,
+            skip_interpolation_validation=himl_args.skip_interpolation_validation,
+            skip_secrets=himl_args.skip_secrets
+        )
 
 
 def remove_local_cache_cmd(subcommand):

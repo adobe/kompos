@@ -9,13 +9,12 @@
 # governing permissions and limitations under the License.
 
 import logging
-import os
 
+from himl import ConfigProcessor
 from himl.main import ConfigRunner
 
 from kompos.cli.parser import SubParserConfig
 from kompos.hierarchical.composition_helper import discover_compositions
-from kompos.hierarchical.config_generator import HierarchicalConfigGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -38,21 +37,15 @@ class ConfigGeneratorParserConfig(SubParserConfig):
         '''
 
 
-class ConfigGeneratorRunner(HierarchicalConfigGenerator):
-    def __init__(self, kompos_config, cluster_config_path):
+class ConfigGeneratorRunner(ConfigProcessor):
+    def __init__(self, kompos_config, config_path):
         super(ConfigGeneratorRunner, self).__init__()
         self.kompos_config = kompos_config
-        self.cluster_config_path = cluster_config_path
+        self.config_path = config_path
         logging.basicConfig(level=logging.INFO)
 
     def run(self, args, extra_args):
-        if not os.path.isdir(self.cluster_config_path):
-            raise Exception("Provide a valid composition directory path.")
-
-        config_path = os.path.join(self.cluster_config_path, "")
-
-        compositions = discover_compositions(config_path)
-
+        comp_type, compositions = discover_compositions(self.config_path)
         if not 0 < len(compositions) < 2:
             raise Exception("Provide the path to a single valid composition directory")
         composition = compositions[0]
@@ -66,7 +59,7 @@ class ConfigGeneratorRunner(HierarchicalConfigGenerator):
             excluded = excluded + args.exclude
 
         self.generate_config(
-            config_path=self.cluster_config_path,
+            config_path=self.config_path,
             filters=filtered,
             exclude_keys=excluded,
             enclosing_key=args.enclosing_key,

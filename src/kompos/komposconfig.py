@@ -30,7 +30,7 @@ TERRAFORM_CONFIG_FILENAME = "variables.tfvars.json"
 TERRAFORM_PROVIDER_FILENAME = "provider.tf.json"
 
 # The filename of the generated hierarchical configuration for Helmfile.
-HELMFILE_CONFIG_FILENAME = "hiera-generated.yaml"
+HELMFILE_CONFIG_FILENAME = "generated-values.yaml"
 
 # Directory to store terraform plugin cache
 TERRAFORM_CACHE_DIR = "~/.kompos/.terraform.d/plugin-cache"
@@ -67,7 +67,6 @@ class KomposConfig:
     ]
 
     def __init__(self, console_args, package_dir):
-        cluster_config_path = console_args.cluster_config_path
         self.config = dict()
         self.package_dir = package_dir
         self.validate = fastjsonschema.compile(self.read_schema())

@@ -8,21 +8,20 @@
 # OF ANY KIND, either express or implied. See the License for the specific language
 # governing permissions and limitations under the License.
 
-
 import logging
 import os
 import sys
+
 from kubeconfig import KubeConfig
 
 from kompos.cli.parser import SubParserConfig
-from kompos.hierarchical.composition_helper import get_config_path, get_compositions
-from kompos.hierarchical.config_generator import HierarchicalConfigGenerator
+from kompos.hierarchical.composition_helper import get_config_path, get_compositions, get_composition_path, \
+    get_raw_config, get_himl_args
+from kompos.hierarchical.himl_helper import HierarchicalConfigGenerator
 from kompos.komposconfig import HELMFILE_CONFIG_FILENAME, get_value_or
 from kompos.nix import nix_install, writeable_nix_out_path, is_nix_enabled
 
 logger = logging.getLogger(__name__)
-
-HELMFILE_COMPOSITION_NAME = 'helmfiles'
 
 
 class HelmfileParserConfig(SubParserConfig):
@@ -37,7 +36,7 @@ class HelmfileParserConfig(SubParserConfig):
             '--helmfile-path',
             type=str,
             default=None,
-            help='Dir to where helmfile.yaml is located')
+            help='Dir where helmfile.yaml is located')
         return parser
 
     def get_epilog(self):
@@ -53,40 +52,35 @@ class HelmfileParserConfig(SubParserConfig):
 
 
 class HelmfileRunner(HierarchicalConfigGenerator):
-    def __init__(self, kompos_config, cluster_config_path, execute):
+    def __init__(self, kompos_config, config_path, execute):
         super(HelmfileRunner, self).__init__()
         logging.basicConfig(level=logging.INFO)
+
         self.kompos_config = kompos_config
-        self.cluster_config_path = cluster_config_path
+        self.config_path = config_path
         self.execute = execute
 
     def run(self, args, extra_args):
-        if not os.path.isdir(self.cluster_config_path):
-            raise Exception("Provide a valid composition directory path.")
+        # TODO validate helmfile version
+        # logger.info("Found extra_args %s", extra_args)
 
+        reverse = ("delete" == args.subcommand)
         composition_order = self.kompos_config.helmfile_composition_order()
-        compositions = get_compositions(self.cluster_config_path, composition_order, path_type="composition",
-                                        composition_type="helmfile", reverse=False)
+        detected_type, compositions = get_compositions(self.config_path, composition_order,
+                                                       comp_type="helmfile", reverse=reverse)
 
+        return self.run_compositions(args, extra_args, compositions)
+
+    def get_composition_path(self, args, raw_config):
         # We're assuming local path by default.
-        helmfile_path = os.path.join(
+        path = os.path.join(
             self.kompos_config.helmfile_local_path(),
             self.kompos_config.helmfile_root_path(),
         )
 
-        # Overwrite if CLI flag is set.
-        if args.helmfile_path:
-            helmfile_path = args.helmfile_path
-
         # Overwrite if nix is enabled.
         if is_nix_enabled(args, self.kompos_config.nix()):
             pname = self.kompos_config.helmfile_repo_name()
-
-            raw_config = self.generate_config(
-                config_path=get_config_path(self.cluster_config_path, HELMFILE_COMPOSITION_NAME),
-                filters=self.kompos_config.filtered_output_keys(HELMFILE_COMPOSITION_NAME),
-                exclude_keys=self.kompos_config.excluded_config_keys(HELMFILE_COMPOSITION_NAME)
-            )
 
             nix_install(
                 pname,
@@ -99,30 +93,52 @@ class HelmfileRunner(HierarchicalConfigGenerator):
             # the generated config, so as a workaround we're using a temporary directory
             # with the contents of the derivation so helmfile can create the config file.
 
-            helmfile_path = os.path.join(
+            path = os.path.join(
                 writeable_nix_out_path(pname),
                 self.kompos_config.helmfile_root_path()
             )
 
-        self.setup_kube_config(
-            self.generate_helmfile_config(
-                get_config_path(self.cluster_config_path, compositions[0]), helmfile_path
+        return path
+
+    def run_compositions(self, args, extra_args, compositions):
+        for composition in compositions:
+            composition_path = self.config_path + "/helmfile=" + composition
+            logger.info("Running composition: %s", composition)
+
+            raw_config = get_raw_config(composition_path, composition,
+                                        self.kompos_config.excluded_config_keys(composition),
+                                        self.kompos_config.filtered_output_keys(composition))
+
+            # Generate output paths for configs
+            config_destination = self.get_composition_path(args, raw_config)
+
+            # Generate configs
+            self.generate_helmfile_config(get_himl_args(args), composition_path, config_destination, composition)
+
+            self.setup_kube_config(raw_config)
+
+            # Run helmfile
+            return_code = self.execute(
+                self.run_helmfile(extra_args, config_destination, composition)
             )
-        )
 
-        return_code = self.execute(
-            self.run_helmfile(helmfile_path, extra_args)
-        )
+            if return_code != 0:
+                logger.error(
+                    "Command finished with nonzero exit code for composition '%s'."
+                    "Will skip remaining compositions.", composition
+                )
+                return return_code
 
-        return return_code
+        return 0
 
     def setup_kube_config(self, data):
         if data['helm']['global']['cluster']['type'] == 'k8s':
             if all(k in data['helm']['global']['cluster']['kubeconfig'] for k in ("path", "context")):
                 if os.path.isfile(data['helm']['global']['cluster']['kubeconfig']['path']):
-                    logger.info('Using kubecofig file: %s', data['helm']['global']['cluster']['kubeconfig']['path'])
+                    logger.info('Using kubeconfig file: %s', data['helm']['global']['cluster']['kubeconfig']['path'])
                 else:
-                    logger.warning('kubeconfig file not found: %s', data['helm']['global']['cluster']['kubeconfig']['path'])
+                    logger.warning('kubeconfig file not found: %s',
+                                   data['helm']['global']['cluster']['kubeconfig']['path'])
                     sys.exit(1)
 
                 kubeconfig_abs_path = os.path.abspath(data['helm']['global']['cluster']['kubeconfig']['path'])
@@ -164,23 +180,28 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
             return tmp_file.name
 
-    def generate_helmfile_config(self, path, helmfile_path):
-        output_file = os.path.join(helmfile_path, HELMFILE_CONFIG_FILENAME)
+    def generate_helmfile_config(self, himl_args, config_path, config_destination, composition):
+        config_path = get_config_path(config_path, composition)
+        config_destination = get_composition_path(config_destination, composition)
+
+        output_file = os.path.join(config_destination, HELMFILE_CONFIG_FILENAME)
         logger.info('Generating helmfiles config %s', output_file)
 
-        filtered_keys = self.kompos_config.filtered_output_keys(HELMFILE_COMPOSITION_NAME)
-        excluded_keys = self.kompos_config.excluded_config_keys(HELMFILE_COMPOSITION_NAME)
+        filtered_keys = self.kompos_config.filtered_output_keys(composition)
+        excluded_keys = self.kompos_config.excluded_config_keys(composition)
 
-        return self.generate_config(config_path=path,
+        return self.generate_config(config_path=config_path,
                                     filters=filtered_keys,
                                     exclude_keys=excluded_keys,
                                     output_format="yaml",
                                     output_file=output_file,
                                     print_data=True)
 
-    def run_helmfile(self, helmfile_path, extra_args):
+    @staticmethod
+    def run_helmfile(extra_args, helmfile_path, composition):
+        helmfile_composition_path = os.path.join(helmfile_path, composition)
         helmfile_args = ' '.join(extra_args)
         cmd = "cd {helmfile_path} && helmfile {helmfile_args}".format(
-            helmfile_path=helmfile_path, helmfile_args=helmfile_args)
+            helmfile_path=helmfile_composition_path, helmfile_args=helmfile_args)
 
         return dict(command=cmd)
