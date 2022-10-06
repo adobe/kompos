@@ -86,6 +86,9 @@ class AppContainer(Container):
         command_name = '%s_runner' % self.console_args.command
         runner_instance = self.get_instance(command_name)
 
+        if not os.path.isdir(self.config_path):
+            raise Exception("Provide a valid composition path.")
+
         return runner_instance.run(self.console_args, self.console_extra_args)
 
 

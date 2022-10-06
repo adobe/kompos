@@ -62,12 +62,8 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         self.execute = execute
 
     def run(self, args, extra_args):
-        if not os.path.isdir(self.config_path):
-            raise Exception("Provide a valid composition directory path.")
-
         composition_order = self.kompos_config.helmfile_composition_order()
-        compositions = get_compositions(self.config_path, composition_order, path_type="composition",
-                                        composition_type="helmfile", reverse=False)
+        compositions = get_compositions(self.config_path, composition_order, composition_type="helmfile", reverse=False)
 
         return self.run_compositions(args, extra_args, compositions)
 
@@ -115,7 +111,7 @@ class HelmfileRunner(HierarchicalConfigGenerator):
             hf_composition_source = self.get_composition_path(args, raw_config)
 
             # Generate configs
-            self.generate_helmfile_config(composition_path, hf_composition_source, composition, raw_config)
+            self.generate_helmfile_config(composition_path, hf_composition_source, composition)
             self.setup_kube_config(raw_config)
 
             # Run helmfile
@@ -181,9 +177,9 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
             return tmp_file.name
 
-    def generate_helmfile_config(self, composition_path, composition_source_path, composition, raw_config):
+    def generate_helmfile_config(self, composition_path, composition_source_path, composition):
         config_path = get_config_path(composition_path, composition)
-        composition_path = get_composition_path(composition_source_path, composition, raw_config)
+        composition_path = get_composition_path(composition_source_path, composition)
         output_file = os.path.join(composition_path, HELMFILE_CONFIG_FILENAME)
 
         logger.info('Generating helmfiles config %s', output_file)

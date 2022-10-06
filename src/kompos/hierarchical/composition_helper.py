@@ -15,6 +15,8 @@ from kompos.hierarchical.config_generator import HierarchicalConfigGenerator
 
 logger = logging.getLogger(__name__)
 
+composition_key = "composition"
+
 
 class PreConfigGenerator(HierarchicalConfigGenerator):
 
@@ -33,28 +35,32 @@ class PreConfigGenerator(HierarchicalConfigGenerator):
         )
 
 
-def get_compositions(path, composition_order, path_type, composition_type, reverse=False):
+def get_compositions(path, composition_order, comp_type, reverse=False):
     logging.basicConfig(level=logging.INFO)
 
-    compositions = discover_compositions(path, path_type)
+    detected_type, compositions = discover_compositions(path)
     compositions = sorted_compositions(compositions, composition_order, reverse)
+
     if not compositions:
         raise Exception(
-            "No {} compositions were detected in {}.".format(composition_type, path))
+            "No {} compositions were detected in {}.".format(comp_type, path))
+    if detected_type != comp_type:
+        raise Exception("Failed to detect composition type.")
 
-    return compositions
+    return detected_type, compositions
 
 
-def discover_compositions(path, path_type="composition"):
+def discover_compositions(path):
     path_params = dict(split_path(x) for x in path.split('/'))
-    composition_type = path_params.get(path_type, None)
+    composition_type = path_params.get(composition_key, None)
+
     if not composition_type:
-        raise Exception("No composition type detected in path.")
+        raise Exception("No composition detected in path.")
 
     # check if single composition selected
     composition = path_params.get(composition_type, None)
     if composition:
-        return [composition]
+        return composition_type, [composition]
 
     # discover compositions
     compositions = []
@@ -64,7 +70,7 @@ def discover_compositions(path, path_type="composition"):
             composition = split_path(subpath)[1]
             compositions.append(composition)
 
-    return compositions
+    return composition_type, compositions
 
 
 def sorted_compositions(compositions, composition_order, reverse=False):
@@ -81,32 +87,16 @@ def split_path(value, separator='='):
 # Get hiera config path - source config leaf
 def get_config_path(path_prefix, composition):
     prefix = os.path.join(path_prefix, '')
-    if "composition=" in path_prefix:
-        if "composition=custom" not in path_prefix:
-            return path_prefix
-        if "composition=custom" and "type=" in path_prefix:
-            return path_prefix
-        else:
-            return "{}type={}".format(prefix, composition)
+    if composition_key+"=" in path_prefix:
+        return path_prefix
     else:
         return "{}composition={}".format(prefix, composition)
 
 
 # Get target composition path - generated config
-def get_composition_path(path_prefix, composition, raw_config):
+def get_composition_path(path_prefix, composition):
     prefix = os.path.join(path_prefix, '')
-    if "custom" in path_prefix:
-        try:
-            custom_composition = raw_config["custom"]["type"]
-            logger.info("Appending custom composition: %s", custom_composition)
-            return "{}{}/".format(prefix, custom_composition)
-        except KeyError:
-            logger.info("No custom composition type found")
-            raise
-    elif composition in path_prefix:
+    if composition in path_prefix:
         return path_prefix
     else:
         return "{}{}/".format(prefix, composition)
-
-
-

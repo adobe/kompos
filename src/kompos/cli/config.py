@@ -46,13 +46,7 @@ class ConfigGeneratorRunner(HierarchicalConfigGenerator):
         logging.basicConfig(level=logging.INFO)
 
     def run(self, args, extra_args):
-        if not os.path.isdir(self.config_path):
-            raise Exception("Provide a valid composition directory path.")
-
-        config_path = os.path.join(self.config_path, "")
-
-        compositions = discover_compositions(config_path)
-
+        comp_type, compositions = discover_compositions(self.config_path)
         if not 0 < len(compositions) < 2:
             raise Exception("Provide the path to a single valid composition directory")
         composition = compositions[0]

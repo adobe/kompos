@@ -25,14 +25,14 @@ class TerraformConfigGenerator(HierarchicalConfigGenerator):
         self.excluded_config_keys = excluded_config_keys
         self.filtered_output_keys = filtered_output_keys
 
-    def generate_files(self, himl_args, config_path, composition_source_path, composition, raw_config):
+    def generate_configs(self, himl_args, config_path, config_destination, composition):
         config_path = get_config_path(config_path, composition)
-        composition_path = get_composition_path(composition_source_path, composition, raw_config)
+        config_destination = get_composition_path(config_destination, composition)
 
-        self.generate_provider_config(himl_args, config_path, composition_path)
-        self.generate_variables_config(himl_args, config_path, composition_path)
+        self.provider_config(himl_args, config_path, config_destination)
+        self.variables_config(himl_args, config_path, config_destination)
 
-    def generate_provider_config(self, himl_args, config_path, composition_path):
+    def provider_config(self, himl_args, config_path, composition_path):
         output_file = os.path.join(composition_path, TERRAFORM_PROVIDER_FILENAME)
         logger.info('Generating terraform config %s', output_file)
 
@@ -54,7 +54,7 @@ class TerraformConfigGenerator(HierarchicalConfigGenerator):
             skip_secrets=himl_args.skip_secrets
         )
 
-    def generate_variables_config(self, himl_args, config_path, composition_path):
+    def variables_config(self, himl_args, config_path, composition_path):
         output_file = os.path.join(composition_path, TERRAFORM_CONFIG_FILENAME)
         logger.info('Generating terraform config %s', output_file)
 

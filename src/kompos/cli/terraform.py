@@ -16,7 +16,7 @@ from subprocess import Popen, PIPE
 from himl.main import ConfigRunner
 
 from kompos.cli.parser import SubParserConfig
-from kompos.hierarchical.composition_helper import PreConfigGenerator, discover_compositions, get_compositions
+from kompos.hierarchical.composition_helper import PreConfigGenerator, get_compositions
 from kompos.hierarchical.terraform_config_generator import TerraformConfigGenerator
 from kompos.komposconfig import (
     TERRAFORM_CONFIG_FILENAME,
@@ -185,9 +185,6 @@ class TerraformRunner:
         self.execute = execute
 
     def run(self, args, extra_args):
-        if not os.path.isdir(self.config_path):
-            raise Exception("Provide a valid composition directory path.")
-
         # Stop processing if an incompatible version is detected.
         validate_terraform_version(self.kompos_config.terraform_version())
         logger.info("Found extra_args %s", extra_args)
@@ -195,8 +192,8 @@ class TerraformRunner:
         reverse = ("destroy" == args.subcommand)
 
         composition_order = self.kompos_config.terraform_composition_order()
-        compositions = get_compositions(self.config_path, composition_order, path_type="composition",
-                                        composition_type="terraform", reverse=reverse)
+        detected_type, compositions = get_compositions(self.config_path, composition_order,
+                                                       comp_type="terraform", reverse=reverse)
 
         return self.run_compositions(args, extra_args, compositions)
 
@@ -238,7 +235,7 @@ class TerraformRunner:
 
             # Check if composition has a complete path
             composition_path = self.config_path
-            if composition not in self.config_path:
+            if composition not in composition_path:
                 composition_path = self.config_path + "/terraform=" + composition
 
             filtered_output_keys = self.kompos_config.filtered_output_keys(composition)
@@ -247,7 +244,7 @@ class TerraformRunner:
             raw_config = pre_config_generator.pre_generate_config(composition_path, composition)
             cloud_type = raw_config["cloud"]["type"]
 
-            tf_composition_source = self.get_composition_path(args, cloud_type, raw_config)
+            config_destination = self.get_composition_path(args, cloud_type, raw_config)
 
             parser = ConfigRunner.get_parser(argparse.ArgumentParser())
             if args.himl_args:
@@ -258,12 +255,11 @@ class TerraformRunner:
 
             # Generate configs
             tf_config_generator = TerraformConfigGenerator(excluded_config_keys, filtered_output_keys)
-            tf_config_generator.generate_files(himl_args, composition_path, tf_composition_source, composition,
-                                               raw_config)
+            tf_config_generator.generate_configs(himl_args, composition_path, config_destination, composition)
 
             # Run terraform
             return_code = self.execute(
-                self.run_terraform(args, extra_args, tf_composition_source, composition)
+                self.run_terraform(args, extra_args, config_destination, composition)
             )
 
             if return_code != 0:
