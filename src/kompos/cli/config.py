@@ -11,11 +11,12 @@
 import logging
 import os
 
+from himl import ConfigProcessor
 from himl.main import ConfigRunner
 
 from kompos.cli.parser import SubParserConfig
 from kompos.hierarchical.composition_helper import discover_compositions
-from kompos.hierarchical.config_generator import HierarchicalConfigGenerator
+from kompos.hierarchical.himl_helper import HierarchicalConfigGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ class ConfigGeneratorParserConfig(SubParserConfig):
         '''
 
 
-class ConfigGeneratorRunner(HierarchicalConfigGenerator):
+class ConfigGeneratorRunner(ConfigProcessor):
     def __init__(self, kompos_config, config_path):
         super(ConfigGeneratorRunner, self).__init__()
         self.kompos_config = kompos_config

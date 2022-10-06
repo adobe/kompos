@@ -2,7 +2,7 @@
 # This file is licensed to you under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License. You may obtain a copy
 # of the License at http://www.apache.org/licenses/LICENSE-2.0
-
+import argparse
 # Unless required by applicable law or agreed to in writing, software distributed under
 # the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
 # OF ANY KIND, either express or implied. See the License for the specific language
@@ -11,28 +11,35 @@
 import logging
 import os
 
-from kompos.hierarchical.config_generator import HierarchicalConfigGenerator
+from himl import ConfigRunner
+
+from kompos.hierarchical.himl_helper import HierarchicalConfigGenerator
 
 logger = logging.getLogger(__name__)
 
 composition_key = "composition"
 
 
-class PreConfigGenerator(HierarchicalConfigGenerator):
+def get_himl_args(args):
+    parser = ConfigRunner.get_parser(argparse.ArgumentParser())
 
-    def __init__(self, excluded_config_keys, filtered_output_keys):
-        super(PreConfigGenerator, self).__init__()
-        self.excluded_config_keys = excluded_config_keys
-        self.filtered_output_keys = filtered_output_keys
+    if args.himl_args:
+        himl_args = parser.parse_args(args.himl_args.split())
+        logger.info("Extra himl arguments: %s", himl_args)
+        return himl_args
+    else:
+        return parser.parse_args([])
 
-    def pre_generate_config(self, config_path, composition, skip_secrets=True):
-        return self.generate_config(
-            config_path=get_config_path(config_path, composition),
-            exclude_keys=self.excluded_config_keys,
-            filters=self.filtered_output_keys,
-            skip_interpolation_validation=True,
-            skip_secrets=skip_secrets
-        )
+
+def get_raw_config(config_path, composition, excluded_config_keys, filtered_output_keys):
+    generator = HierarchicalConfigGenerator()
+    return generator.generate_config(
+        config_path=get_config_path(config_path, composition),
+        exclude_keys=excluded_config_keys,
+        filters=filtered_output_keys,
+        skip_interpolation_validation=True,
+        skip_secrets=True
+    )
 
 
 def get_compositions(path, composition_order, comp_type, reverse=False):
@@ -87,7 +94,7 @@ def split_path(value, separator='='):
 # Get hiera config path - source config leaf
 def get_config_path(path_prefix, composition):
     prefix = os.path.join(path_prefix, '')
-    if composition_key+"=" in path_prefix:
+    if composition_key + "=" in path_prefix:
         return path_prefix
     else:
         return "{}composition={}".format(prefix, composition)

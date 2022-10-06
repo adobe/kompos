@@ -8,18 +8,14 @@
 # OF ANY KIND, either express or implied. See the License for the specific language
 # governing permissions and limitations under the License.
 
-import argparse
 import logging
 import os
 from subprocess import Popen, PIPE
 
-from himl.main import ConfigRunner
-
 from kompos.cli.parser import SubParserConfig
-from kompos.hierarchical.composition_helper import PreConfigGenerator, get_compositions, get_config_path, \
-    get_composition_path
-from kompos.hierarchical.config_generator import HierarchicalConfigGenerator
-from kompos.hierarchical.terraform_config_generator import TerraformConfigGenerator
+from kompos.hierarchical.composition_helper import get_compositions, get_config_path, \
+    get_composition_path, get_raw_config, get_himl_args
+from kompos.hierarchical.himl_helper import HierarchicalConfigGenerator
 from kompos.komposconfig import (
     TERRAFORM_CONFIG_FILENAME,
     get_value_or,
@@ -232,7 +228,6 @@ class TerraformRunner(HierarchicalConfigGenerator):
         return path
 
     def run_compositions(self, args, extra_args, compositions):
-
         for composition in compositions:
             logger.info("Running composition: %s", composition)
 
@@ -241,24 +236,15 @@ class TerraformRunner(HierarchicalConfigGenerator):
             if composition not in composition_path:
                 composition_path = self.config_path + "/terraform=" + composition
 
-            filtered_output_keys = self.kompos_config.filtered_output_keys(composition)
-            excluded_config_keys = self.kompos_config.excluded_config_keys(composition)
-            pre_config_generator = PreConfigGenerator(excluded_config_keys, filtered_output_keys)
-            raw_config = pre_config_generator.pre_generate_config(composition_path, composition)
-            cloud_type = raw_config["cloud"]["type"]
+            raw_config = get_raw_config(composition_path, composition,
+                                        self.kompos_config.excluded_config_keys(composition),
+                                        self.kompos_config.filtered_output_keys(composition))
 
-            config_destination = self.get_composition_path(args, cloud_type, raw_config)
-
-            parser = ConfigRunner.get_parser(argparse.ArgumentParser())
-            if args.himl_args:
-                himl_args = parser.parse_args(args.himl_args.split())
-                logger.info("Extra himl arguments: %s", args.himl_args.split())
-            else:
-                himl_args = parser.parse_args([])
+            # Generate output paths for configs
+            config_destination = self.get_composition_path(args, raw_config["cloud"]["type"], raw_config)
 
             # Generate configs
-            tf_config_generator = TerraformConfigGenerator(excluded_config_keys, filtered_output_keys)
-            tf_config_generator.generate_configs(himl_args, composition_path, config_destination, composition)
+            self.generate_terraform_configs(get_himl_args(args), composition_path, config_destination, composition)
 
             # Run terraform
             return_code = self.execute(
@@ -272,9 +258,10 @@ class TerraformRunner(HierarchicalConfigGenerator):
                 )
                 return return_code
 
-        return return_code
+        return 0
 
-    def run_terraform(self, args, extra_args, terraform_path, composition):
+    @staticmethod
+    def run_terraform(args, extra_args, terraform_path, composition):
         terraform_composition_path = os.path.join(terraform_path, composition)
 
         var_file = '-var-file="{}"'.format(TERRAFORM_CONFIG_FILENAME) if args.subcommand in SUBCMDS_WITH_VARS else ''
@@ -293,22 +280,22 @@ class TerraformRunner(HierarchicalConfigGenerator):
 
         return dict(command=cmd)
 
-    def generate_configs(self, himl_args, config_path, config_destination, composition):
+    def generate_terraform_configs(self, himl_args, config_path, config_destination, composition):
         config_path = get_config_path(config_path, composition)
         config_destination = get_composition_path(config_destination, composition)
 
-        self.provider_config(himl_args, config_path, config_destination)
-        self.variables_config(himl_args, config_path, config_destination)
+        self.provider_config(himl_args, config_path, config_destination, composition)
+        self.variables_config(himl_args, config_path, config_destination, composition)
 
-    def provider_config(self, himl_args, config_path, composition_path):
+    def provider_config(self, himl_args, config_path, composition_path, composition):
         output_file = os.path.join(composition_path, TERRAFORM_PROVIDER_FILENAME)
         logger.info('Generating terraform config %s', output_file)
 
-        filters = self.kompos_config.filtered_output_keys.copy() + ["provider", "terraform"]
+        filters = self.kompos_config.filtered_output_keys(composition) + ["provider", "terraform"]
+        excluded = self.kompos_config.excluded_config_keys(composition)
 
-        excluded = self.kompos_config.excluded_config_keys.copy()
         if himl_args.exclude:
-            excluded = self.kompos_config.excluded_config_keys.copy() + himl_args.exclude
+            excluded = self.kompos_config.excluded_config_keys(composition) + himl_args.exclude
 
         self.generate_config(
             config_path=config_path,
@@ -322,12 +309,12 @@ class TerraformRunner(HierarchicalConfigGenerator):
             skip_secrets=himl_args.skip_secrets
         )
 
-    def variables_config(self, himl_args, config_path, composition_path):
+    def variables_config(self, himl_args, config_path, composition_path, composition):
         output_file = os.path.join(composition_path, TERRAFORM_CONFIG_FILENAME)
         logger.info('Generating terraform config %s', output_file)
 
-        excluded = self.kompos_config.excluded_config_keys.copy() + ["helm", "provider"]
-        filtered = self.kompos_config.filtered_output_keys.copy()
+        excluded = self.kompos_config.excluded_config_keys(composition) + ["provider"]
+        filtered = self.kompos_config.filtered_output_keys(composition)
 
         self.generate_config(
             config_path=config_path,
