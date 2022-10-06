@@ -10,24 +10,25 @@
 
 import logging
 
-from himl import ConfigProcessor
-from himl.main import ConfigRunner
-
+from himl import ConfigRunner
 from kompos.cli.parser import SubParserConfig
-from kompos.hierarchical.composition_helper import discover_compositions
+from kompos.helpers.composition_helper import discover_compositions, get_himl_args
+from kompos.helpers.himl_helper import HierarchicalConfigGenerator
 
 logger = logging.getLogger(__name__)
 
+RUNNER_TYPE = "config"
 
-class ConfigGeneratorParserConfig(SubParserConfig):
+
+class ConfigRenderParserConfig(SubParserConfig):
     def get_name(self):
-        return 'config'
+        return RUNNER_TYPE
 
     def get_help(self):
         return 'Generate configurations based on a hierarchical structure, with templating support'
 
     def configure(self, parser):
-        return ConfigRunner().get_parser(parser)
+        ConfigRunner().get_parser(parser)
 
     def get_epilog(self):
         return '''
@@ -37,31 +38,33 @@ class ConfigGeneratorParserConfig(SubParserConfig):
         '''
 
 
-class ConfigGeneratorRunner(ConfigProcessor):
+class ConfigRenderRunner(HierarchicalConfigGenerator):
     def __init__(self, kompos_config, config_path):
-        super(ConfigGeneratorRunner, self).__init__()
+        super(ConfigRenderRunner, self).__init__()
+
+        logging.basicConfig(level=logging.INFO)
+
         self.kompos_config = kompos_config
         self.config_path = config_path
-        logging.basicConfig(level=logging.INFO)
 
     def run(self, args, extra_args):
         comp_type, compositions = discover_compositions(self.config_path)
         if not 0 < len(compositions) < 2:
             raise Exception("Provide the path to a single valid composition directory")
         composition = compositions[0]
+        himl_args = get_himl_args(args)
 
-        filtered = self.kompos_config.filtered_output_keys(composition).copy()
-        if args.filter:
-            filtered = filtered + args.filter
+        filtered_keys = self.kompos_config.filtered_output_keys(composition)
+        excluded_keys = self.kompos_config.excluded_config_keys(composition)
 
-        excluded = self.kompos_config.excluded_config_keys(composition).copy()
-        if args.exclude:
-            excluded = excluded + args.exclude
+        if himl_args.exclude:
+            filtered_keys = self.kompos_config.filtered_output_keys(composition) + himl_args.filter
+            excluded_keys = self.kompos_config.excluded_config_keys(composition) + himl_args.exclude
 
         self.generate_config(
             config_path=self.config_path,
-            filters=filtered,
-            exclude_keys=excluded,
+            filters=filtered_keys,
+            exclude_keys=excluded_keys,
             enclosing_key=args.enclosing_key,
             remove_enclosing_key=args.remove_enclosing_key,
             output_format=args.output_format,

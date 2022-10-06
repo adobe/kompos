@@ -15,45 +15,47 @@ import sys
 from kubeconfig import KubeConfig
 
 from kompos.cli.parser import SubParserConfig
-from kompos.hierarchical.composition_helper import get_config_path, get_compositions, get_composition_path, \
-    get_raw_config, get_himl_args
-from kompos.hierarchical.himl_helper import HierarchicalConfigGenerator
-from kompos.komposconfig import HELMFILE_CONFIG_FILENAME, get_value_or
-from kompos.nix import nix_install, writeable_nix_out_path, is_nix_enabled
+from kompos.helpers.composition_helper import get_config_path, get_compositions, get_composition_path, \
+    get_raw_config, get_himl_args, get_output_path
+from kompos.helpers.himl_helper import HierarchicalConfigGenerator
+from kompos.helpers.runner_helper import validate_runner_version
+from kompos.komposconfig import HELMFILE_CONFIG_FILENAME
 
 logger = logging.getLogger(__name__)
 
+RUNNER_TYPE = "helmfile"
 
-class HelmfileParserConfig(SubParserConfig):
+
+class HelmfileParser(SubParserConfig):
     def get_name(self):
-        return 'helmfile'
+        return RUNNER_TYPE
 
     def get_help(self):
         return 'Wrap common helmfile tasks using hierarchical configuration support'
 
     def configure(self, parser):
-        parser.add_argument(
-            '--helmfile-path',
-            type=str,
-            default=None,
-            help='Dir where helmfile.yaml is located')
+        parser.add_argument('subcommand', help='One of the helmfile commands', type=str)
+
         return parser
 
     def get_epilog(self):
         return '''
         Examples:
             # Run helmfile sync
-            kompos data/env=dev/region=va6/project=ee/cluster=experiments/composition=helmfiles helmfile sync
+            kompos data/env=dev/region=va6/project=ee/cluster=experiments/composition=helmfile helmfile sync
+            # Run helmfile sync on a single composition
+            kompos data/env=dev/region=va6/project=ee/cluster=experiments/composition=helmfile/helmfile=myhelmcomposition helmfile sync
             # Run helmfile sync for a single chart
-            kompos data/env=dev/region=va6/project=ee/cluster=experiments/composition=helmfiles helmfile --selector chart=nginx-controller sync
+            kompos data/env=dev/region=va6/project=ee/cluster=experiments/composition=helmfile helmfile --selector chart=nginx-controller sync
             # Run helmfile sync with concurrency flag
-            kompos data/env=dev/region=va6/project=ee/cluster=experiments/composition=helmfiles helmfile --selector chart=nginx-controller sync --concurrency=1
+            kompos data/env=dev/region=va6/project=ee/cluster=experiments/composition=helmfile helmfile --selector chart=nginx-controller sync --concurrency=1
         '''
 
 
 class HelmfileRunner(HierarchicalConfigGenerator):
     def __init__(self, kompos_config, config_path, execute):
         super(HelmfileRunner, self).__init__()
+
         logging.basicConfig(level=logging.INFO)
 
         self.kompos_config = kompos_config
@@ -61,66 +63,40 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         self.execute = execute
 
     def run(self, args, extra_args):
-        # TODO validate helmfile version
-        # logger.info("Found extra_args %s", extra_args)
+        # Stop processing if an incompatible version is detected.
+        validate_runner_version(self.kompos_config, RUNNER_TYPE)
+
+        if len(extra_args) > 1:
+            logger.info("Found extra_args %s", extra_args)
 
         reverse = ("delete" == args.subcommand)
-        composition_order = self.kompos_config.helmfile_composition_order()
-        detected_type, compositions = get_compositions(self.config_path, composition_order,
-                                                       comp_type="helmfile", reverse=reverse)
+        detected_type, compositions = get_compositions(self.kompos_config, self.config_path,
+                                                       comp_type=RUNNER_TYPE, reverse=reverse)
 
         return self.run_compositions(args, extra_args, compositions)
 
-    def get_composition_path(self, args, raw_config):
-        # We're assuming local path by default.
-        path = os.path.join(
-            self.kompos_config.helmfile_local_path(),
-            self.kompos_config.helmfile_root_path(),
-        )
-
-        # Overwrite if nix is enabled.
-        if is_nix_enabled(args, self.kompos_config.nix()):
-            pname = self.kompos_config.helmfile_repo_name()
-
-            nix_install(
-                pname,
-                self.kompos_config.helmfile_repo_url(),
-                get_value_or(raw_config, 'infrastructure/helmfile/version', 'master'),
-                get_value_or(raw_config, 'infrastructure/helmfile/sha256'),
-            )
-
-            # FIXME: Nix store is read-only, and helmfile configuration has a hardcoded path for
-            # the generated config, so as a workaround we're using a temporary directory
-            # with the contents of the derivation so helmfile can create the config file.
-
-            path = os.path.join(
-                writeable_nix_out_path(pname),
-                self.kompos_config.helmfile_root_path()
-            )
-
-        return path
-
     def run_compositions(self, args, extra_args, compositions):
         for composition in compositions:
-            composition_path = self.config_path + "/helmfile=" + composition
             logger.info("Running composition: %s", composition)
+
+            # Check if composition has a complete path
+            composition_path = self.config_path
+            if composition not in composition_path:
+                composition_path = self.config_path + "/{}=".format(RUNNER_TYPE) + composition
 
             raw_config = get_raw_config(composition_path, composition,
                                         self.kompos_config.excluded_config_keys(composition),
                                         self.kompos_config.filtered_output_keys(composition))
 
             # Generate output paths for configs
-            config_destination = self.get_composition_path(args, raw_config)
+            config_destination = get_output_path(args, raw_config, self.kompos_config, RUNNER_TYPE)
 
             # Generate configs
             self.generate_helmfile_config(get_himl_args(args), composition_path, config_destination, composition)
-
             self.setup_kube_config(raw_config)
 
             # Run helmfile
-            return_code = self.execute(
-                self.run_helmfile(extra_args, config_destination, composition)
-            )
+            return_code = self.execute(self.run_helmfile(args, extra_args, config_destination, composition))
 
             if return_code != 0:
                 logger.error(
@@ -190,6 +166,10 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         filtered_keys = self.kompos_config.filtered_output_keys(composition)
         excluded_keys = self.kompos_config.excluded_config_keys(composition)
 
+        if himl_args.exclude:
+            filtered_keys = self.kompos_config.filtered_output_keys(composition) + himl_args.filter
+            excluded_keys = self.kompos_config.excluded_config_keys(composition) + himl_args.exclude
+
         return self.generate_config(config_path=config_path,
                                     filters=filtered_keys,
                                     exclude_keys=excluded_keys,
@@ -198,10 +178,12 @@ class HelmfileRunner(HierarchicalConfigGenerator):
                                     print_data=True)
 
     @staticmethod
-    def run_helmfile(extra_args, helmfile_path, composition):
+    def run_helmfile(args, extra_args, helmfile_path, composition):
         helmfile_composition_path = os.path.join(helmfile_path, composition)
-        helmfile_args = ' '.join(extra_args)
-        cmd = "cd {helmfile_path} && helmfile {helmfile_args}".format(
-            helmfile_path=helmfile_composition_path, helmfile_args=helmfile_args)
+
+        cmd = "cd {helmfile_path} && helmfile {subcommand} {extra_args}".format(
+            helmfile_path=helmfile_composition_path,
+            subcommand=args.subcommand,
+            extra_args=' '.join(extra_args),)
 
         return dict(command=cmd)
