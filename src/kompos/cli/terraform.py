@@ -16,12 +16,14 @@ from subprocess import Popen, PIPE
 from himl.main import ConfigRunner
 
 from kompos.cli.parser import SubParserConfig
-from kompos.hierarchical.composition_helper import PreConfigGenerator, get_compositions
+from kompos.hierarchical.composition_helper import PreConfigGenerator, get_compositions, get_config_path, \
+    get_composition_path
+from kompos.hierarchical.config_generator import HierarchicalConfigGenerator
 from kompos.hierarchical.terraform_config_generator import TerraformConfigGenerator
 from kompos.komposconfig import (
     TERRAFORM_CONFIG_FILENAME,
     get_value_or,
-    local_config_dir
+    local_config_dir, TERRAFORM_PROVIDER_FILENAME
 )
 from kompos.nix import nix_install, writeable_nix_out_path, is_nix_enabled
 
@@ -177,11 +179,13 @@ class TerraformParserConfig(SubParserConfig):
         '''
 
 
-class TerraformRunner:
-    def __init__(self, root_dir, config_path, kompos_config, execute):
-        self.config_path = config_path
-        self.root_dir = root_dir
+class TerraformRunner(HierarchicalConfigGenerator):
+    def __init__(self, config_path, kompos_config, execute):
+        super(TerraformRunner, self).__init__()
+        logging.basicConfig(level=logging.INFO)
+
         self.kompos_config = kompos_config
+        self.config_path = config_path
         self.execute = execute
 
     def run(self, args, extra_args):
@@ -190,7 +194,6 @@ class TerraformRunner:
         logger.info("Found extra_args %s", extra_args)
 
         reverse = ("destroy" == args.subcommand)
-
         composition_order = self.kompos_config.terraform_composition_order()
         detected_type, compositions = get_compositions(self.config_path, composition_order,
                                                        comp_type="terraform", reverse=reverse)
@@ -289,6 +292,55 @@ class TerraformRunner:
             env_config=terraform_env_config)
 
         return dict(command=cmd)
+
+    def generate_configs(self, himl_args, config_path, config_destination, composition):
+        config_path = get_config_path(config_path, composition)
+        config_destination = get_composition_path(config_destination, composition)
+
+        self.provider_config(himl_args, config_path, config_destination)
+        self.variables_config(himl_args, config_path, config_destination)
+
+    def provider_config(self, himl_args, config_path, composition_path):
+        output_file = os.path.join(composition_path, TERRAFORM_PROVIDER_FILENAME)
+        logger.info('Generating terraform config %s', output_file)
+
+        filters = self.kompos_config.filtered_output_keys.copy() + ["provider", "terraform"]
+
+        excluded = self.kompos_config.excluded_config_keys.copy()
+        if himl_args.exclude:
+            excluded = self.kompos_config.excluded_config_keys.copy() + himl_args.exclude
+
+        self.generate_config(
+            config_path=config_path,
+            exclude_keys=excluded,
+            filters=filters,
+            output_format="json",
+            output_file=output_file,
+            print_data=False,
+            skip_interpolation_resolving=himl_args.skip_interpolation_resolving,
+            skip_interpolation_validation=himl_args.skip_interpolation_validation,
+            skip_secrets=himl_args.skip_secrets
+        )
+
+    def variables_config(self, himl_args, config_path, composition_path):
+        output_file = os.path.join(composition_path, TERRAFORM_CONFIG_FILENAME)
+        logger.info('Generating terraform config %s', output_file)
+
+        excluded = self.kompos_config.excluded_config_keys.copy() + ["helm", "provider"]
+        filtered = self.kompos_config.filtered_output_keys.copy()
+
+        self.generate_config(
+            config_path=config_path,
+            exclude_keys=excluded,
+            filters=filtered,
+            enclosing_key="config",
+            output_format="json",
+            output_file=os.path.expanduser(output_file),
+            print_data=True,
+            skip_interpolation_resolving=himl_args.skip_interpolation_resolving,
+            skip_interpolation_validation=himl_args.skip_interpolation_validation,
+            skip_secrets=himl_args.skip_secrets
+        )
 
 
 def remove_local_cache_cmd(subcommand):

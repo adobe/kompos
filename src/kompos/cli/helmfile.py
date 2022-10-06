@@ -57,13 +57,19 @@ class HelmfileRunner(HierarchicalConfigGenerator):
     def __init__(self, kompos_config, config_path, execute):
         super(HelmfileRunner, self).__init__()
         logging.basicConfig(level=logging.INFO)
+
         self.kompos_config = kompos_config
         self.config_path = config_path
         self.execute = execute
 
     def run(self, args, extra_args):
+        # TODO validate helmfile version
+        # logger.info("Found extra_args %s", extra_args)
+
+        reverse = ("delete" == args.subcommand)
         composition_order = self.kompos_config.helmfile_composition_order()
-        compositions = get_compositions(self.config_path, composition_order, composition_type="helmfile", reverse=False)
+        detected_type, compositions = get_compositions(self.config_path, composition_order,
+                                                       comp_type="helmfile", reverse=reverse)
 
         return self.run_compositions(args, extra_args, compositions)
 
