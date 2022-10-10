@@ -14,12 +14,12 @@ import sys
 
 from kubeconfig import KubeConfig
 
-from kompos.cli.parser import SubParserConfig
 from kompos.helpers.composition_helper import get_config_path, get_compositions, get_composition_path, \
     get_raw_config, get_himl_args, get_output_path
 from kompos.helpers.himl_helper import HierarchicalConfigGenerator
 from kompos.helpers.runner_helper import validate_runner_version
 from kompos.komposconfig import HELMFILE_CONFIG_FILENAME
+from kompos.parser import SubParserConfig
 
 logger = logging.getLogger(__name__)
 
@@ -53,37 +53,36 @@ class HelmfileParser(SubParserConfig):
 
 
 class HelmfileRunner(HierarchicalConfigGenerator):
-    def __init__(self, kompos_config, config_path, execute):
+    def __init__(self, full_config_path, kompos_config, config_path, execute):
         super(HelmfileRunner, self).__init__()
 
         logging.basicConfig(level=logging.INFO)
 
+        self.full_config_path = full_config_path
         self.kompos_config = kompos_config
         self.config_path = config_path
         self.execute = execute
+        self.himl_args = None
 
-    def run(self, args, extra_args):
         # Stop processing if an incompatible version is detected.
         validate_runner_version(self.kompos_config, RUNNER_TYPE)
 
+    def run(self, args, extra_args):
         if len(extra_args) > 1:
             logger.info("Found extra_args %s", extra_args)
+        self.himl_args = get_himl_args(args)
 
-        reverse = ("delete" == args.subcommand)
-        detected_type, compositions = get_compositions(self.kompos_config, self.config_path,
-                                                       comp_type=RUNNER_TYPE, reverse=reverse)
+        reverse = ("destroy" == args.subcommand)
+        composition_order = self.kompos_config.composition_order(RUNNER_TYPE)
+        compositions, paths = get_compositions(self.config_path, RUNNER_TYPE, composition_order, reverse)
 
-        return self.run_compositions(args, extra_args, compositions)
+        return self.run_compositions(args, extra_args, compositions, paths)
 
-    def run_compositions(self, args, extra_args, compositions):
+    def run_compositions(self, args, extra_args, compositions, paths):
         for composition in compositions:
             logger.info("Running composition: %s", composition)
 
-            # Check if composition has a complete path
-            composition_path = self.config_path
-            if composition not in composition_path:
-                composition_path = self.config_path + "/{}=".format(RUNNER_TYPE) + composition
-
+            composition_path = paths[composition]
             raw_config = get_raw_config(composition_path, composition,
                                         self.kompos_config.excluded_config_keys(composition),
                                         self.kompos_config.filtered_output_keys(composition))
@@ -92,7 +91,7 @@ class HelmfileRunner(HierarchicalConfigGenerator):
             config_destination = get_output_path(args, raw_config, self.kompos_config, RUNNER_TYPE)
 
             # Generate configs
-            self.generate_helmfile_config(get_himl_args(args), composition_path, config_destination, composition)
+            self.generate_helmfile_config(composition_path, config_destination, composition)
             self.setup_kube_config(raw_config)
 
             # Run helmfile
@@ -156,7 +155,7 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
             return tmp_file.name
 
-    def generate_helmfile_config(self, himl_args, config_path, config_destination, composition):
+    def generate_helmfile_config(self, config_path, config_destination, composition):
         config_path = get_config_path(config_path, composition)
         config_destination = get_composition_path(config_destination, composition)
 
@@ -166,9 +165,9 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         filtered_keys = self.kompos_config.filtered_output_keys(composition)
         excluded_keys = self.kompos_config.excluded_config_keys(composition)
 
-        if himl_args.exclude:
-            filtered_keys = self.kompos_config.filtered_output_keys(composition) + himl_args.filter
-            excluded_keys = self.kompos_config.excluded_config_keys(composition) + himl_args.exclude
+        if self.himl_args.exclude:
+            filtered_keys = self.kompos_config.filtered_output_keys(composition) + self.himl_args.filter
+            excluded_keys = self.kompos_config.excluded_config_keys(composition) + self.himl_args.exclude
 
         return self.generate_config(config_path=config_path,
                                     filters=filtered_keys,
@@ -184,6 +183,6 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         cmd = "cd {helmfile_path} && helmfile {subcommand} {extra_args}".format(
             helmfile_path=helmfile_composition_path,
             subcommand=args.subcommand,
-            extra_args=' '.join(extra_args),)
+            extra_args=' '.join(extra_args), )
 
         return dict(command=cmd)
