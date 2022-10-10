@@ -153,7 +153,4 @@ def is_nix_enabled(cli_opts, cfg_opt):
     if cli_opts.nix:
         return True
 
-    if cli_opts.no_nix:
-        return False
-
     return cfg_opt

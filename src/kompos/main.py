@@ -14,12 +14,12 @@ import sys
 
 from simpledi import Container, auto, cache, instance, ListInstanceProvider
 
+from kompos.parser import RootParser
 from . import Executor
-from .cli.config import ConfigRenderParserConfig, ConfigRenderRunner
-from .cli.helmfile import HelmfileParser, HelmfileRunner
-from .cli.parser import RootParser
-from .cli.terraform import TerraformParser, TerraformRunner
 from .komposconfig import KomposConfig
+from .runners.config import ConfigRenderParserConfig, ConfigRenderRunner
+from .runners.helmfile import HelmfileParser, HelmfileRunner
+from .runners.terraform import TerraformParser, TerraformRunner
 
 logger = logging.getLogger(__name__)
 
@@ -35,50 +35,48 @@ def configure_logging(args):
 class AppContainer(Container):
     def __init__(self, argv=None):
         super(AppContainer, self).__init__()
-
-        self.argv = instance(argv)
-
-        self.configure_parsers()
-
-        self.kompos_config = cache(auto(KomposConfig))
+        # Configure runners
         self.terraform_runner = auto(TerraformRunner)
         self.helmfile_runner = auto(HelmfileRunner)
         self.config_runner = auto(ConfigRenderRunner)
 
-        # bind the command executor
-        self.execute = auto(Executor)
-
-        self.configure()
-        self.kompos_config.validate_version()
-        self.kompos_config.vault_backend()
-
-    def configure_parsers(self):
+        # Configure parsers
         self.root_parser = auto(RootParser)
-
         parsers = ListInstanceProvider()
         parsers.add(auto(TerraformParser))
         parsers.add(auto(HelmfileParser))
         parsers.add(auto(ConfigRenderParserConfig))
         self.sub_parsers = parsers
 
+        # Configure
+        self.argv = instance(argv)
+        self.configure()
+        # bind the command executor
+        self.execute = auto(Executor)
+
+        # Set up kompos config
+        self.kompos_config = cache(auto(KomposConfig))
+        self.kompos_config.validate_version()
+        self.kompos_config.vault_backend()
+
     def configure(self):
         args, extra_args = self.root_parser.parse_known_args(self.argv)
-        configure_logging(args)
 
+        configure_logging(args)
         logger.debug('cli args: {}, extra_args: {}'.format(args, extra_args))
 
         # Bind some very useful dependencies
+        self.package_dir = lambda c: os.path.dirname(__file__)
         self.console_args = cache(instance(args))
         self.console_extra_args = cache(instance(extra_args))
         self.command = lambda c: self.console_args.command
-        self.config_path = cache(
-            lambda c: get_config_path(c.root_dir, c.console_args))
-        self.root_dir = cache(lambda c: get_root_dir(c.console_args))
-        self.package_dir = lambda c: os.path.dirname(__file__)
+        self.root_path = cache(lambda c: get_root_path(c.console_args))
+        self.config_path = cache(lambda c: self.console_args.config_path)
+        self.full_config_path = cache(lambda c: os.path.join(self.root_path, self.config_path))
 
-        # change path to the root_dir
-        logger.info('root dir: {}'.format(self.root_dir))
-        os.chdir(self.root_dir)
+        # change path to the root_path
+        logger.info('root path: {}'.format(self.root_path))
+        os.chdir(self.root_path)
 
         return args
 
@@ -98,22 +96,25 @@ def run(args=None):
     sys.exit(app_container.run())
 
 
-def get_config_path(root_dir, console_args):
-    """ Return config path + root_dir if path is relative """
+def get_config_path(console_args):
+    if not os.path.isabs(console_args.config_path):
+        raise Exception("Provide a config path.")
 
+
+def get_full_config_path(root_path, console_args):
+    """ Return config path + root_path if path is relative """
     if os.path.isabs(console_args.config_path):
         return console_args.config_path
-    return os.path.join(root_dir, console_args.config_path)
+    return os.path.join(root_path, console_args.config_path)
 
 
-def get_root_dir(args):
-    """ Either the root_dir option or the current working dir """
-
-    if args.root_dir:
-        if not os.path.isdir(os.path.realpath(args.root_dir)):
+def get_root_path(args):
+    """ Either the root_path option or the current working dir """
+    if args.root_path:
+        if not os.path.isdir(os.path.realpath(args.root_path)):
             raise ValueError(
-                "Specified root dir {} does not exists".format(os.path.realpath(args.root_dir)))
+                "Specified root dir {} does not exists".format(os.path.realpath(args.root_path)))
 
-        return os.path.realpath(args.root_dir)
+        return os.path.realpath(args.root_path)
 
     return os.path.realpath(os.getcwd())

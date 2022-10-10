@@ -27,29 +27,22 @@ class RootParser:
     def _get_parser(self):
         parser = argparse.ArgumentParser(
             description='Run commands against a definition', prog='kompos')
-        parser.add_argument(
-            'config_path',
-            type=str,
-            help='The config path from where to run compositions or generate a flat config file.')
-        parser.add_argument('--root-dir', type=str, help='The root of the resource tree - '
-                                                         'it can be an absolute path or relative to the current dir')
+        parser.add_argument('config_path',
+                            type=str,
+                            help='The config path from where to run compositions or generate a flat config file.')
+        parser.add_argument('--root-path',
+                            type=str,
+                            help='The root of the resource tree it can be an absolute path or relative to the current dir')
         parser.add_argument('--verbose', '-v', action='count',
                             help='Get more verbose output from commands')
-        parser.add_argument(
-            '--nix',
-            action='store_true',
-            help='Enable nix integration for remote resources'
-        )
-        parser.add_argument(
-            '--no-nix',
-            action='store_true',
-            help='Disable nix integration for remote resources'
-        )
-        parser.add_argument(
-            '--version',
-            action='version',
-            version='%(prog)s v{version}'.format(version=__version__)
-        )
+        parser.add_argument('--nix',
+                            action='store_true',
+                            help='Enable nix integration for remote resources'
+                            )
+        parser.add_argument('--version',
+                            action='version',
+                            version='%(prog)s v{version}'.format(version=__version__)
+                            )
         parser.add_argument('--himl',
                             action='store',
                             dest='himl_args',
@@ -71,7 +64,6 @@ class RootParser:
     def _check_args_for_unicode(args):
         if args is None:
             args = sys.argv
-
         try:
             for value in args:
                 value.encode('utf-8')

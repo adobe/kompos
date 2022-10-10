@@ -14,8 +14,8 @@ import os
 from himl import ConfigRunner
 
 from kompos.helpers.himl_helper import HierarchicalConfigGenerator
+from kompos.helpers.nix import is_nix_enabled, nix_install, writeable_nix_out_path
 from kompos.komposconfig import get_value_or
-from kompos.nix import is_nix_enabled, nix_install, writeable_nix_out_path
 
 logger = logging.getLogger(__name__)
 
@@ -78,43 +78,42 @@ def get_raw_config(config_path, composition, excluded_config_keys, filtered_outp
     )
 
 
-def get_compositions(kompos_config, path, comp_type, reverse=False):
-    composition_order = kompos_config.composition_order(comp_type)
+def get_compositions(config_path, strict_comp_type, composition_order, reverse=False):
     logging.basicConfig(level=logging.INFO)
 
-    detected_type, compositions = discover_compositions(path)
-    compositions = sorted_compositions(compositions, composition_order, reverse)
+    compositions, paths = discover_compositions(config_path)
+    if composition_order:
+        compositions = sorted_compositions(compositions, composition_order, reverse)
 
     if not compositions:
         raise Exception(
-            "No {} compositions were detected in {}.".format(comp_type, path))
-    if detected_type != comp_type:
-        raise Exception("Failed to detect composition type.")
+            "No {} compositions were detected in {}.".format(strict_comp_type, config_path))
 
-    return detected_type, compositions
+    return compositions, paths
 
 
-def discover_compositions(path):
-    path_params = dict(split_path(x) for x in path.split('/'))
+def discover_compositions(config_path):
+    path_params = dict(split_path(x) for x in config_path.split('/'))
+
     composition_type = path_params.get(COMPOSITION_KEY, None)
-
     if not composition_type:
         raise Exception("No composition detected in path.")
 
-    # check if single composition selected
+    # Check if single composition selected
     composition = path_params.get(composition_type, None)
     if composition:
-        return composition_type, [composition]
+        return [composition], {composition: config_path}
 
-    # discover compositions
+    # Discover composition paths
+    paths = dict()
     compositions = []
-    subpaths = os.listdir(path)
-    for subpath in subpaths:
+    for subpath in os.listdir(config_path):
         if composition_type + "=" in subpath:
             composition = split_path(subpath)[1]
+            paths[composition] = os.path.join(config_path, "{}={}".format(composition_type, composition))
             compositions.append(composition)
 
-    return composition_type, compositions
+    return compositions, paths
 
 
 def sorted_compositions(compositions, composition_order, reverse=False):
