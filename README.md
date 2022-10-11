@@ -1,6 +1,6 @@
 # kompos
-[![Build Status](https://www.travis-ci.com/adobe/kompos.svg?token=8uHqfhgsxdvJ93qWAxhn&branch=master)](https://www.travis-ci.com/adobe/kompos) [![Docker pull](https://img.shields.io/docker/pulls/adobe/kompos)](https://hub.docker.com/r/adobe/kompos) [![](https://images.microbadger.com/badges/version/adobe/kompos.svg)](https://microbadger.com/images/adobe/kompos "Get your own version badge on microbadger.com") [![License](https://img.shields.io/github/license/adobe/kompos)](https://github.com/adobe/kompos/blob/master/LICENSE) [![PyPI pyversions](https://img.shields.io/pypi/pyversions/kompos.svg)](https://pypi.python.org/pypi/kompos/)
 
+[![Build Status](https://www.travis-ci.com/adobe/kompos.svg?token=8uHqfhgsxdvJ93qWAxhn&branch=main)](https://www.travis-ci.com/adobe/kompos) [![Docker pull](https://img.shields.io/docker/pulls/adobe/kompos)](https://hub.docker.com/r/adobe/kompos) [![](https://images.microbadger.com/badges/version/adobe/kompos.svg)](https://microbadger.com/images/adobe/kompos "Get your own version badge on microbadger.com") [![License](https://img.shields.io/github/license/adobe/kompos)](https://github.com/adobe/kompos/blob/master/LICENSE) [![PyPI pyversions](https://img.shields.io/pypi/pyversions/kompos.svg)](https://pypi.python.org/pypi/kompos/)
 
 ![kompos](img/kompos.png)
 
@@ -63,7 +63,8 @@ $ nix-env -f '<nixpkgs>' -iA nix-prefetch-git
 
 #### Configuration
 
-The integration can be globally enabled or diabled with the flag `nix: [true|false]` and a disable overwrite with `--no-nix` argument. Below are the
+The integration can be globally enabled or diabled with the flag `nix: [true|false]` and a disable overwrite
+with `--no-nix` argument. Below are the
 necessary parts of komposconfig regarding nix & versioning:
 
 ```yaml
@@ -80,7 +81,7 @@ terraform:
     name: 'terraform-stack'
 
     # The repo we would like to version.
-    url:  "git@github.com:my-org/terraform-stack.git"
+    url: "git@github.com:my-org/terraform-stack.git"
 
 # Likewise for helmfile.
 helmfile:
@@ -89,7 +90,7 @@ helmfile:
 
   repo:
     name: 'helmfile-releases'
-    url:  "git@github.com:my-org/helmfile-releases.git"
+    url: "git@github.com:my-org/helmfile-releases.git"
 
 nix: true
 ```
@@ -118,6 +119,6 @@ infrastructure:
 
 ### Docker Image
 
-
 ## License
+
 [Apache License 2.0](/LICENSE)
