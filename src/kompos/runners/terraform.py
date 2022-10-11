@@ -10,16 +10,10 @@
 
 import logging
 import os
+from pathlib import Path
 
-from kompos.helpers.composition_helper import get_compositions, get_config_path, \
-    get_composition_path, get_raw_config, get_himl_args, get_output_path
-from kompos.helpers.himl_helper import HierarchicalConfigGenerator
-from kompos.helpers.runner_helper import validate_runner_version
-from kompos.komposconfig import (
-    TERRAFORM_CONFIG_FILENAME,
-    local_config_dir, TERRAFORM_PROVIDER_FILENAME
-)
 from kompos.parser import SubParserConfig
+from kompos.runners.runner import GenericRunner
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +35,13 @@ SUBCMDS_WITH_VARS = [
 ]
 
 RUNNER_TYPE = "terraform"
+RUNNER_REVERSE_COMPOSITION_CMD = "destroy"
+# The filename of the generated hierarchical configuration for Terrraform.
+TERRAFORM_CONFIG_FILENAME = "variables.tfvars.json"
+# The filename of the generated Terrraform provider.
+TERRAFORM_PROVIDER_FILENAME = "provider.tf.json"
+# Directory to store terraform plugin cache
+TERRAFORM_CACHE_DIR = "~/.kompos/.terraform.d/plugin-cache"
 
 
 class TerraformParser(SubParserConfig):
@@ -65,103 +66,45 @@ class TerraformParser(SubParserConfig):
         '''
 
 
-class TerraformRunner(HierarchicalConfigGenerator):
-    def __init__(self, full_config_path, config_path, kompos_config, execute):
-        super(TerraformRunner, self).__init__()
+class TerraformRunner(GenericRunner):
+    def __init__(self, kompos_config, full_config_path, config_path, execute):
+        super(TerraformRunner, self).__init__(kompos_config, full_config_path, config_path, execute, RUNNER_TYPE)
 
-        logging.basicConfig(level=logging.INFO)
+    def run_configuration(self, args):
+        self.ordered_compositions = True
+        self.reverse = (RUNNER_REVERSE_COMPOSITION_CMD == args.subcommand)
 
-        self.full_config_path = full_config_path
-        self.kompos_config = kompos_config
-        self.config_path = config_path
-        self.execute = execute
-        self.himl_args = None
-
-        # Stop processing if an incompatible version is detected.
-        validate_runner_version(self.kompos_config, RUNNER_TYPE)
-
-    def run(self, args, extra_args):
-        if len(extra_args) > 1:
-            logger.info("Found extra_args %s", extra_args)
-        self.himl_args = get_himl_args(args)
-
-        reverse = ("destroy" == args.subcommand)
-        composition_order = self.kompos_config.composition_order(RUNNER_TYPE)
-        compositions, paths = get_compositions(self.config_path, RUNNER_TYPE, composition_order, reverse)
-
-        return self.run_compositions(args, extra_args, compositions, paths)
-
-    def run_compositions(self, args, extra_args, compositions, paths):
-        for composition in compositions:
-            logger.info("Running composition: %s", composition)
-
-            composition_path = paths[composition]
-            raw_config = get_raw_config(composition_path, composition,
-                                        self.kompos_config.excluded_config_keys(composition),
-                                        self.kompos_config.filtered_output_keys(composition))
-
-            # Generate output paths for configs
-            config_destination = os.path.join(get_output_path(args, raw_config, self.kompos_config, RUNNER_TYPE),
-                                              raw_config["cloud"]["type"])
-
-            # Generate configs
-            self.generate_terraform_configs(composition_path, config_destination, composition)
-
-            # Run terraform
-            return_code = self.execute(self.run_terraform(args, extra_args, config_destination, composition))
-
-            if return_code != 0:
-                logger.error(
-                    "Command finished with nonzero exit code for composition '%s'."
-                    "Will skip remaining compositions.", composition
-                )
-                return return_code
-
-        return 0
-
-    def generate_terraform_configs(self, config_path, config_destination, composition):
-        config_path = get_config_path(config_path, composition)
-        config_destination = get_composition_path(config_destination, composition)
-
-        self.provider_config(config_path, config_destination, composition)
-        self.variables_config(config_path, config_destination, composition)
-
-    def provider_config(self, config_path, composition_path, composition):
-        output_file = os.path.join(composition_path, TERRAFORM_PROVIDER_FILENAME)
-        logger.info('Generating terraform config %s', output_file)
-
-        filters = self.kompos_config.filtered_output_keys(composition) + ["provider", "terraform"]
-        excluded = self.kompos_config.excluded_config_keys(composition)
-
-        if self.himl_args.exclude:
-            excluded = self.kompos_config.excluded_config_keys(composition) + self.himl_args.exclude
-
+    def execution_configuration(self, composition, config_path, default_output_path, raw_config,
+                                filtered_keys, excluded_keys):
+        # Generate provider with subpath for cloud specific modules
+        # ./terraform/compositions/aws/provider.tf.json
+        provider_path = os.path.join(default_output_path, raw_config["cloud"]["type"], composition,
+                                     TERRAFORM_PROVIDER_FILENAME)
+        logger.info('Generating terraform provider %s', provider_path)
         self.generate_config(
             config_path=config_path,
-            exclude_keys=excluded,
-            filters=filters,
+            exclude_keys=excluded_keys,
+            filters=filtered_keys + ["provider", "terraform"],
             output_format="json",
-            output_file=output_file,
-            print_data=False,
+            output_file=provider_path,
+            print_data=True,
             skip_interpolation_resolving=self.himl_args.skip_interpolation_resolving,
             skip_interpolation_validation=self.himl_args.skip_interpolation_validation,
             skip_secrets=self.himl_args.skip_secrets
         )
 
-    def variables_config(self, config_path, composition_path, composition):
-        output_file = os.path.join(composition_path, TERRAFORM_CONFIG_FILENAME)
-        logger.info('Generating terraform config %s', output_file)
-
-        excluded = self.kompos_config.excluded_config_keys(composition) + ["provider"]
-        filtered = self.kompos_config.filtered_output_keys(composition)
-
+        # Generate variables with subpath for cloud specific modules
+        variables_path = os.path.join(default_output_path, raw_config["cloud"]["type"], composition,
+                                      TERRAFORM_CONFIG_FILENAME)
+        logger.info('Generating terraform variables %s', variables_path)
         self.generate_config(
             config_path=config_path,
-            exclude_keys=excluded,
-            filters=filtered,
+            exclude_keys=excluded_keys + ["provider"],
+            filters=filtered_keys,
             enclosing_key="config",
             output_format="json",
-            output_file=os.path.expanduser(output_file),
+            output_file=variables_path,
+            # output_file=os.path.expanduser(config_path),
             print_data=True,
             skip_interpolation_resolving=self.himl_args.skip_interpolation_resolving,
             skip_interpolation_validation=self.himl_args.skip_interpolation_validation,
@@ -169,9 +112,9 @@ class TerraformRunner(HierarchicalConfigGenerator):
         )
 
     @staticmethod
-    def run_terraform(args, extra_args, terraform_path, composition):
-        terraform_composition_path = os.path.join(terraform_path, composition)
-
+    def execution(args, extra_args, default_output_path, composition, raw_config):
+        # Add cloud subpath for TF modules
+        terraform_composition_path = os.path.join(default_output_path, raw_config["cloud"]["type"], composition)
         var_file = '-var-file="{}"'.format(TERRAFORM_CONFIG_FILENAME) if args.subcommand in SUBCMDS_WITH_VARS else ''
         terraform_env_config = 'export TF_PLUGIN_CACHE_DIR="{}"'.format(local_config_dir())
 
@@ -193,3 +136,12 @@ def remove_local_cache_cmd(subcommand):
         return 'rm -rf .terraform &&'
 
     return ''
+
+
+def local_config_dir(directory=TERRAFORM_CACHE_DIR):
+    try:
+        Path(Path.expanduser(Path(directory))).mkdir(parents=True, exist_ok=True)
+        return Path.expanduser(Path(directory))
+
+    except IOError:
+        logging.error("Failed to create dir in path: %s", directory)

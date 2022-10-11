@@ -14,16 +14,15 @@ import sys
 
 from kubeconfig import KubeConfig
 
-from kompos.helpers.composition_helper import get_config_path, get_compositions, get_composition_path, \
-    get_raw_config, get_himl_args, get_output_path
-from kompos.helpers.himl_helper import HierarchicalConfigGenerator
-from kompos.helpers.runner_helper import validate_runner_version
-from kompos.komposconfig import HELMFILE_CONFIG_FILENAME
 from kompos.parser import SubParserConfig
+from kompos.runners.runner import GenericRunner
 
 logger = logging.getLogger(__name__)
 
 RUNNER_TYPE = "helmfile"
+RUNNER_REVERSE_COMPOSITION_CMD = "delete"
+# The filename of the generated hierarchical configuration for Helmfile.
+HELMFILE_VARIABLES_FILENAME = "generated-values.yaml"
 
 
 class HelmfileParser(SubParserConfig):
@@ -52,59 +51,41 @@ class HelmfileParser(SubParserConfig):
         '''
 
 
-class HelmfileRunner(HierarchicalConfigGenerator):
-    def __init__(self, full_config_path, kompos_config, config_path, execute):
-        super(HelmfileRunner, self).__init__()
+class HelmfileRunner(GenericRunner):
+    def __init__(self, kompos_config, full_config_path, config_path, execute):
+        super(HelmfileRunner, self).__init__(kompos_config, full_config_path, config_path, execute, RUNNER_TYPE)
 
-        logging.basicConfig(level=logging.INFO)
+    def run_configuration(self, args):
+        self.ordered_compositions = True
+        self.reverse = (RUNNER_REVERSE_COMPOSITION_CMD == args.subcommand)
 
-        self.full_config_path = full_config_path
-        self.kompos_config = kompos_config
-        self.config_path = config_path
-        self.execute = execute
-        self.himl_args = None
+    def execution_configuration(self, composition, config_path, default_output_path, raw_config,
+                                filtered_keys, excluded_keys):
 
-        # Stop processing if an incompatible version is detected.
-        validate_runner_version(self.kompos_config, RUNNER_TYPE)
+        self.setup_kube_config(raw_config)
+        self.helmfile_config(config_path, default_output_path, filtered_keys, excluded_keys)
 
-    def run(self, args, extra_args):
-        if len(extra_args) > 1:
-            logger.info("Found extra_args %s", extra_args)
-        self.himl_args = get_himl_args(args)
+    def helmfile_config(self, composition_config_path, default_output_path, filtered_keys, excluded_keys):
+        output_file = os.path.join(default_output_path, HELMFILE_VARIABLES_FILENAME)
+        logger.info('Generating helmfiles variables file %s', output_file)
 
-        reverse = ("destroy" == args.subcommand)
-        composition_order = self.kompos_config.composition_order(RUNNER_TYPE)
-        compositions, paths = get_compositions(self.config_path, RUNNER_TYPE, composition_order, reverse)
+        return self.generate_config(config_path=composition_config_path,
+                                    filters=filtered_keys,
+                                    exclude_keys=excluded_keys,
+                                    output_format="yaml",
+                                    output_file=output_file,
+                                    print_data=True)
 
-        return self.run_compositions(args, extra_args, compositions, paths)
+    @staticmethod
+    def execution(args, extra_args, default_output_path, composition, raw_config):
+        helmfile_composition_path = os.path.join(default_output_path, composition)
 
-    def run_compositions(self, args, extra_args, compositions, paths):
-        for composition in compositions:
-            logger.info("Running composition: %s", composition)
+        cmd = "cd {helmfile_path} && helmfile {subcommand} {extra_args}".format(
+            helmfile_path=helmfile_composition_path,
+            subcommand=args.subcommand,
+            extra_args=' '.join(extra_args), )
 
-            composition_path = paths[composition]
-            raw_config = get_raw_config(composition_path, composition,
-                                        self.kompos_config.excluded_config_keys(composition),
-                                        self.kompos_config.filtered_output_keys(composition))
-
-            # Generate output paths for configs
-            config_destination = get_output_path(args, raw_config, self.kompos_config, RUNNER_TYPE)
-
-            # Generate configs
-            self.generate_helmfile_config(composition_path, config_destination, composition)
-            self.setup_kube_config(raw_config)
-
-            # Run helmfile
-            return_code = self.execute(self.run_helmfile(args, extra_args, config_destination, composition))
-
-            if return_code != 0:
-                logger.error(
-                    "Command finished with nonzero exit code for composition '%s'."
-                    "Will skip remaining compositions.", composition
-                )
-                return return_code
-
-        return 0
+        return dict(command=cmd)
 
     def setup_kube_config(self, data):
         if data['helm']['global']['cluster']['type'] == 'k8s':
@@ -129,8 +110,7 @@ class HelmfileRunner(HierarchicalConfigGenerator):
             cluster_name = data['helm']['global']['fqdn']
             aws_profile = data['helm']['global']['aws']['profile']
             region = data['helm']['global']['region']['location']
-            file_location = self.generate_eks_kube_config(
-                cluster_name, aws_profile, region)
+            file_location = self.generate_eks_kube_config(cluster_name, aws_profile, region)
             os.environ['KUBECONFIG'] = file_location
 
         else:
@@ -139,10 +119,9 @@ class HelmfileRunner(HierarchicalConfigGenerator):
 
     def generate_eks_kube_config(self, cluster_name, aws_profile, region):
         file_location = self.get_tmp_file()
-        cmd = "aws eks update-kubeconfig --name {} --profile {} --region {} --kubeconfig {}".format(cluster_name,
-                                                                                                    aws_profile,
-                                                                                                    region,
-                                                                                                    file_location)
+        cmd = "aws eks update-kubeconfig --name {} --profile {} --region {} --kubeconfig {}".format(
+            cluster_name, aws_profile, region, file_location)
+
         return_code = self.execute(dict(command=cmd))
         if return_code != 0:
             raise Exception(
@@ -154,35 +133,3 @@ class HelmfileRunner(HierarchicalConfigGenerator):
         import tempfile
         with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
             return tmp_file.name
-
-    def generate_helmfile_config(self, config_path, config_destination, composition):
-        config_path = get_config_path(config_path, composition)
-        config_destination = get_composition_path(config_destination, composition)
-
-        output_file = os.path.join(config_destination, HELMFILE_CONFIG_FILENAME)
-        logger.info('Generating helmfiles config %s', output_file)
-
-        filtered_keys = self.kompos_config.filtered_output_keys(composition)
-        excluded_keys = self.kompos_config.excluded_config_keys(composition)
-
-        if self.himl_args.exclude:
-            filtered_keys = self.kompos_config.filtered_output_keys(composition) + self.himl_args.filter
-            excluded_keys = self.kompos_config.excluded_config_keys(composition) + self.himl_args.exclude
-
-        return self.generate_config(config_path=config_path,
-                                    filters=filtered_keys,
-                                    exclude_keys=excluded_keys,
-                                    output_format="yaml",
-                                    output_file=output_file,
-                                    print_data=True)
-
-    @staticmethod
-    def run_helmfile(args, extra_args, helmfile_path, composition):
-        helmfile_composition_path = os.path.join(helmfile_path, composition)
-
-        cmd = "cd {helmfile_path} && helmfile {subcommand} {extra_args}".format(
-            helmfile_path=helmfile_composition_path,
-            subcommand=args.subcommand,
-            extra_args=' '.join(extra_args), )
-
-        return dict(command=cmd)

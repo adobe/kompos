@@ -2,6 +2,7 @@
 # This file is licensed to you under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License. You may obtain a copy
 # of the License at http://www.apache.org/licenses/LICENSE-2.0
+import os
 
 # Unless required by applicable law or agreed to in writing, software distributed under
 # the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
@@ -10,6 +11,8 @@
 from himl.config_generator import ConfigProcessor
 
 from kompos import display
+
+COMPOSITION_KEY = "composition"
 
 
 class HierarchicalConfigGenerator:
@@ -110,3 +113,38 @@ class HierarchicalConfigGenerator:
             command += " --multi-line-string"
 
         return command
+
+
+def discover_compositions(config_path):
+    path_params = dict(split_path(x) for x in config_path.split('/'))
+
+    composition_type = path_params.get(COMPOSITION_KEY, None)
+    if not composition_type:
+        raise Exception("No composition detected in path.")
+
+    # Check if single composition selected
+    composition = path_params.get(composition_type, None)
+    if composition:
+        return [composition], {composition: config_path}
+
+    # Discover composition paths
+    paths = dict()
+    compositions = []
+    for subpath in os.listdir(config_path):
+        if composition_type + "=" in subpath:
+            composition = split_path(subpath)[1]
+            paths[composition] = os.path.join(config_path, "{}={}".format(composition_type, composition))
+            compositions.append(composition)
+
+    return compositions, paths
+
+
+def sorted_compositions(compositions, composition_order, reverse=False):
+    result = list(filter(lambda x: x in compositions, composition_order))
+    return tuple(reversed(result)) if reverse else result
+
+
+def split_path(value, separator='='):
+    if separator in value:
+        return value.split(separator)
+    return [value, ""]

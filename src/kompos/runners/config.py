@@ -12,9 +12,8 @@ import logging
 
 from himl import ConfigRunner
 
-from kompos.helpers.composition_helper import get_himl_args, get_compositions
-from kompos.helpers.himl_helper import HierarchicalConfigGenerator
 from kompos.parser import SubParserConfig
+from kompos.runners.runner import GenericRunner
 
 logger = logging.getLogger(__name__)
 
@@ -39,22 +38,11 @@ class ConfigRenderParserConfig(SubParserConfig):
         '''
 
 
-class ConfigRenderRunner(HierarchicalConfigGenerator):
-    def __init__(self, kompos_config, config_path):
-        super(ConfigRenderRunner, self).__init__()
-
-        logging.basicConfig(level=logging.INFO)
-
-        self.kompos_config = kompos_config
-        self.config_path = config_path
-        self.himl_args = None
+class ConfigRenderRunner(GenericRunner):
+    def __init__(self, kompos_config, full_config_path, config_path, execute):
+        super(ConfigRenderRunner, self).__init__(kompos_config, full_config_path, config_path, execute, RUNNER_TYPE)
 
     def run(self, args, extra_args):
-        if len(extra_args) > 1:
-            logger.info("Found extra_args %s", extra_args)
-        self.himl_args = get_himl_args(args)
-
-        reverse = False
         composition_order = None
         compositions, paths = get_compositions(self.config_path, RUNNER_TYPE, composition_order, reverse)
 

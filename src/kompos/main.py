@@ -19,6 +19,7 @@ from . import Executor
 from .komposconfig import KomposConfig
 from .runners.config import ConfigRenderParserConfig, ConfigRenderRunner
 from .runners.helmfile import HelmfileParser, HelmfileRunner
+from .runners.runner import GenericRunner
 from .runners.terraform import TerraformParser, TerraformRunner
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ class AppContainer(Container):
     def __init__(self, argv=None):
         super(AppContainer, self).__init__()
         # Configure runners
+        self.generic_runner = auto(GenericRunner)
         self.terraform_runner = auto(TerraformRunner)
         self.helmfile_runner = auto(HelmfileRunner)
         self.config_runner = auto(ConfigRenderRunner)
