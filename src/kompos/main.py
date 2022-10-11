@@ -17,9 +17,9 @@ from simpledi import Container, auto, cache, instance, ListInstanceProvider
 from kompos.parser import RootParser
 from . import Executor
 from .komposconfig import KomposConfig
+from .runner import GenericRunner
 from .runners.config import ConfigRenderParserConfig, ConfigRenderRunner
 from .runners.helmfile import HelmfileParser, HelmfileRunner
-from .runners.runner import GenericRunner
 from .runners.terraform import TerraformParser, TerraformRunner
 
 logger = logging.getLogger(__name__)
@@ -73,7 +73,7 @@ class AppContainer(Container):
         self.console_extra_args = cache(instance(extra_args))
         self.command = lambda c: self.console_args.command
         self.root_path = cache(lambda c: get_root_path(c.console_args))
-        self.config_path = cache(lambda c: self.console_args.config_path)
+        self.config_path = cache(lambda c: get_config_path(c.console_args))
         self.full_config_path = cache(lambda c: os.path.join(self.root_path, self.config_path))
 
         # change path to the root_path
@@ -99,8 +99,9 @@ def run(args=None):
 
 
 def get_config_path(console_args):
-    if not os.path.isabs(console_args.config_path):
-        raise Exception("Provide a config path.")
+    if not os.path.isdir(console_args.config_path):
+        raise Exception("Provide a dir config path.")
+    return console_args.config_path
 
 
 def get_full_config_path(root_path, console_args):

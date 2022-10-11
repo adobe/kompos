@@ -15,7 +15,7 @@ import sys
 from kubeconfig import KubeConfig
 
 from kompos.parser import SubParserConfig
-from kompos.runners.runner import GenericRunner
+from kompos.runner import GenericRunner
 
 logger = logging.getLogger(__name__)
 

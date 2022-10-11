@@ -2,6 +2,12 @@
 # This file is licensed to you under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License. You may obtain a copy
 # of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software distributed under
+# the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+# OF ANY KIND, either express or implied. See the License for the specific language
+# governing permissions and limitations under the License.
+
 import argparse
 import logging
 import os
@@ -12,11 +18,6 @@ from himl import ConfigRunner
 from kompos.helpers.himl_helper import HierarchicalConfigGenerator, discover_compositions, sorted_compositions
 from kompos.helpers.nix import writeable_nix_out_path, is_nix_enabled, nix_install
 from kompos.komposconfig import get_value_or
-
-# Unless required by applicable law or agreed to in writing, software distributed under
-# the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
-# OF ANY KIND, either express or implied. See the License for the specific language
-# governing permissions and limitations under the License.
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +41,7 @@ class GenericRunner(HierarchicalConfigGenerator):
         self.himl_args = None
         self.reverse = False
         self.ordered_compositions = False
-
-        # Stop processing if an incompatible runner version is detected.
-        if not self.runner_type:
-            logger.error("Could not detect runner type and version.")
-            exit(1)
-        if self.validate_runner:
-            validate_runner_version(self.kompos_config, self.runner_type)
+        self.generate_output = True
 
     def run(self, args, extra_args):
         logger.info("Runner: %s", self.runner_type)
@@ -56,6 +51,13 @@ class GenericRunner(HierarchicalConfigGenerator):
 
         self.himl_args = get_himl_args(args)
         self.run_configuration(args)
+
+        # Stop processing if an incompatible runner version is detected.
+        if not self.runner_type:
+            logger.error("Could not detect runner type and version.")
+            exit(1)
+        if self.validate_runner:
+            validate_runner_version(self.kompos_config, self.runner_type)
 
         compositions, paths = self.get_compositions()
 
@@ -78,6 +80,18 @@ class GenericRunner(HierarchicalConfigGenerator):
 
         return compositions, paths
 
+    def get_raw_config(self, config_path, composition):
+        self.kompos_config.excluded_config_keys(composition),
+        self.kompos_config.filtered_output_keys(composition)
+
+        return self.generate_config(
+            config_path=config_path,
+            exclude_keys=self.kompos_config.excluded_config_keys(composition),
+            filters=self.kompos_config.filtered_output_keys(composition),
+            skip_interpolation_validation=True,
+            skip_secrets=True
+        )
+
     def run_compositions(self, args, extra_args, compositions, paths):
         for composition in compositions:
             logger.info("Running composition: %s", composition)
@@ -86,12 +100,12 @@ class GenericRunner(HierarchicalConfigGenerator):
             config_path = paths[composition]
 
             # Raw config generation
-            raw_config = get_raw_config(config_path,
-                                        self.kompos_config.excluded_config_keys(composition),
-                                        self.kompos_config.filtered_output_keys(composition))
+            raw_config = self.get_raw_config(config_path, composition)
 
             # Generate output paths for configs
-            default_output_path = get_default_output_path(args, raw_config, self.kompos_config, self.runner_type)
+            default_output_path = None
+            if self.generate_output:
+                default_output_path = get_default_output_path(args, raw_config, self.kompos_config, self.runner_type)
 
             # Set default key filters
             filtered_keys = self.kompos_config.filtered_output_keys(composition)
@@ -199,14 +213,3 @@ def get_himl_args(args):
         return himl_args
     else:
         return parser.parse_args([])
-
-
-def get_raw_config(config_path, excluded_config_keys, filtered_output_keys):
-    generator = HierarchicalConfigGenerator()
-    return generator.generate_config(
-        config_path=config_path,
-        exclude_keys=excluded_config_keys,
-        filters=filtered_output_keys,
-        skip_interpolation_validation=True,
-        skip_secrets=True
-    )
