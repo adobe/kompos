@@ -12,9 +12,8 @@ import logging
 
 from himl import ConfigRunner
 
-from kompos.helpers.composition_helper import get_himl_args, get_compositions
-from kompos.helpers.himl_helper import HierarchicalConfigGenerator
 from kompos.parser import SubParserConfig
+from kompos.runner import GenericRunner
 
 logger = logging.getLogger(__name__)
 
@@ -39,50 +38,34 @@ class ConfigRenderParserConfig(SubParserConfig):
         '''
 
 
-class ConfigRenderRunner(HierarchicalConfigGenerator):
-    def __init__(self, kompos_config, config_path):
-        super(ConfigRenderRunner, self).__init__()
+class ConfigRenderRunner(GenericRunner):
+    def __init__(self, kompos_config, full_config_path, config_path, execute):
+        super(ConfigRenderRunner, self).__init__(kompos_config, full_config_path, config_path, execute, RUNNER_TYPE)
 
-        logging.basicConfig(level=logging.INFO)
+    def run_configuration(self, args):
+        self.validate_runner = False
+        self.ordered_compositions = False
+        self.reverse = False
+        self.generate_output = False
 
-        self.kompos_config = kompos_config
-        self.config_path = config_path
-        self.himl_args = None
+    def execution_configuration(self, composition, config_path, default_output_path, raw_config,
+                                filtered_keys, excluded_keys):
+        self.generate_config(
+            config_path=config_path,
+            filters=filtered_keys,
+            exclude_keys=excluded_keys,
+            enclosing_key=self.himl_args.enclosing_key,
+            remove_enclosing_key=self.himl_args.remove_enclosing_key,
+            output_format=self.himl_args.output_format,
+            output_file=self.himl_args.output_file,
+            print_data=True,
+            skip_interpolation_resolving=self.himl_args.skip_interpolation_resolving,
+            skip_interpolation_validation=self.himl_args.skip_interpolation_validation,
+            skip_secrets=self.himl_args.skip_secrets,
+            multi_line_string=True
+        )
 
-    def run(self, args, extra_args):
-        if len(extra_args) > 1:
-            logger.info("Found extra_args %s", extra_args)
-        self.himl_args = get_himl_args(args)
-
-        reverse = False
-        composition_order = None
-        compositions, paths = get_compositions(self.config_path, RUNNER_TYPE, composition_order, reverse)
-
-        return self.run_compositions(args, extra_args, compositions, paths)
-
-    def run_compositions(self, args, extra_args, compositions, paths):
-        for composition in compositions:
-            logger.info("Running composition: %s", composition)
-
-            composition_path = paths[composition]
-            filtered_keys = self.kompos_config.filtered_output_keys(composition)
-            excluded_keys = self.kompos_config.excluded_config_keys(composition)
-
-            if self.himl_args.exclude:
-                filtered_keys = self.kompos_config.filtered_output_keys(composition) + self.himl_args.filter
-                excluded_keys = self.kompos_config.excluded_config_keys(composition) + self.himl_args.exclude
-
-            self.generate_config(
-                config_path=composition_path,
-                filters=filtered_keys,
-                exclude_keys=excluded_keys,
-                enclosing_key=args.enclosing_key,
-                remove_enclosing_key=args.remove_enclosing_key,
-                output_format=args.output_format,
-                output_file=args.output_file,
-                print_data=True,
-                skip_interpolation_resolving=args.skip_interpolation_resolving,
-                skip_interpolation_validation=args.skip_interpolation_validation,
-                skip_secrets=args.skip_secrets,
-                multi_line_string=True
-            )
+    @staticmethod
+    def execution(args, extra_args, default_output_path, composition, raw_config):
+        cmd = ""
+        return dict(command=cmd)

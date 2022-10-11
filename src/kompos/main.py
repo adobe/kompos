@@ -17,6 +17,7 @@ from simpledi import Container, auto, cache, instance, ListInstanceProvider
 from kompos.parser import RootParser
 from . import Executor
 from .komposconfig import KomposConfig
+from .runner import GenericRunner
 from .runners.config import ConfigRenderParserConfig, ConfigRenderRunner
 from .runners.helmfile import HelmfileParser, HelmfileRunner
 from .runners.terraform import TerraformParser, TerraformRunner
@@ -36,6 +37,7 @@ class AppContainer(Container):
     def __init__(self, argv=None):
         super(AppContainer, self).__init__()
         # Configure runners
+        self.generic_runner = auto(GenericRunner)
         self.terraform_runner = auto(TerraformRunner)
         self.helmfile_runner = auto(HelmfileRunner)
         self.config_runner = auto(ConfigRenderRunner)
@@ -71,7 +73,7 @@ class AppContainer(Container):
         self.console_extra_args = cache(instance(extra_args))
         self.command = lambda c: self.console_args.command
         self.root_path = cache(lambda c: get_root_path(c.console_args))
-        self.config_path = cache(lambda c: self.console_args.config_path)
+        self.config_path = cache(lambda c: get_config_path(c.console_args))
         self.full_config_path = cache(lambda c: os.path.join(self.root_path, self.config_path))
 
         # change path to the root_path
@@ -97,8 +99,9 @@ def run(args=None):
 
 
 def get_config_path(console_args):
-    if not os.path.isabs(console_args.config_path):
-        raise Exception("Provide a config path.")
+    if not os.path.isdir(console_args.config_path):
+        raise Exception("Provide a dir config path.")
+    return console_args.config_path
 
 
 def get_full_config_path(root_path, console_args):
