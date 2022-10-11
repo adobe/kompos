@@ -63,18 +63,16 @@ class HelmfileRunner(GenericRunner):
                                 filtered_keys, excluded_keys):
 
         self.setup_kube_config(raw_config)
-        self.helmfile_config(config_path, default_output_path, filtered_keys, excluded_keys)
 
-    def helmfile_config(self, composition_config_path, default_output_path, filtered_keys, excluded_keys):
-        output_file = os.path.join(default_output_path, HELMFILE_VARIABLES_FILENAME)
+        output_file = os.path.join(default_output_path, composition, HELMFILE_VARIABLES_FILENAME)
         logger.info('Generating helmfiles variables file %s', output_file)
 
-        return self.generate_config(config_path=composition_config_path,
-                                    filters=filtered_keys,
-                                    exclude_keys=excluded_keys,
-                                    output_format="yaml",
-                                    output_file=output_file,
-                                    print_data=True)
+        self.generate_config(config_path=config_path,
+                             filters=filtered_keys,
+                             exclude_keys=excluded_keys,
+                             output_format="yaml",
+                             output_file=output_file,
+                             print_data=True)
 
     @staticmethod
     def execution(args, extra_args, default_output_path, composition, raw_config):
@@ -124,8 +122,7 @@ class HelmfileRunner(GenericRunner):
 
         return_code = self.execute(dict(command=cmd))
         if return_code != 0:
-            raise Exception(
-                "Unable to generate EKS kube config. Exit code was {}".format(return_code))
+            raise Exception("Unable to generate EKS kube config. Exit code was {}".format(return_code))
         return file_location
 
     @staticmethod

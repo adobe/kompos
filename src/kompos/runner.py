@@ -15,7 +15,7 @@ from subprocess import Popen, PIPE
 
 from himl import ConfigRunner
 
-from kompos.helpers.himl_helper import HierarchicalConfigGenerator, discover_compositions, sorted_compositions
+from kompos.helpers.himl_helper import HierarchicalConfigGenerator
 from kompos.helpers.nix import writeable_nix_out_path, is_nix_enabled, nix_install
 from kompos.komposconfig import get_value_or
 
@@ -128,6 +128,9 @@ class GenericRunner(HierarchicalConfigGenerator):
                 )
                 return return_code
 
+            # Run some code after execution
+            self.execution_post_action()
+
         return 0
 
     def execution_configuration(self, composition, config_path, default_output_path, raw_config,
@@ -136,12 +139,46 @@ class GenericRunner(HierarchicalConfigGenerator):
 
     @staticmethod
     def execution(args, extra_args, default_output_path, composition, raw_config):
-        logger.info("Running composition: %s")
         return
 
     @staticmethod
     def execution_post_action():
         return
+
+
+def discover_compositions(config_path):
+    path_params = dict(split_path(x) for x in config_path.split('/'))
+
+    composition_type = path_params.get(COMPOSITION_KEY, None)
+    if not composition_type:
+        raise Exception("No composition detected in path.")
+
+    # Check if single composition selected
+    composition = path_params.get(composition_type, None)
+    if composition:
+        return [composition], {composition: config_path}
+
+    # Discover composition paths
+    paths = dict()
+    compositions = []
+    for subpath in os.listdir(config_path):
+        if composition_type + "=" in subpath:
+            composition = split_path(subpath)[1]
+            paths[composition] = os.path.join(config_path, "{}={}".format(composition_type, composition))
+            compositions.append(composition)
+
+    return compositions, paths
+
+
+def sorted_compositions(compositions, composition_order, reverse=False):
+    result = list(filter(lambda x: x in compositions, composition_order))
+    return tuple(reversed(result)) if reverse else result
+
+
+def split_path(value, separator='='):
+    if separator in value:
+        return value.split(separator)
+    return [value, ""]
 
 
 def get_default_output_path(args, raw_config, kompos_config, runner):
