@@ -2,17 +2,18 @@ name: Publish Python distribution to PyPI
 
 on:
   release:
-    types: [published]
+    types: [created]
+  workflow_dispatch:
 
 jobs:
   build-n-publish:
     name: Build and publish Python distributions to PyPI
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@master
 
     - name: Set up Python 3.9
-      uses: actions/setup-python@v1
+      uses: actions/setup-python@v4
       with:
         python-version: 3.9
 
