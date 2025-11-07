@@ -1,0 +1,9 @@
+# Default configuration
+cloud:
+  type: aws
+
+vpc:
+  tags:
+    ManagedBy: kompos
+    Project: example
+

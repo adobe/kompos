@@ -1,0 +1,9 @@
+# Runtime directory - all generated files go here
+.kompos-runtime/
+
+# Terraform state files (if running terraform manually)
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+

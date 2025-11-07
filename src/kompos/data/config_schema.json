@@ -9,8 +9,7 @@
         "order": {
           "type": "object",
           "required": [
-            "terraform",
-            "helmfile"
+            "terraform"
           ],
           "properties": {
             "terraform": {
@@ -51,6 +50,11 @@
         "version": {
           "type": "string",
           "description": "The terraform version that should be used. Kompos will abort on version mismatch."
+        },
+        "versioned_module_sources": {
+          "type": "boolean",
+          "description": "Enable processing of .tf.versioned files for Terraform module source version interpolation",
+          "default": true
         },
         "local_path": {
           "type": "string",
@@ -118,7 +122,6 @@
   },
   "required": [
     "terraform",
-    "helmfile",
     "compositions"
   ]
 }

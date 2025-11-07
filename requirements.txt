@@ -2,7 +2,7 @@ setuptools>=40.0.0
 packaging>=20.0
 simpledi==0.4.1
 PyYAML>=5.1
-himl>=0.11.1
+himl==0.19.0
 fastjsonschema==2.14.*
 termcolor>=1.1.0
 kubeconfig>=1.1.1

@@ -9,6 +9,7 @@
 # governing permissions and limitations under the License.
 
 import argparse
+import fcntl
 import logging
 import os
 from subprocess import Popen, PIPE
@@ -92,6 +93,37 @@ class GenericRunner(HierarchicalConfigGenerator):
         )
 
     def run_compositions(self, args, extra_args, compositions, paths):
+        # Acquire lock to prevent concurrent kompos runs from interfering
+        lock_file = None
+        lock_fd = None
+        
+        try:
+            lock_file = os.path.join(os.getcwd(), '.kompos-runtime', '.lock')
+            os.makedirs(os.path.dirname(lock_file), exist_ok=True)
+            lock_fd = open(lock_file, 'w')
+            
+            # Try to acquire exclusive lock (non-blocking)
+            try:
+                fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                logger.debug('Acquired kompos lock: %s', lock_file)
+            except IOError:
+                logger.error('Another kompos process is already running. Please wait or kill the other process.')
+                logger.error('Lock file: %s', lock_file)
+                return 1
+            
+            return self._run_compositions_internal(args, extra_args, compositions, paths)
+        
+        finally:
+            # Release lock and cleanup
+            if lock_fd:
+                try:
+                    fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
+                    lock_fd.close()
+                    logger.debug('Released kompos lock')
+                except Exception as e:
+                    logger.warning('Failed to release lock: %s', e)
+    
+    def _run_compositions_internal(self, args, extra_args, compositions, paths):
         for composition in compositions:
             logger.info("Running composition: %s", composition)
 
@@ -181,9 +213,16 @@ def split_path(value, separator='='):
 
 
 def get_default_output_path(args, raw_config, kompos_config, runner):
-    # Use the default local repo (not versioned).
+    # Use a dedicated runtime directory (not versioned)
+    # This keeps generated files separate from source files
+    runtime_base = os.path.join(
+        os.getcwd(),
+        '.kompos-runtime'
+    )
+    
     path = os.path.join(
-        kompos_config.local_path(runner),
+        runtime_base,
+        runner,
         kompos_config.root_path(runner),
     )
 

@@ -10,10 +10,11 @@
 
 import logging
 import os
-from pathlib import Path
+import shutil
 
 from kompos.parser import SubParserConfig
 from kompos.runner import GenericRunner
+from kompos.helpers.terraform_helper import TerraformVersionedSourceProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,8 @@ SUBCMDS_WITH_VARS = [
 ]
 
 RUNNER_TYPE = "terraform"
+# File naming conventions
+TERRAFORM_VERSIONED_EXTENSION = ".tf.versioned"  # For module source version interpolation
 RUNNER_REVERSE_COMPOSITION_CMD = "destroy"
 # The filename of the generated hierarchical configuration for Terrraform.
 TERRAFORM_CONFIG_FILENAME = "variables.tfvars.json"
@@ -53,6 +56,8 @@ class TerraformParser(SubParserConfig):
 
     def configure(self, parser):
         parser.add_argument('subcommand', help='One of the terraform commands', type=str)
+        parser.add_argument('--dry-run', action='store_true', 
+                          help='Generate all files but do not execute terraform command')
 
         return parser
 
@@ -69,6 +74,9 @@ class TerraformParser(SubParserConfig):
 class TerraformRunner(GenericRunner):
     def __init__(self, kompos_config, full_config_path, config_path, execute):
         super(TerraformRunner, self).__init__(kompos_config, full_config_path, config_path, execute, RUNNER_TYPE)
+        
+        # Initialize versioned source processor
+        self.versioned_processor = TerraformVersionedSourceProcessor(TERRAFORM_VERSIONED_EXTENSION)
 
     def run_configuration(self, args):
         self.ordered_compositions = True
@@ -76,10 +84,31 @@ class TerraformRunner(GenericRunner):
 
     def execution_configuration(self, composition, config_path, default_output_path, raw_config,
                                 filtered_keys, excluded_keys):
+        # Source composition path (where .tf and .tf.versioned files are)
+        source_composition_path = os.path.join(
+            self.kompos_config.local_path(RUNNER_TYPE),
+            self.kompos_config.root_path(RUNNER_TYPE),
+            raw_config["cloud"]["type"],
+            composition
+        )
+        
+        # Runtime directory path (where we generate and execute)
+        runtime_dir = os.path.join(default_output_path, raw_config["cloud"]["type"], composition)
+        
+        # Clean and recreate runtime directory to ensure fresh state
+        if os.path.exists(runtime_dir):
+            logger.debug('Cleaning runtime directory: %s', runtime_dir)
+            shutil.rmtree(runtime_dir)
+        
+        os.makedirs(runtime_dir, exist_ok=True)
+        logger.info('Using runtime directory: %s', runtime_dir)
+        
+        # Copy source .tf files (excluding .tf.versioned) to runtime directory
+        self._copy_source_files(source_composition_path, runtime_dir)
+        
         # Generate provider with subpath for cloud specific modules
-        # ./terraform/compositions/aws/provider.tf.json
-        provider_path = os.path.join(default_output_path, raw_config["cloud"]["type"], composition,
-                                     TERRAFORM_PROVIDER_FILENAME)
+        # .kompos-runtime/terraform/aws/vpc/provider.tf.json
+        provider_path = os.path.join(runtime_dir, TERRAFORM_PROVIDER_FILENAME)
         logger.info('Generating terraform provider %s', provider_path)
         self.generate_config(
             config_path=config_path,
@@ -94,8 +123,7 @@ class TerraformRunner(GenericRunner):
         )
 
         # Generate variables with subpath for cloud specific modules
-        variables_path = os.path.join(default_output_path, raw_config["cloud"]["type"], composition,
-                                      TERRAFORM_CONFIG_FILENAME)
+        variables_path = os.path.join(runtime_dir, TERRAFORM_CONFIG_FILENAME)
         logger.info('Generating terraform variables %s', variables_path)
         self.generate_config(
             config_path=config_path,
@@ -110,18 +138,51 @@ class TerraformRunner(GenericRunner):
             skip_interpolation_validation=self.himl_args.skip_interpolation_validation,
             skip_secrets=self.himl_args.skip_secrets
         )
+        
+        # Process versioned module sources if enabled
+        if self.kompos_config.terraform_versioned_module_sources_enabled():
+            self.versioned_processor.process(source_composition_path, runtime_dir, raw_config)
+    
+    def _copy_source_files(self, source_dir, target_dir):
+        """
+        Copy source .tf files (excluding .tf.versioned templates) to runtime directory.
+        
+        This allows Terraform to run with all necessary files in the runtime location
+        while keeping generated files separate from source files.
+        """
+        if not os.path.exists(source_dir):
+            logger.warning('Source composition directory does not exist: %s', source_dir)
+            return
+        
+        for filename in os.listdir(source_dir):
+            # Copy .tf files (but not .tf.versioned templates)
+            if filename.endswith('.tf') and not filename.endswith('.tf.versioned'):
+                source_file = os.path.join(source_dir, filename)
+                target_file = os.path.join(target_dir, filename)
+                
+                if os.path.isfile(source_file):
+                    shutil.copy2(source_file, target_file)
+                    logger.debug('Copied %s to runtime directory', filename)
 
     @staticmethod
     def execution(args, extra_args, default_output_path, composition, raw_config):
-        # Add cloud subpath for TF modules
-        terraform_composition_path = os.path.join(default_output_path, raw_config["cloud"]["type"], composition)
+        # Handle dry-run mode: skip terraform execution
+        if args.dry_run:
+            runtime_dir = os.path.join(default_output_path, raw_config["cloud"]["type"], composition)
+            logger.info("DRY-RUN: Skipping terraform execution for composition: %s", composition)
+            logger.info("DRY-RUN: Generated files are in: %s", runtime_dir)
+            # Return a no-op command that always succeeds
+            return dict(command="echo 'Dry-run mode: skipping terraform execution'")
+        
+        # Runtime directory for TF execution
+        runtime_dir = os.path.join(default_output_path, raw_config["cloud"]["type"], composition)
         var_file = '-var-file="{}"'.format(TERRAFORM_CONFIG_FILENAME) if args.subcommand in SUBCMDS_WITH_VARS else ''
         terraform_env_config = 'export TF_PLUGIN_CACHE_DIR="{}"'.format(local_config_dir())
 
         cmd = "cd {terraform_path} && " \
               "{remove_local_cache} " \
               "{env_config} ; terraform init && terraform {subcommand} {var_file} {extra_args}".format(
-            terraform_path=terraform_composition_path,
+            terraform_path=runtime_dir,
             remove_local_cache=remove_local_cache_cmd(args.subcommand),
             subcommand=args.subcommand,
             extra_args=' '.join(extra_args),

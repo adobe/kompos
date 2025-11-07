@@ -133,6 +133,10 @@ class KomposConfig:
     def runner_version(self, runner):
         return get_value_or(self.config, "{}/version".format(runner), 'latest')
 
+    def terraform_versioned_module_sources_enabled(self):
+        """Check if Terraform versioned module sources feature is enabled"""
+        return get_value_or(self.config, "terraform/versioned_module_sources", True)
+
     def repo_url(self, runner):
         return self.config[runner]['repo']['url']
 

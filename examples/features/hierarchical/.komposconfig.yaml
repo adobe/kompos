@@ -5,6 +5,5 @@ compositions:
       - account
       - network
       - cluster
-      - spinnaker
     helmfile:
       - helmfiles

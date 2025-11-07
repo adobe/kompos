@@ -12,3 +12,6 @@ buildrunner.results
 .idea
 .env
 local
+
+# Runtime directory (gitignore)
+.kompos-runtime/

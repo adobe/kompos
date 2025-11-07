@@ -1,0 +1,9 @@
+# Development cluster 1
+cluster: cluster1
+
+vpc:
+  module_version: "v2.0.0-rc"  # Testing release candidate
+  cidr_block: "10.0.0.0/16"
+  tags:
+    Cluster: cluster1
+

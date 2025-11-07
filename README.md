@@ -17,6 +17,15 @@ the architecture supports custom runners for any tool or platform.
 - **Universal Runner Architecture**: Built-in support for Terraform and Helmfile, extensible for any provisioning or deployment tool
 - **Multi-Environment Support**: Unified configuration structure that works across any cloud provider or infrastructure platform
 
+### Core Benefits
+
+- ✅ **DRY (Don't Repeat Yourself)**: Define common values once at higher levels, override only what differs per environment
+- ✅ **Clear Precedence**: More specific (deeper) configurations automatically override general ones
+- ✅ **Flexible Structure**: Organize by cloud, environment, cluster, composition, or any hierarchy that fits your workflow
+- ✅ **Environment-Specific Overrides**: Dev can use different values than prod (e.g., smaller instances, test versions)
+- ✅ **Easy Maintenance**: Change one file to affect multiple clusters/environments at once
+- ✅ **Clean Separation**: Source files (version controlled) vs. generated files (runtime artifacts)
+
 Below is a graphical representation of the data flow, showing how hierarchical 
 configurations are merged and interpolated before being injected into runners:
 
@@ -55,7 +64,26 @@ hierarchical configuration structure. This enables:
 - **Runtime Injection**: Generated configurations are automatically interpolated and injected into Terraform/Helmfile at execution time
 - **DRY Principle**: Eliminate configuration duplication across environments
 
-Checkout the [examples](./examples) for more information.
+**📚 For detailed architecture and file generation documentation, see [`/docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)**
+
+## Examples
+
+The [`examples/features/`](./examples/features/) directory contains working examples demonstrating key Kompos capabilities:
+
+### [Hierarchical Configuration](./examples/features/hierarchical/)
+Demonstrates how configuration files are layered and merged based on directory paths:
+- Configuration inheritance and overrides
+- Environment-specific values
+- Multi-level hierarchies (cloud → environment → cluster → composition)
+
+### [Versioned Module Sources](./examples/features/versioned-sources/)
+Shows how to use `.tf.versioned` template files for per-environment Terraform module version pinning:
+- Dynamic module source interpolation
+- Per-cluster/environment version management
+- Gradual rollout patterns (test in dev, promote to prod)
+- Overcoming Terraform's static `source` limitation
+
+Each example includes a README with usage instructions and explanations.
 
 ## Usage
 
