@@ -35,10 +35,6 @@ class RootParser:
                             help='The root of the resource tree it can be an absolute path or relative to the current dir')
         parser.add_argument('--verbose', '-v', action='count',
                             help='Get more verbose output from commands')
-        parser.add_argument('--nix',
-                            action='store_true',
-                            help='Enable nix integration for remote resources'
-                            )
         parser.add_argument('--version',
                             action='version',
                             version='%(prog)s v{version}'.format(version=__version__)

@@ -11,10 +11,7 @@
 import os
 import sys
 
-try:
-    from setuptools import setup, find_packages
-except ImportError:
-    from distutils.core import setup, find_packages
+from setuptools import setup, find_packages
 
 with open('README.md') as f:
     _readme = f.read()
@@ -28,27 +25,24 @@ setup(
     long_description=_readme + '\n\n',
     long_description_content_type='text/markdown',
     url='https://github.com/adobe/kompos',
-    python_requires='>=3.9',
+    python_requires='>=3.11',
     author='Adobe',
     author_email='noreply@adobe.com',
     license='Apache2',
     classifiers=[
         'Development Status :: 5 - Production/Stable',
-        'Environment :: Web Environment',
+        'Environment :: Console',
         'Intended Audience :: Developers',
+        'Intended Audience :: System Administrators',
         'License :: OSI Approved :: Apache Software License',
         'Operating System :: OS Independent',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
-        'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
         'Programming Language :: Python :: Implementation :: CPython',
-        'Programming Language :: Python :: Implementation :: PyPy',
-        'Topic :: Internet :: WWW/HTTP :: Dynamic Content',
-        'Topic :: Software Development :: Libraries :: Python Modules',
-        'Topic :: Text Processing :: Markup :: HTML'
+        'Topic :: Software Development :: Build Tools',
+        'Topic :: System :: Systems Administration',
+        'Topic :: Utilities',
     ],
     package_dir={'': 'src'},
     packages=find_packages('src'),

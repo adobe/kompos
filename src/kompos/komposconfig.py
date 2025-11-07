@@ -10,11 +10,11 @@
 
 import logging
 import os
-from distutils.version import StrictVersion
 from functools import reduce
 
 import fastjsonschema
 import yaml
+from packaging.version import Version
 
 from kompos import __version__
 
@@ -90,7 +90,7 @@ class KomposConfig:
         if not min_kompos_version:
             return
 
-        if StrictVersion(__version__) < StrictVersion(min_kompos_version):
+        if Version(__version__) < Version(min_kompos_version):
             raise Exception(
                 "The current kompos version '{}' is lower than the minimum required version '{}'".format(
                     __version__, min_kompos_version,
@@ -112,9 +112,6 @@ class KomposConfig:
 
     def all(self):
         return self.config
-
-    def nix(self):
-        return get_value_or(self.config, "nix")
 
     def vault_backend(self):
         if get_value_or(self.config, "vault/enabled"):

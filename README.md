@@ -4,19 +4,27 @@
 
 ![kompos](img/kompos.png)
 
-**Kompos** is a configuration driven tool for provisioning and managing
-Kubernetes infrastructure across AWS and Azure. It uses a hierarchical folder
-structure and yaml files to store and generate configurations, with pluggable
-compositions that encapsulates the infrastructure code and state. Terraform and
-helmfile are supported as provisioners.
+**Kompos** is a configuration-driven tool for managing infrastructure provisioning
+and deployment. It uses a hierarchical folder structure and YAML files to store
+and generate configurations, with runtime value interpolation and injection into
+any runner. Terraform and helmfile are supported as built-in provisioners, but
+the architecture supports custom runners for any tool or platform.
 
-Below is a graphical representation of the data flow.
+## Key Features
+
+- **Hierarchical Configuration**: Layer configurations across environments, regions, and compositions with automatic merging and inheritance
+- **Runtime Value Interpolation**: Dynamically generate and inject configuration values into any runner at execution time
+- **Universal Runner Architecture**: Built-in support for Terraform and Helmfile, extensible for any provisioning or deployment tool
+- **Multi-Environment Support**: Unified configuration structure that works across any cloud provider or infrastructure platform
+
+Below is a graphical representation of the data flow, showing how hierarchical 
+configurations are merged and interpolated before being injected into runners:
 
 ![kompos-data-flow](img/kompos-diagram.svg)
 
 ## Installation
 
-_**NOTE**: Only Python 3 is supported._
+**Requirements:** Python 3.11 or higher
 
 ### PyPI
 
@@ -36,88 +44,40 @@ source .env/bin/activate
 (env) pip install --editable .
 ```
 
-## Hierarchical configuration
+## Hierarchical Configuration
 
 Kompos leverages [himl](https://github.com/adobe/himl) to provide a
 [hiera](https://puppet.com/docs/puppet/latest/hiera_intro.html#concept-7256)-like
-configuration structure.
+hierarchical configuration structure. This enables:
+
+- **Configuration Inheritance**: Define base configurations and override them per environment, cluster, or composition
+- **Value Interpolation**: Reference and reuse values across your configuration hierarchy
+- **Runtime Injection**: Generated configurations are automatically interpolated and injected into Terraform/Helmfile at execution time
+- **DRY Principle**: Eliminate configuration duplication across environments
 
 Checkout the [examples](./examples) for more information.
 
-## Nix integration
+## Usage
 
-With kompos you can leverage [nix](https://nixos.org/nix/) to pin your
-infrastructure code (i.e terraform & helmfile releases) on a specific version.
-This enables you to finely control your deployments and use different
-infrastructure versions per environment, cluster etc.
-
-#### Prerequisites
-
-Install `nix` and `nix-prefetch-git`.
+Kompos reads hierarchical configurations, interpolates runtime values, and injects them into the appropriate runner:
 
 ```bash
-$ curl -L https://nixos.org/nix/install | bash
+# Terraform: hierarchical config values are injected as tfvars
+kompos <config_path> terraform <command>
 
-$ nix-env -f '<nixpkgs>' -iA nix-prefetch-git
+# Helmfile: hierarchical config values are interpolated and injected
+kompos <config_path> helmfile <command>
+
+# View the generated configuration before running
+kompos <config_path> config --format yaml
 ```
 
-#### Configuration
+The runner architecture is extensible - you can create custom runners for any tool that needs configuration injection.
 
-The integration can be globally enabled or diabled with the flag `nix: [true|false]` and a disable overwrite
-with `--no-nix` argument. Below are the
-necessary parts of komposconfig regarding nix & versioning:
+## Docker Image
 
-```yaml
-terraform:
-  # This is the place to look for the terraform repo locally.
-  # Used as the default if nix is not enabled.
-  local_path: '/home/user/terraform-stack'
-
-  # This is needed in case the modules are not in the root of the repo.
-  root_path: 'src/terraform'
-
-  repo:
-    # This will be the name of the nix derivation for terraform.
-    name: 'terraform-stack'
-
-    # The repo we would like to version.
-    url: "git@github.com:my-org/terraform-stack.git"
-
-# Likewise for helmfile.
-helmfile:
-  local_path: '/home/user/helmfile-releases'
-  root_path: 'src/helmfiles'
-
-  repo:
-    name: 'helmfile-releases'
-    url: "git@github.com:my-org/helmfile-releases.git"
-
-nix: true
-```
-
-And in the hierarchical configuration you'll need the following keys:
-
-```yaml
-infrastructure:
-  terraform:
-    version: "0.1.0" # A git tag or a commit sha.
-
-    # This is an optional field.
-    # The sha256 hash of the repo provides data integrity and ensures that we
-    # always get the same input.
-    #
-    # It can be omitted when you're using a tag that is periodically updated.
-    # (e.g in a dev/nightly environment). Since this is a mandatory field for nix,
-    # nix-prefetch-git will be used as a fallback to caclulate it.
-    sha256: "ab9190b0ecc8060a54f1fac7de606e6b2c4757c227f2ce529668eb145d9a9516"
-
-  # Likewise for helmfile.
-  helmfile:
-    version: "0.1.0"
-    sha256: "139cd5119d398d06f6535f42d775986a683a90e16ce129a5fb7f48870613a1a5"
-```
-
-### Docker Image
+Docker images are not currently maintained. Please use PyPI installation for the latest version.
+Docker image [adobe/kompos](https://hub.docker.com/r/adobe/kompos)
 
 ## License
 
