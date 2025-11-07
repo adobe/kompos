@@ -16,7 +16,6 @@ from subprocess import Popen, PIPE
 from himl import ConfigRunner
 
 from kompos.helpers.himl_helper import HierarchicalConfigGenerator
-from kompos.helpers.nix import writeable_nix_out_path, is_nix_enabled, nix_install
 from kompos.komposconfig import get_value_or
 
 logger = logging.getLogger(__name__)
@@ -187,30 +186,6 @@ def get_default_output_path(args, raw_config, kompos_config, runner):
         kompos_config.local_path(runner),
         kompos_config.root_path(runner),
     )
-
-    # Overwrite with the nix output, if the nix integration is enabled.
-    if is_nix_enabled(args, kompos_config.nix()):
-        pname = kompos_config.repo_name()
-
-        nix_install(
-            pname,
-            kompos_config.repo_url(runner),
-            get_value_or(raw_config, 'infrastructure/{}/version', 'master'.format(runner)),
-            get_value_or(raw_config, 'infrastructure/{}/sha256'.format(runner)),
-        )
-
-        # Nix store is read-only, and terraform doesn't work properly outside
-        # of the module directory, so as a workaround we're using a temporary directory
-        # with the contents of the derivation so terraform can create new files.
-        # See: https://github.com/hashicorp/terraform/issues/18030
-        # FIXME: Nix store is read-only, and helmfile configuration has a hardcoded path for
-        # the generated config, so as a workaround we're using a temporary directory
-        # with the contents of the derivation so helmfile can create the config file.
-
-        path = os.path.join(
-            writeable_nix_out_path(pname),
-            kompos_config.root_path(runner),
-        )
 
     return path
 
