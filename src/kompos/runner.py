@@ -13,11 +13,11 @@ import fcntl
 import logging
 import os
 from subprocess import Popen, PIPE
+from typing import Any
 
 from himl import ConfigRunner
 
 from kompos.helpers.himl_helper import HierarchicalConfigGenerator
-from kompos.komposconfig import get_value_or
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,11 @@ class GenericRunner(HierarchicalConfigGenerator):
     def get_compositions(self):
         logging.basicConfig(level=logging.INFO)
 
-        compositions, paths = discover_compositions(self.config_path)
+        compositions, paths = discover_compositions(
+            self.config_path,
+            self.kompos_config,
+            self.runner_type
+        )
         if self.ordered_compositions:
             composition_order = self.kompos_config.composition_order(self.runner_type)
             compositions = sorted_compositions(compositions, composition_order, self.reverse)
@@ -96,12 +100,12 @@ class GenericRunner(HierarchicalConfigGenerator):
         # Acquire lock to prevent concurrent kompos runs from interfering
         lock_file = None
         lock_fd = None
-        
+
         try:
             lock_file = os.path.join(os.getcwd(), '.kompos-runtime', '.lock')
             os.makedirs(os.path.dirname(lock_file), exist_ok=True)
             lock_fd = open(lock_file, 'w')
-            
+
             # Try to acquire exclusive lock (non-blocking)
             try:
                 fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -110,9 +114,9 @@ class GenericRunner(HierarchicalConfigGenerator):
                 logger.error('Another kompos process is already running. Please wait or kill the other process.')
                 logger.error('Lock file: %s', lock_file)
                 return 1
-            
+
             return self._run_compositions_internal(args, extra_args, compositions, paths)
-        
+
         finally:
             # Release lock and cleanup
             if lock_fd:
@@ -122,7 +126,7 @@ class GenericRunner(HierarchicalConfigGenerator):
                     logger.debug('Released kompos lock')
                 except Exception as e:
                     logger.warning('Failed to release lock: %s', e)
-    
+
     def _run_compositions_internal(self, args, extra_args, compositions, paths):
         for composition in compositions:
             logger.info("Running composition: %s", composition)
@@ -142,9 +146,11 @@ class GenericRunner(HierarchicalConfigGenerator):
             filtered_keys = self.kompos_config.filtered_output_keys(composition)
             excluded_keys = self.kompos_config.excluded_config_keys(composition)
 
+            # Add CLI-provided filters and excludes to config-based ones
+            if self.himl_args.filter:
+                filtered_keys = filtered_keys + self.himl_args.filter
             if self.himl_args.exclude:
-                filtered_keys = self.kompos_config.filtered_output_keys(composition) + self.himl_args.filter
-                excluded_keys = self.kompos_config.excluded_config_keys(composition) + self.himl_args.exclude
+                excluded_keys = excluded_keys + self.himl_args.exclude
 
             # Runner pre-configuration
             self.execution_configuration(composition, config_path, default_output_path, raw_config,
@@ -177,26 +183,40 @@ class GenericRunner(HierarchicalConfigGenerator):
         return
 
 
-def discover_compositions(config_path):
+def discover_compositions(config_path, kompos_config=None, runner_type=None):
     path_params = dict(split_path(x) for x in config_path.split('/'))
 
     composition_type = path_params.get(COMPOSITION_KEY, None)
     if not composition_type:
-        raise Exception("No composition detected in path.")
+        # No composition in path - return a dummy composition for config rendering
+        logger.warning("No composition detected in path. Config will be rendered at this level.")
+        return ['config'], {'config': config_path}
 
     # Check if single composition selected
     composition = path_params.get(composition_type, None)
     if composition:
         return [composition], {composition: config_path}
 
-    # Discover composition paths
-    paths = dict()
+    # Default: Discover composition paths from filesystem
+    paths = dict[Any, Any]()
     compositions = []
     for subpath in os.listdir(config_path):
         if composition_type + "=" in subpath:
             composition = split_path(subpath)[1]
             paths[composition] = os.path.join(config_path, "{}={}".format(composition_type, composition))
             compositions.append(composition)
+
+    # If nothing found on filesystem, fallback to config
+    if not compositions and kompos_config and runner_type:
+        config_compositions = kompos_config.composition_order(runner_type, default=None)
+        if config_compositions:
+            logger.info("No compositions found on filesystem. Using .komposconfig.yaml: %s", config_compositions)
+            for comp in config_compositions:
+                comp_path = os.path.join(config_path, "{}={}".format(composition_type, comp))
+                paths[comp] = comp_path
+                if not os.path.exists(comp_path):
+                    logger.warning("Composition %s defined in config but path not found: %s", comp, comp_path)
+            return config_compositions, paths
 
     return compositions, paths
 
@@ -219,7 +239,7 @@ def get_default_output_path(args, raw_config, kompos_config, runner):
         os.getcwd(),
         '.kompos-runtime'
     )
-    
+
     path = os.path.join(
         runtime_base,
         runner,
@@ -258,9 +278,17 @@ def validate_runner_version(kompos_config, runner):
 def get_himl_args(args):
     parser = ConfigRunner.get_parser(argparse.ArgumentParser())
 
-    if args.himl_args:
+    # For config command, HIML args are already parsed directly into args
+    # ConfigRunner().get_parser() adds all HIML args to the config subcommand
+    if hasattr(args, 'command') and args.command == 'config':
+        logger.info("Using HIML arguments from config command")
+        return args
+
+    # For terraform/helmfile commands, use --himl flag if provided
+    if hasattr(args, 'himl_args') and args.himl_args:
         himl_args = parser.parse_args(args.himl_args.split())
-        logger.info("Extra himl arguments: %s", himl_args)
+        logger.info("Extra himl arguments for %s: %s", args.command, himl_args)
         return himl_args
-    else:
-        return parser.parse_args([])
+
+    # Default: return empty parsed args with defaults
+    return parser.parse_args([])
