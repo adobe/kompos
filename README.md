@@ -35,15 +35,32 @@ configurations are merged and interpolated before being injected into runners:
 
 **Requirements:** Python 3.11 or higher
 
-### PyPI
+### PyPI (Recommended for Users)
 
 ```bash
+# Install
 pip install kompos
+
+# Upgrade to latest version
+pip install --upgrade kompos
 ```
 
-### Locally for development
+### Using Virtual Environment (Recommended)
 
-Using virtualenv
+Using virtualenv for isolated installation:
+
+```bash
+pip install virtualenv
+virtualenv kompos-env
+source kompos-env/bin/activate
+(kompos-env) pip install kompos
+(kompos-env) pip install --upgrade kompos
+(kompos-env) kompos --version
+```
+
+### Locally for Development
+
+Using virtualenv with editable install:
 
 ```bash
 pip install virtualenv
@@ -101,6 +118,48 @@ kompos <config_path> config --format yaml
 ```
 
 The runner architecture is extensible - you can create custom runners for any tool that needs configuration injection.
+
+### Common Config Commands
+
+The `config` command supports all HIML arguments natively for flexible configuration viewing and debugging:
+
+```bash
+# Example path from hierarchical example
+CONFIG_PATH="examples/features/hierarchical/config/cloud=aws/env=dev/cluster=cluster1/composition=terraform/terraform=cluster"
+
+# View full merged configuration
+kompos $CONFIG_PATH config
+
+# View as JSON
+kompos $CONFIG_PATH config --format json
+
+# Filter: show only specific keys
+kompos $CONFIG_PATH config --filter cluster --filter vpc
+
+# Exclude: hide specific keys
+kompos $CONFIG_PATH config --exclude terraform --exclude composition
+
+# Save to file
+kompos $CONFIG_PATH config --output-file merged-config.yaml
+
+# Wrap output under a key (useful for Terraform)
+kompos $CONFIG_PATH config --enclosing-key config
+
+# Skip interpolation validation (useful for templates with missing values)
+kompos $CONFIG_PATH config --skip-interpolation-validation
+
+# Skip secret resolution (faster for debugging)
+kompos $CONFIG_PATH config --skip-secrets
+
+# Combine multiple options
+kompos $CONFIG_PATH config \
+  --filter cluster --filter vpc \
+  --format json \
+  --output-file cluster-vpc.json \
+  --skip-secrets
+```
+
+**Tip:** Use `--filter` to inspect specific sections of your configuration during development and debugging.
 
 ## Docker Image
 
