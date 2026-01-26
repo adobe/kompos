@@ -41,9 +41,6 @@ class TFEParserConfig(SubParserConfig):
         parser.add_argument('--workspace-only',
                             action='store_true',
                             help='Generate only workspace config (skip tfvars)')
-        parser.add_argument('--output-dir',
-                            type=str,
-                            help='Base output directory (default from .komposconfig.yaml or ./rendered)')
 
         # Add all HIML arguments (filter, exclude, skip-secrets, etc.)
         ConfigRunner().get_parser(parser)
@@ -58,9 +55,6 @@ class TFEParserConfig(SubParserConfig):
         
         # Only tfvars with filters
         kompos data/.../cluster=sloth/... tfe generate --tfvars-only --filter cluster --exclude terraform
-        
-        # Custom output directory
-        kompos data/.../cluster=sloth/... tfe generate --output-dir ./my-rendered
         '''
 
 
@@ -74,20 +68,17 @@ class TFERunner(GenericRunner):
         self.reverse = False
         self.generate_output = False
 
-    def validate_config(self, raw_config):
-        """Validate required TFE configuration exists"""
-        if 'tfe' not in raw_config:
-            logger.error("Missing 'tfe' config in hierarchy. Add to your defaults.")
-            return False
-        return True
+    def _get_workspace_name(self, raw_config):
+        """Extract workspace name from workspaces list in hiera"""
+        workspaces = raw_config.get('workspaces', [])
+        if not workspaces or not isinstance(workspaces, list):
+            logger.warning("No 'workspaces' list found in hierarchy")
+            return None
+        return workspaces[0].get('name', 'cluster')
 
     def execution_configuration(self, composition, config_path, default_output_path, raw_config,
                                 filtered_keys, excluded_keys):
         args = self.himl_args
-
-        # Validate config early
-        if not self.validate_config(raw_config):
-            return
 
         # Determine what to generate
         generate_tfvars = not args.workspace_only
@@ -103,34 +94,27 @@ class TFERunner(GenericRunner):
 
     def generate_tfvars(self, config_path, raw_config, filtered_keys, excluded_keys):
         """Generate the tfvars YAML file for TFE"""
-        # Get TFE tfvars configuration from hiera
-        tfvars_config = raw_config.get('tfe', {}).get('tfvars', {})
-        if not tfvars_config:
-            logger.error("No 'tfe.tfvars' configuration found in hierarchy")
+        workspace_name = self._get_workspace_name(raw_config)
+        if not workspace_name:
             return
 
-        # Extract config
-        output_dir = tfvars_config.get('output_dir', './rendered/clusters')
-        filename = tfvars_config.get('filename', '{cluster}')
-        output_format = tfvars_config.get('format', 'yaml')
-
-        # Build output path
-        extension = 'yaml' if output_format == 'yaml' else 'json'
-        output_file = os.path.join(output_dir, f"{filename}.tfvars.{extension}")
+        # Get output config from .komposconfig.yaml
+        tfe_config = self.kompos_config.get('tfe', {})
+        output_dir = tfe_config.get('clusters_dir', './rendered/clusters')
+        output_file = os.path.join(output_dir, f"{workspace_name}.tfvars.yaml")
 
         # Ensure output directory exists
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
 
         logger.info('Generating TFE tfvars file: %s', output_file)
 
-        # Generate the config
-        # Default: enclosing_key="config", exclude terraform/composition
+        # Generate the config - exclude metadata keys
         self.generate_config(
             config_path=config_path,
             filters=filtered_keys,
-            exclude_keys=excluded_keys + ['terraform', 'composition'],
+            exclude_keys=excluded_keys + ['terraform', 'composition', 'workspaces'],
             enclosing_key='config',
-            output_format=output_format,
+            output_format='yaml',
             output_file=output_file,
             print_data=False,
             skip_interpolation_resolving=self.himl_args.skip_interpolation_resolving,
@@ -143,33 +127,25 @@ class TFERunner(GenericRunner):
 
     def generate_workspace_config(self, config_path, raw_config):
         """Generate the workspace configuration file for TFE workspace creation"""
-        # Get TFE workspace configuration from hiera
-        workspace_config = raw_config.get('tfe', {}).get('workspace', {})
-        if not workspace_config:
-            logger.error("No 'tfe.workspace' configuration found in hierarchy")
+        workspace_name = self._get_workspace_name(raw_config)
+        if not workspace_name:
             return
 
-        # Extract config
-        output_dir = workspace_config.get('output_dir', './rendered/workspaces')
-        filename = workspace_config.get('filename', '{cluster}')
-        output_format = workspace_config.get('format', 'yaml')
-
-        # Build output path
-        extension = 'yaml' if output_format == 'yaml' else 'json'
-        output_file = os.path.join(output_dir, f"{filename}.workspace.{extension}")
+        # Get output config from .komposconfig.yaml
+        tfe_config = self.kompos_config.get('tfe', {})
+        output_dir = tfe_config.get('workspaces_dir', './rendered/workspaces')
+        output_file = os.path.join(output_dir, f"{workspace_name}.workspace.yaml")
 
         # Ensure output directory exists
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
 
         logger.info('Generating TFE workspace config: %s', output_file)
 
-        # Use generate_config to write workspace data from hiera
-        # The workspace structure should be defined in hiera under tfe.workspace
+        # Filter to workspaces and output as-is (keep the workspaces: key)
         self.generate_config(
             config_path=config_path,
-            filters=['tfe.workspace'],
-            exclude_keys=['output_dir', 'filename', 'format'],  # Exclude metadata
-            output_format=output_format,
+            filters=['workspaces'],
+            output_format='yaml',
             output_file=output_file,
             print_data=False,
             skip_interpolation_resolving=self.himl_args.skip_interpolation_resolving,
