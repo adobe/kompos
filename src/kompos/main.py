@@ -21,6 +21,7 @@ from .runner import GenericRunner
 from .runners.config import ConfigRenderParserConfig, ConfigRenderRunner
 from .runners.helmfile import HelmfileParser, HelmfileRunner
 from .runners.terraform import TerraformParser, TerraformRunner
+from .runners.tfe import TFEParserConfig, TFERunner
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ class AppContainer(Container):
         self.terraform_runner = auto(TerraformRunner)
         self.helmfile_runner = auto(HelmfileRunner)
         self.config_runner = auto(ConfigRenderRunner)
+        self.tfe_runner = auto(TFERunner)
 
         # Configure parsers
         self.root_parser = auto(RootParser)
@@ -48,6 +50,7 @@ class AppContainer(Container):
         parsers.add(auto(TerraformParser))
         parsers.add(auto(HelmfileParser))
         parsers.add(auto(ConfigRenderParserConfig))
+        parsers.add(auto(TFEParserConfig))
         self.sub_parsers = parsers
 
         # Configure

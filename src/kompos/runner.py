@@ -198,7 +198,7 @@ def discover_compositions(config_path, kompos_config=None, runner_type=None):
         return [composition], {composition: config_path}
 
     # Default: Discover composition paths from filesystem
-    paths = dict[Any, Any]()
+    paths = {}
     compositions = []
     for subpath in os.listdir(config_path):
         if composition_type + "=" in subpath:
@@ -282,6 +282,12 @@ def get_himl_args(args):
     # ConfigRunner().get_parser() adds all HIML args to the config subcommand
     if hasattr(args, 'command') and args.command == 'config':
         logger.info("Using HIML arguments from config command")
+        return args
+    
+    # For tfe command, HIML args are mixed with TFE-specific args
+    # Return full args object to include both TFE and HIML args
+    if hasattr(args, 'command') and args.command == 'tfe':
+        logger.info("Using HIML arguments from tfe command")
         return args
 
     # For terraform/helmfile commands, use --himl flag if provided
