@@ -39,8 +39,8 @@ class ConfigRenderParserConfig(SubParserConfig):
 
 
 class ConfigRenderRunner(GenericRunner):
-    def __init__(self, kompos_config, full_config_path, config_path, execute):
-        super(ConfigRenderRunner, self).__init__(kompos_config, full_config_path, config_path, execute, RUNNER_TYPE)
+    def __init__(self, kompos_config, config_path, execute):
+        super(ConfigRenderRunner, self).__init__(kompos_config, config_path, execute, RUNNER_TYPE)
 
     def run_configuration(self, args):
         self.validate_runner = False

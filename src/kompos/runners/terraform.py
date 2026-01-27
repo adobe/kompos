@@ -72,8 +72,8 @@ class TerraformParser(SubParserConfig):
 
 
 class TerraformRunner(GenericRunner):
-    def __init__(self, kompos_config, full_config_path, config_path, execute):
-        super(TerraformRunner, self).__init__(kompos_config, full_config_path, config_path, execute, RUNNER_TYPE)
+    def __init__(self, kompos_config, config_path, execute):
+        super(TerraformRunner, self).__init__(kompos_config, config_path, execute, RUNNER_TYPE)
         
         # Initialize versioned source processor
         self.versioned_processor = TerraformVersionedSourceProcessor(TERRAFORM_VERSIONED_EXTENSION)

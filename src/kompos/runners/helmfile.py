@@ -52,8 +52,8 @@ class HelmfileParser(SubParserConfig):
 
 
 class HelmfileRunner(GenericRunner):
-    def __init__(self, kompos_config, full_config_path, config_path, execute):
-        super(HelmfileRunner, self).__init__(kompos_config, full_config_path, config_path, execute, RUNNER_TYPE)
+    def __init__(self, kompos_config, config_path, execute):
+        super(HelmfileRunner, self).__init__(kompos_config, config_path, execute, RUNNER_TYPE)
 
     def run_configuration(self, args):
         self.ordered_compositions = True
