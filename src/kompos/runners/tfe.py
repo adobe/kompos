@@ -93,7 +93,7 @@ class TFERunner(GenericRunner):
             self.generate_workspace_config(config_path, raw_config)
 
     def generate_tfvars(self, config_path, raw_config, filtered_keys, excluded_keys):
-        """Generate the tfvars JSON file for TFE"""
+        """Generate the tfvars file for TFE"""
         workspace_name = self._get_workspace_name(raw_config)
         if not workspace_name:
             return
@@ -101,7 +101,9 @@ class TFERunner(GenericRunner):
         # Get output config from .komposconfig.yaml
         tfe_config = self.kompos_config.get('tfe', {})
         output_dir = tfe_config.get('clusters_dir', './rendered/clusters')
-        output_file = os.path.join(output_dir, f"{workspace_name}.tfvars.json")
+        tfvars_format = tfe_config.get('tfvars_format', 'json')
+        tfvars_extension = tfe_config.get('tfvars_extension', '.tfvars.json')
+        output_file = os.path.join(output_dir, f"{workspace_name}{tfvars_extension}")
 
         # Ensure output directory exists
         os.makedirs(output_dir, exist_ok=True)
@@ -114,7 +116,7 @@ class TFERunner(GenericRunner):
             filters=filtered_keys,
             exclude_keys=excluded_keys + ['terraform', 'composition', 'workspaces'],
             enclosing_key='config',
-            output_format='json',
+            output_format=tfvars_format,
             output_file=output_file,
             print_data=False,
             skip_interpolation_resolving=self.himl_args.skip_interpolation_resolving,
@@ -134,7 +136,9 @@ class TFERunner(GenericRunner):
         # Get output config from .komposconfig.yaml
         tfe_config = self.kompos_config.get('tfe', {})
         output_dir = tfe_config.get('workspaces_dir', './rendered/workspaces')
-        output_file = os.path.join(output_dir, f"{workspace_name}.tfvars.json")
+        workspace_format = tfe_config.get('workspace_format', 'yaml')
+        workspace_extension = tfe_config.get('workspace_extension', '.workspace.yaml')
+        output_file = os.path.join(output_dir, f"{workspace_name}{workspace_extension}")
 
         # Ensure output directory exists
         os.makedirs(output_dir, exist_ok=True)
@@ -145,7 +149,7 @@ class TFERunner(GenericRunner):
         self.generate_config(
             config_path=config_path,
             filters=['workspaces'],
-            output_format='json',
+            output_format=workspace_format,
             output_file=output_file,
             print_data=False,
             skip_interpolation_resolving=self.himl_args.skip_interpolation_resolving,
