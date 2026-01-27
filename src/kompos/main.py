@@ -77,7 +77,6 @@ class AppContainer(Container):
         self.command = lambda c: self.console_args.command
         self.root_path = cache(lambda c: get_root_path(c.console_args))
         self.config_path = cache(lambda c: get_config_path(c.console_args))
-        self.full_config_path = cache(lambda c: os.path.join(self.root_path, self.config_path))
 
         # change path to the root_path
         logger.info('root path: {}'.format(self.root_path))
@@ -115,13 +114,6 @@ def get_config_path(console_args):
     return config_path
 
 
-def get_full_config_path(root_path, console_args):
-    """ Return config path + root_path if path is relative """
-    if os.path.isabs(console_args.config_path):
-        return console_args.config_path
-    return os.path.join(root_path, console_args.config_path)
-
-
 def get_root_path(args):
     """ Either the root_path option or the current working dir """
     if args.root_path:
@@ -132,3 +124,4 @@ def get_root_path(args):
         return os.path.realpath(args.root_path)
 
     return os.path.realpath(os.getcwd())
+

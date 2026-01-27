@@ -59,8 +59,8 @@ class TFEParserConfig(SubParserConfig):
 
 
 class TFERunner(GenericRunner):
-    def __init__(self, kompos_config, full_config_path, config_path, execute):
-        super(TFERunner, self).__init__(kompos_config, full_config_path, config_path, execute, RUNNER_TYPE)
+    def __init__(self, kompos_config, config_path, execute):
+        super(TFERunner, self).__init__(kompos_config, config_path, execute, RUNNER_TYPE)
 
     def run_configuration(self, args):
         self.validate_runner = False
@@ -75,6 +75,29 @@ class TFERunner(GenericRunner):
             logger.warning("No 'workspaces' list found in hierarchy")
             return None
         return workspaces[0].get('name', 'cluster')
+
+    def _get_tfe_config(self, key, default=None):
+        """Get TFE configuration value with default fallback"""
+        return self.kompos_config.get('tfe', {}).get(key, default)
+
+    def _build_output_path(self, base_dir, subdir_key, raw_config, fallback_name, filename):
+        """Build output path with optional subdirectory based on config key"""
+        output_dir = base_dir
+        
+        # Optionally create cluster-specific subdirectory if key is configured
+        if subdir_key:
+            subdir_name = self.get_nested_value(raw_config, subdir_key)
+            if not subdir_name:
+                logger.warning("Could not resolve '%s', falling back to: %s", subdir_key, fallback_name)
+                subdir_name = fallback_name
+            output_dir = os.path.join(output_dir, subdir_name)
+        
+        return os.path.join(output_dir, filename)
+
+    def _ensure_output_dir(self, file_path):
+        """Ensure the directory for the output file exists"""
+        output_dir = os.path.dirname(file_path)
+        os.makedirs(output_dir, exist_ok=True)
 
     def execution_configuration(self, composition, config_path, default_output_path, raw_config,
                                 filtered_keys, excluded_keys):
@@ -98,15 +121,23 @@ class TFERunner(GenericRunner):
         if not workspace_name:
             return
 
-        # Get output config from .komposconfig.yaml
-        tfe_config = self.kompos_config.get('tfe', {})
-        output_dir = tfe_config.get('clusters_dir', './rendered/clusters')
-        tfvars_format = tfe_config.get('tfvars_format', 'json')
-        tfvars_extension = tfe_config.get('tfvars_extension', '.tfvars.json')
-        output_file = os.path.join(output_dir, f"{workspace_name}{tfvars_extension}")
+        # Get output configuration
+        clusters_base_dir = self._get_tfe_config('clusters_dir', './rendered/clusters')
+        clusters_subdir_key = self._get_tfe_config('clusters_subdir_key')
+        tfvars_format = self._get_tfe_config('tfvars_format', 'yaml')
+        tfvars_extension = self._get_tfe_config('tfvars_extension', '.tfvars.yaml')
+        
+        # Build output path
+        output_file = self._build_output_path(
+            base_dir=clusters_base_dir,
+            subdir_key=clusters_subdir_key,
+            raw_config=raw_config,
+            fallback_name=workspace_name,
+            filename=f"cluster{tfvars_extension}"
+        )
 
         # Ensure output directory exists
-        os.makedirs(output_dir, exist_ok=True)
+        self._ensure_output_dir(output_file)
 
         logger.info('Generating TFE tfvars file: %s', output_file)
 
@@ -133,15 +164,14 @@ class TFERunner(GenericRunner):
         if not workspace_name:
             return
 
-        # Get output config from .komposconfig.yaml
-        tfe_config = self.kompos_config.get('tfe', {})
-        output_dir = tfe_config.get('workspaces_dir', './rendered/workspaces')
-        workspace_format = tfe_config.get('workspace_format', 'yaml')
-        workspace_extension = tfe_config.get('workspace_extension', '.workspace.yaml')
+        # Get output configuration
+        output_dir = self._get_tfe_config('workspaces_dir', './rendered/workspaces')
+        workspace_format = self._get_tfe_config('workspace_format', 'yaml')
+        workspace_extension = self._get_tfe_config('workspace_extension', '.workspace.yaml')
         output_file = os.path.join(output_dir, f"{workspace_name}{workspace_extension}")
 
         # Ensure output directory exists
-        os.makedirs(output_dir, exist_ok=True)
+        self._ensure_output_dir(output_file)
 
         logger.info('Generating TFE workspace config: %s', output_file)
 
