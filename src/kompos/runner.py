@@ -147,6 +147,27 @@ class GenericRunner:
 
         return command
 
+    def get_runner_config(self, key, default=None):
+        """
+        Get configuration value for this runner with default fallback.
+        
+        Looks up configuration from .komposconfig.yaml under the runner's section.
+        For example, TFERunner with runner_type='tfe' will look in config['tfe'][key].
+        
+        Args:
+            key: Configuration key to look up
+            default: Default value if key not found
+            
+        Returns:
+            Configuration value or default
+            
+        Examples:
+            >>> # In TFERunner (runner_type='tfe')
+            >>> self.get_runner_config('clusters_dir', './rendered/clusters')
+            # Returns config['tfe']['clusters_dir'] or './rendered/clusters'
+        """
+        return self.kompos_config.get(self.runner_type, {}).get(key, default)
+
     def run(self, args, extra_args):
         logger.info("Runner: %s", self.runner_type)
 
@@ -291,10 +312,11 @@ class GenericRunner:
     def get_nested_value(data, key_path, default=None):
         """
         Get a nested value from a dict using a dotted key path.
+        Supports both dictionary keys and list indices.
         
         Args:
             data: Dictionary to extract value from
-            key_path: Dot-separated path to the value (e.g., 'cluster.fullName')
+            key_path: Dot-separated path to the value (e.g., 'cluster.fullName', 'workspaces.0.name')
             default: Default value to return if not found (default: None)
         
         Returns:
@@ -304,8 +326,9 @@ class GenericRunner:
             >>> data = {'cluster': {'fullName': 'my-cluster', 'name': 'cluster1'}}
             >>> GenericRunner.get_nested_value(data, 'cluster.fullName')
             'my-cluster'
-            >>> GenericRunner.get_nested_value(data, 'cluster.name')
-            'cluster1'
+            >>> data = {'workspaces': [{'name': 'ws1'}, {'name': 'ws2'}]}
+            >>> GenericRunner.get_nested_value(data, 'workspaces.0.name')
+            'ws1'
             >>> GenericRunner.get_nested_value(data, 'cluster.missing')
             None
             >>> GenericRunner.get_nested_value(data, 'cluster.missing', 'default-cluster')
@@ -318,7 +341,15 @@ class GenericRunner:
         value = data
         
         for key in keys:
-            if isinstance(value, dict) and key in value:
+            # Try to use as array index if it's a digit
+            if isinstance(value, list) and key.isdigit():
+                idx = int(key)
+                if 0 <= idx < len(value):
+                    value = value[idx]
+                else:
+                    return default
+            # Otherwise use as dict key
+            elif isinstance(value, dict) and key in value:
                 value = value[key]
             else:
                 return default
