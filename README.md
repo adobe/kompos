@@ -15,6 +15,7 @@ the architecture supports custom runners for any tool or platform.
 - **Hierarchical Configuration**: Layer configurations across environments, regions, and compositions with automatic merging and inheritance
 - **Runtime Value Interpolation**: Dynamically generate and inject configuration values into any runner at execution time
 - **Universal Runner Architecture**: Built-in support for Terraform and Helmfile, extensible for any provisioning or deployment tool
+- **Configuration Analysis**: Powerful inspection tools to understand hierarchy, trace variable origins, and visualize data flow
 - **Multi-Environment Support**: Unified configuration structure that works across any cloud provider or infrastructure platform
 
 ### Core Benefits
@@ -70,6 +71,14 @@ source .env/bin/activate
 (env) pip install --editable .
 ```
 
+## Documentation
+
+Comprehensive guides for understanding and using Kompos:
+
+- **[📚 Architecture & File Generation](./docs/ARCHITECTURE.md)** - How hierarchical configuration works, file generation, and merge behavior
+- **[📊 Explore Runner](./docs/EXPLORE_RUNNER.md)** - Configuration analysis, value tracing, and hierarchy visualization
+- **[🔧 TFE Runner](./docs/TFE_RUNNER.md)** - Terraform Enterprise workflow and workspace generation
+
 ## Hierarchical Configuration
 
 Kompos leverages [himl](https://github.com/adobe/himl) to provide a
@@ -79,9 +88,8 @@ hierarchical configuration structure. This enables:
 - **Configuration Inheritance**: Define base configurations and override them per environment, cluster, or composition
 - **Value Interpolation**: Reference and reuse values across your configuration hierarchy
 - **Runtime Injection**: Generated configurations are automatically interpolated and injected into Terraform/Helmfile at execution time
+- **Configuration Analysis**: Trace variable origins, visualize data flow, and compare configurations across environments
 - **DRY Principle**: Eliminate configuration duplication across environments
-
-**📚 For detailed architecture and file generation documentation, see [`/docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)**
 
 ## Examples
 
@@ -112,6 +120,12 @@ kompos <config_path> terraform <command>
 
 # Helmfile: hierarchical config values are interpolated and injected
 kompos <config_path> helmfile <command>
+
+# TFE: generate workspace configs and tfvars for Terraform Enterprise
+kompos <config_path> tfe generate
+
+# Explore: discover and analyze configuration hierarchy and data flow
+kompos <config_path> explore <analyze|trace|visualize|compare>
 
 # View the generated configuration before running
 kompos <config_path> config --format yaml
