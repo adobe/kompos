@@ -13,35 +13,139 @@ import fcntl
 import logging
 import os
 from subprocess import Popen, PIPE
-from typing import Any
 
 from himl import ConfigRunner
+from himl.config_generator import ConfigProcessor
 
-from kompos.helpers.himl_helper import HierarchicalConfigGenerator
+from kompos import display
 
 logger = logging.getLogger(__name__)
 
 COMPOSITION_KEY = "composition"
 
 
-class GenericRunner(HierarchicalConfigGenerator):
-    def __init__(self, kompos_config, full_config_path, config_path, execute, runner_type):
-        super(GenericRunner, self).__init__()
-
+class GenericRunner:
+    """
+    Base class for all Kompos runners.
+    
+    Provides:
+    - HIML config generation via ConfigProcessor
+    - Composition discovery and orchestration
+    - Common utilities for all runner types (terraform, helmfile, tfe, config, explore)
+    """
+    
+    def __init__(self, kompos_config, config_path, execute, runner_type):
+        # Initialize HIML config processor
+        self.config_processor = ConfigProcessor()
+        
         logging.basicConfig(level=logging.INFO)
 
         self.execute = execute
-
         self.runner_type = runner_type
         self.validate_runner = True
 
         self.kompos_config = kompos_config
-        self.full_config_path = full_config_path
         self.config_path = config_path
         self.himl_args = None
         self.reverse = False
         self.ordered_compositions = False
+        
         self.generate_output = True
+
+    def generate_config(
+            self,
+            config_path,
+            filters=(),
+            exclude_keys=(),
+            enclosing_key=None,
+            remove_enclosing_key=None,
+            output_format="yaml",
+            print_data=False,
+            output_file=None,
+            skip_interpolation_resolving=False,
+            skip_interpolation_validation=False,
+            skip_secrets=False,
+            multi_line_string=False,
+            type_strategies=[(list, ["append"]), (dict, ["merge"])],
+            fallback_strategies=["override"],
+            type_conflict_strategies=["override"]
+    ):
+        """Generate hierarchical configuration using HIML."""
+        cmd = self.get_sh_command(
+            config_path,
+            filters,
+            exclude_keys,
+            enclosing_key,
+            remove_enclosing_key,
+            output_format,
+            print_data,
+            output_file,
+            skip_interpolation_resolving,
+            skip_interpolation_validation,
+            skip_secrets,
+            multi_line_string,
+        )
+
+        display(cmd, color="yellow")
+
+        return self.config_processor.process(
+            path=config_path,
+            filters=filters,
+            exclude_keys=exclude_keys,
+            enclosing_key=enclosing_key,
+            remove_enclosing_key=remove_enclosing_key,
+            output_format=output_format,
+            output_file=output_file,
+            print_data=print_data,
+            skip_interpolations=skip_interpolation_resolving,
+            skip_interpolation_validation=skip_interpolation_validation,
+            skip_secrets=skip_secrets,
+            multi_line_string=multi_line_string,
+            type_strategies=type_strategies,
+            fallback_strategies=fallback_strategies,
+            type_conflict_strategies=type_conflict_strategies
+        )
+
+    @staticmethod
+    def get_sh_command(
+            config_path,
+            filters=(),
+            exclude_keys=(),
+            enclosing_key=None,
+            remove_enclosing_key=None,
+            output_format="yaml",
+            print_data=False,
+            output_file=None,
+            skip_interpolation_resolving=False,
+            skip_interpolation_validation=False,
+            skip_secrets=False,
+            multi_line_string=False,
+    ):
+        """Build shell command string for displaying HIML invocation."""
+        command = "kompos {} config --format {}".format(
+            config_path, output_format)
+        for filter in filters:
+            command += " --filter {}".format(filter)
+        for exclude in exclude_keys:
+            command += " --exclude {}".format(exclude)
+        if enclosing_key:
+            command += " --enclosing-key {}".format(enclosing_key)
+        if remove_enclosing_key:
+            command += " --remove-enclosing-key {}".format(remove_enclosing_key)
+        if output_file:
+            command += " --output-file {}".format(output_file)
+        if print_data:
+            command += " --print-data"
+        if skip_interpolation_resolving:
+            command += " --skip-interpolation-resolving"
+        if skip_interpolation_validation:
+            command += " --skip-interpolation-validation"
+        if skip_secrets:
+            command += " --skip-secrets"
+        if multi_line_string:
+            command += " --multi-line-string"
+
+        return command
 
     def run(self, args, extra_args):
         logger.info("Runner: %s", self.runner_type)
@@ -183,6 +287,45 @@ class GenericRunner(HierarchicalConfigGenerator):
         return
 
 
+    @staticmethod
+    def get_nested_value(data, key_path, default=None):
+        """
+        Get a nested value from a dict using a dotted key path.
+        
+        Args:
+            data: Dictionary to extract value from
+            key_path: Dot-separated path to the value (e.g., 'cluster.fullName')
+            default: Default value to return if not found (default: None)
+        
+        Returns:
+            The value at the key path, or default if not found
+        
+        Examples:
+            >>> data = {'cluster': {'fullName': 'my-cluster', 'name': 'cluster1'}}
+            >>> GenericRunner.get_nested_value(data, 'cluster.fullName')
+            'my-cluster'
+            >>> GenericRunner.get_nested_value(data, 'cluster.name')
+            'cluster1'
+            >>> GenericRunner.get_nested_value(data, 'cluster.missing')
+            None
+            >>> GenericRunner.get_nested_value(data, 'cluster.missing', 'default-cluster')
+            'default-cluster'
+        """
+        if not key_path:
+            return default
+        
+        keys = key_path.split('.')
+        value = data
+        
+        for key in keys:
+            if isinstance(value, dict) and key in value:
+                value = value[key]
+            else:
+                return default
+        
+        return value
+
+
 def discover_compositions(config_path, kompos_config=None, runner_type=None):
     path_params = dict(split_path(x) for x in config_path.split('/'))
 
@@ -288,6 +431,11 @@ def get_himl_args(args):
     # Return full args object to include both TFE and HIML args
     if hasattr(args, 'command') and args.command == 'tfe':
         logger.info("Using HIML arguments from tfe command")
+        return args
+    
+    # For explore command, return full args for exploration options
+    if hasattr(args, 'command') and args.command == 'explore':
+        logger.info("Using arguments from explore command")
         return args
 
     # For terraform/helmfile commands, use --himl flag if provided
