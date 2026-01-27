@@ -14,7 +14,7 @@ import shutil
 
 from kompos.parser import SubParserConfig
 from kompos.runner import GenericRunner
-from kompos.helpers.terraform_helper import TerraformVersionedSourceProcessor
+from kompos.runners.terraform_helper import TerraformVersionedSourceProcessor
 
 logger = logging.getLogger(__name__)
 

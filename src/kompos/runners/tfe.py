@@ -112,7 +112,7 @@ class TFERunner(GenericRunner):
             return
 
         # Get output configuration
-        clusters_base_dir = self.get_runner_config('clusters_dir', './rendered/clusters')
+        clusters_base_dir = self.get_runner_config('clusters_dir', './generated/clusters')
         use_cluster_subdir = self.get_runner_config('use_cluster_subdir', True)
         tfvars_format = self.get_runner_config('tfvars_format', 'yaml')
         tfvars_extension = self.get_runner_config('tfvars_extension', '.tfvars.yaml')
@@ -158,7 +158,7 @@ class TFERunner(GenericRunner):
             return
 
         # Get output configuration
-        output_dir = self.get_runner_config('workspaces_dir', './rendered/workspaces')
+        output_dir = self.get_runner_config('workspaces_dir', './generated/workspaces')
         workspace_format = self.get_runner_config('workspace_format', 'yaml')
         workspace_extension = self.get_runner_config('workspace_extension', '.workspace.yaml')
         output_file = os.path.join(output_dir, f"{workspace_name}{workspace_extension}")
