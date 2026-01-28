@@ -21,7 +21,7 @@ _requires = [r for r in open(os.path.sep.join((_mydir, 'requirements.txt')), "r"
 setup(
     name='kompos',
     version='0.8.0',
-    description='Kompos - k8s cloud automation',
+    description='Kompos - cloud infrastructure automation',
     long_description=_readme + '\n\n',
     long_description_content_type='text/markdown',
     url='https://github.com/adobe/kompos',

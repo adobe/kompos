@@ -1,4 +1,4 @@
-# Copyright 2025 Adobe. All rights reserved.
+# Copyright 2026 Adobe. All rights reserved.
 # This file is licensed to you under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License. You may obtain a copy
 # of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -8,14 +8,22 @@
 # OF ANY KIND, either express or implied. See the License for the specific language
 # governing permissions and limitations under the License.
 
-"""Helper for processing Terraform versioned sources."""
+"""
+Generic Terraform runner base class and helper utilities.
 
-import glob
+Provides:
+- Base class for Terraform and TFE runners
+- Module version pinning via .tf.versioned files
+- Composition processing (versioned + static files)
+"""
+
 import logging
 import os
 import re
+import shutil
 
 from kompos.komposconfig import get_value_or
+from kompos.runner import GenericRunner
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +36,7 @@ class TerraformVersionedSourceProcessor:
     1. Finding .tf.versioned files in composition directories
     2. Interpolating {{key.path}} placeholders with config values
     3. Generating static .tf files for Terraform to use
+    4. Copying other static files as-is
     
     Example:
         main.tf.versioned:
@@ -42,7 +51,7 @@ class TerraformVersionedSourceProcessor:
               source = "git::https://github.com/org/repo.git?ref=v2.0.0"
             }
     """
-    
+
     def __init__(self, versioned_extension=".tf.versioned"):
         """
         Initialize the processor.
@@ -51,29 +60,80 @@ class TerraformVersionedSourceProcessor:
             versioned_extension: File extension for versioned terraform files
         """
         self.versioned_extension = versioned_extension
-    
+
     def process(self, source_dir, target_dir, config):
         """
-        Process all .tf.versioned files in the source directory and generate .tf files in target directory.
+        Process all terraform files in source directory and generate in target directory.
+        
+        Single loop through files:
+        - .tf.versioned files → process and generate .tf files
+        - Other files → copy as-is
         
         Args:
-            source_dir: Path to the source composition directory (where .tf.versioned files are)
-            target_dir: Path to the runtime directory (where .tf files will be generated)
+            source_dir: Path to the source composition directory
+            target_dir: Path to the runtime directory
             config: Configuration dictionary for value interpolation
         """
-        # Find all .tf.versioned files in the source directory
-        versioned_pattern = os.path.join(source_dir, f"*{self.versioned_extension}")
-        versioned_files = glob.glob(versioned_pattern)
-        
-        if not versioned_files:
-            logger.debug('No .tf.versioned files found in %s', source_dir)
+        if not os.path.exists(source_dir):
+            logger.warning('Source directory does not exist: %s', source_dir)
             return
+
+        processed_count = 0
+        copied_count = 0
+
+        for filename in os.listdir(source_dir):
+            source_file = os.path.join(source_dir, filename)
+
+            if os.path.isdir(source_file):
+                continue
+
+            # Process .tf.versioned files
+            if self._is_versioned_file(filename):
+                self._process_file(source_file, target_dir, config)
+                processed_count += 1
+
+            # Skip files generated from hiera
+            elif self._should_skip_file(filename):
+                continue
+
+            # Skip .tf files that have a .versioned counterpart
+            elif filename.endswith('.tf') and self._has_versioned_counterpart(source_dir, filename):
+                logger.debug('Skipping %s (generated from .versioned)', filename)
+                continue
+
+            # Copy everything else
+            else:
+                self._copy_file(source_file, target_dir, filename)
+                copied_count += 1
+
+        if processed_count > 0:
+            logger.info('Processed %d versioned file(s)', processed_count)
+        if copied_count > 0:
+            logger.info('Copied %d static file(s)', copied_count)
+
+    def _is_versioned_file(self, filename):
+        """Check if file is a .tf.versioned template."""
+        return filename.endswith(self.versioned_extension)
+
+    def _should_skip_file(self, filename):
+        """
+        Check if file should be skipped during processing.
         
-        logger.info('Processing %d versioned source file(s) from %s', len(versioned_files), source_dir)
-        
-        for versioned_file in versioned_files:
-            self._process_file(versioned_file, target_dir, config)
-    
+        Currently no files are skipped - all .tf files are copied.
+        This method exists for future extensibility.
+        """
+        return False
+
+    def _has_versioned_counterpart(self, source_dir, filename):
+        """Check if a .tf file has a corresponding .tf.versioned file."""
+        versioned_file = os.path.join(source_dir, filename.replace('.tf', self.versioned_extension))
+        return os.path.exists(versioned_file)
+
+    def _copy_file(self, source_file, target_dir, filename):
+        """Copy a file to target directory."""
+        shutil.copy2(source_file, os.path.join(target_dir, filename))
+        logger.debug('Copied %s', filename)
+
     def _process_file(self, versioned_file, target_dir, config):
         """
         Process a single .tf.versioned file.
@@ -86,19 +146,19 @@ class TerraformVersionedSourceProcessor:
         # Read the versioned file
         with open(versioned_file, 'r') as f:
             content = f.read()
-        
+
         # Interpolate {{key.path}} placeholders
         interpolated_content = self.interpolate_sources(content, config)
-        
+
         # Write to .tf file (remove .versioned extension) in target directory
         output_filename = os.path.basename(versioned_file).replace(self.versioned_extension, '.tf')
         output_file = os.path.join(target_dir, output_filename)
-        
+
         with open(output_file, 'w') as f:
             f.write(interpolated_content)
-        
+
         logger.info('Generated %s from %s', output_filename, os.path.basename(versioned_file))
-    
+
     def interpolate_sources(self, content, config):
         """
         Interpolate {{key.path}} patterns in module source lines only.
@@ -126,18 +186,18 @@ class TerraformVersionedSourceProcessor:
         """
         lines = content.split('\n')
         output_lines = []
-        
+
         for line in lines:
             # Only interpolate lines containing 'source' and placeholders
             if 'source' in line and '{{' in line:
                 # Find all {{key.path}} patterns
                 placeholders = re.findall(r'\{\{([^}]+)\}\}', line)
-                
+
                 for placeholder in placeholders:
                     # Get value from config using dot notation
                     # Convert dots to slashes for get_value_or (vpc.version -> vpc/version)
                     value = get_value_or(config, placeholder.replace('.', '/'))
-                    
+
                     if value is None:
                         raise ValueError(
                             f'Config key "{placeholder}" not found for interpolation.\n'
@@ -145,13 +205,243 @@ class TerraformVersionedSourceProcessor:
                             f'Required config keys must be present when using versioned sources.\n'
                             f'Add "{placeholder}" to your hierarchical configuration.'
                         )
-                    
+
                     # Replace placeholder with value
                     line = line.replace(f'{{{{{placeholder}}}}}', str(value))
                     logger.debug('Interpolated {{%s}} -> %s', placeholder, value)
-            
+
             output_lines.append(line)
-        
+
         return '\n'.join(output_lines)
 
 
+class GenericTerraformRunner(GenericRunner):
+    """
+    Base class for Terraform and TFE runners.
+    
+    Provides shared functionality:
+    - Versioned module source processing
+    - Composition file handling
+    - Path management utilities
+    """
+
+    # Common exclusion key patterns
+    TERRAFORM_SYSTEM_KEYS = ['provider', 'terraform']
+    TFE_SYSTEM_KEYS = ['workspaces', 'composition']
+
+    def __init__(self, kompos_config, config_path, execute, runner_type):
+        super(GenericTerraformRunner, self).__init__(kompos_config, config_path, execute, runner_type)
+
+        # Initialize versioned source processor
+        self.versioned_processor = TerraformVersionedSourceProcessor()
+
+    def get_hierarchical_name(self, raw_config, name_key=None):
+        """
+        Extract an identifier/name from hierarchical configuration.
+        
+        Used by runners that need to generate per-cluster/workspace files.
+        The key path is configurable via runner config 'himl_name_key'.
+        
+        Args:
+            raw_config: Raw configuration dictionary from hiera
+            name_key: Optional override for the config key path
+                     (default: uses runner config 'himl_name_key' → 'cluster.fullName')
+        
+        Returns:
+            str: Name/identifier, or None if not found
+            
+        Example:
+            cluster_name = self.get_hierarchical_name(raw_config)
+            if not cluster_name:
+                return  # Skip processing
+        """
+        if name_key is None:
+            name_key = self.get_runner_config('himl_name_key', 'cluster.fullName')
+
+        name = self.get_nested_value(raw_config, name_key)
+
+        if not name:
+            logger.warning("No name found in hierarchy at '%s'", name_key)
+
+        return name
+
+    def get_source_composition_path(self, composition, raw_config):
+        """
+        Get path to source composition templates.
+        
+        Args:
+            composition: Composition name (e.g., 'cluster')
+            raw_config: Configuration dictionary with cloud type
+            
+        Returns:
+            Path to source composition directory
+        """
+        return os.path.join(
+            self.kompos_config.local_path(self.runner_type),
+            self.kompos_config.root_path(self.runner_type),
+            raw_config["cloud"]["provider"],
+            composition
+        )
+
+    def process_composition_files(self, source_dir, target_dir, raw_config):
+        """
+        Process all composition files (versioned + static).
+        
+        Handles:
+        - .tf.versioned files → process and generate .tf
+        - Static .tf files → copy as-is (unless they have .versioned counterpart)
+        - Other files → copy as-is
+        
+        Args:
+            source_dir: Source composition directory
+            target_dir: Target directory for generated files
+            raw_config: Configuration for interpolation
+        """
+        if not os.path.exists(source_dir):
+            logger.warning('Source composition directory does not exist: %s', source_dir)
+            return
+
+        self.versioned_processor.process(source_dir, target_dir, raw_config)
+
+    def is_versioned_module_sources_enabled(self):
+        """Check if versioned module sources feature is enabled."""
+        return self.kompos_config.terraform_versioned_module_sources_enabled()
+
+    def build_output_path(self, base_dir, name=None, filename=None, use_subdir=True):
+        """
+        Build output path with optional subdirectory structure.
+        
+        Provides consistent path construction across runners with configurable
+        subdirectory nesting.
+        
+        Args:
+            base_dir: Base output directory
+            name: Optional name for subdirectory (e.g., cluster name)
+            filename: Optional filename to append
+            use_subdir: Whether to create name subdirectory
+            
+        Returns:
+            Full output path
+            
+        Examples:
+            # Directory only with subdir
+            >>> self.build_output_path('/out', name='cluster1')
+            '/out/cluster1'
+            
+            # Directory + filename
+            >>> self.build_output_path('/out', 'cluster1', 'vars.yaml')
+            '/out/cluster1/vars.yaml'
+            
+            # Flat structure (no subdir)
+            >>> self.build_output_path('/out', 'cluster1', 'vars.yaml', use_subdir=False)
+            '/out/vars.yaml'
+        """
+        output_path = base_dir
+
+        if name and use_subdir:
+            output_path = os.path.join(output_path, name)
+
+        if filename:
+            output_path = os.path.join(output_path, filename)
+
+        return output_path
+
+    def get_runtime_dir(self, base_dir, cloud_provider, composition, use_cloud_subdir=True):
+        """
+        Get runtime directory path following standard structure.
+        
+        Builds consistent runtime paths for Terraform execution across different
+        cloud providers and compositions.
+        
+        Args:
+            base_dir: Base output directory
+            cloud_provider: Cloud provider name (e.g., 'aws', 'gcp', 'azure')
+            composition: Composition name (e.g., 'cluster', 'vpc', 'node-groups')
+            use_cloud_subdir: Whether to include cloud provider in path structure
+            
+        Returns:
+            Runtime directory path
+            
+        Examples:
+            >>> self.get_runtime_dir('/tmp/runtime', 'aws', 'cluster')
+            '/tmp/runtime/aws/cluster'
+            
+            >>> self.get_runtime_dir('/tmp/runtime', 'aws', 'vpc', use_cloud_subdir=False)
+            '/tmp/runtime/vpc'
+        """
+        if use_cloud_subdir:
+            return os.path.join(base_dir, cloud_provider, composition)
+        else:
+            return os.path.join(base_dir, composition)
+
+    def ensure_directory(self, path, is_file_path=False, clean=False):
+        """
+        Ensure a directory exists, with optional cleaning.
+        
+        Args:
+            path: Directory path or file path
+            is_file_path: If True, extracts directory from file path
+            clean: If True, removes existing directory first (for fresh state)
+            
+        Returns:
+            The directory path that was ensured
+            
+        Examples:
+            # Ensure directory exists
+            >>> self.ensure_directory('/tmp/output')
+            
+            # Extract directory from file path
+            >>> self.ensure_directory('/tmp/output/file.txt', is_file_path=True)
+            
+            # Clean before creating (fresh state)
+            >>> self.ensure_directory('/tmp/runtime', clean=True)
+        """
+        dir_path = os.path.dirname(path) if is_file_path else path
+
+        if clean and os.path.exists(dir_path):
+            logger.debug('Cleaning directory: %s', dir_path)
+            shutil.rmtree(dir_path)
+
+        os.makedirs(dir_path, exist_ok=True)
+        logger.debug('Ensured directory exists: %s', dir_path)
+        return dir_path
+
+    def generate_terraform_config(self, target_file, config_path, filtered_keys=None, excluded_keys=None,
+                                  output_format="json", enclosing_key=None, print_data=False):
+        """
+        Generate Terraform configuration file from hiera.
+        
+        Generic method for generating any Terraform config file (provider, tfvars, etc.)
+        
+        Args:
+            target_file: Path to output file
+            config_path: Config path for hiera
+            filtered_keys: Keys to include (None = all)
+            excluded_keys: Keys to exclude (None = none)
+            output_format: Output format (json or yaml)
+            enclosing_key: Optional enclosing key (e.g., 'config')
+            print_data: Whether to print generated data
+            
+        Returns:
+            Path to generated file
+        """
+        filtered_keys = filtered_keys or []
+        excluded_keys = excluded_keys or []
+
+        logger.info('Generating terraform config: %s', target_file)
+
+        self.generate_config(
+            config_path=config_path,
+            exclude_keys=excluded_keys,
+            filters=filtered_keys,
+            enclosing_key=enclosing_key,
+            output_format=output_format,
+            output_file=target_file,
+            print_data=print_data,
+            skip_interpolation_resolving=self.himl_args.skip_interpolation_resolving,
+            skip_interpolation_validation=self.himl_args.skip_interpolation_validation,
+            skip_secrets=self.himl_args.skip_secrets,
+            multi_line_string=True
+        )
+
+        return target_file

@@ -14,7 +14,7 @@ import os
 from himl import ConfigRunner
 
 from kompos.parser import SubParserConfig
-from kompos.runner import GenericRunner
+from kompos.runners.terraform_helper import GenericTerraformRunner
 
 logger = logging.getLogger(__name__)
 
@@ -51,41 +51,41 @@ class TFEParserConfig(SubParserConfig):
         return '''
         Examples:
         # Generate both tfvars and workspace config
-        kompos data/cloud=aws/project=aip-training/env=dev/region=or2/cluster=sloth/composition=cluster tfe generate
+        kompos data/cloud=aws/project=demo/env=dev/region=us-west-2/cluster=demo-cluster-01/composition=cluster tfe generate
         
         # Only tfvars with filters
-        kompos data/.../cluster=sloth/... tfe generate --tfvars-only --filter cluster --exclude terraform
+        kompos data/.../cluster=demo-cluster-01/... tfe generate --tfvars-only --filter cluster --exclude terraform
         '''
 
 
-class TFERunner(GenericRunner):
+class TFERunner(GenericTerraformRunner):
     def __init__(self, kompos_config, config_path, execute):
         super(TFERunner, self).__init__(kompos_config, config_path, execute, RUNNER_TYPE)
+        
+        # Cache TFE-specific configuration for performance and cleaner code
+        self.use_cluster_subdir = self.get_runner_config('use_cluster_subdir', True)
+        
+        # Output directories
+        self.compositions_dir = self.get_runner_config('compositions_dir', './generated/compositions')
+        self.clusters_dir = self.get_runner_config('clusters_dir', './generated/clusters')
+        self.workspaces_dir = self.get_runner_config('workspaces_dir', './generated/workspaces')
+        
+        # Tfvars configuration
+        self.tfvars_format = self.get_runner_config('tfvars_format', 'yaml')
+        self.tfvars_extension = self.get_runner_config('tfvars_extension', '.tfvars.yaml')
+        # If tfvars_filename is None/not set, will use cluster name (backward compatible)
+        # If set to a string like "terraform", will use that instead
+        self.tfvars_filename = self.get_runner_config('tfvars_filename', None) 
+        
+        # Workspace configuration
+        self.workspace_format = self.get_runner_config('workspace_format', 'yaml')
+        self.workspace_extension = self.get_runner_config('workspace_extension', '.workspace.yaml')
 
     def run_configuration(self, args):
         self.validate_runner = False
         self.ordered_compositions = False
         self.reverse = False
         self.generate_output = False
-
-    def _build_output_path(self, base_dir, use_subdir, raw_config, himl_name_key, fallback_name, filename):
-        """Build output path with optional subdirectory based on config key"""
-        output_dir = base_dir
-        
-        # Optionally create cluster-specific subdirectory if enabled
-        if use_subdir:
-            subdir_name = self.get_nested_value(raw_config, himl_name_key)
-            if not subdir_name:
-                logger.warning("Could not resolve '%s', falling back to: %s", himl_name_key, fallback_name)
-                subdir_name = fallback_name
-            output_dir = os.path.join(output_dir, subdir_name)
-        
-        return os.path.join(output_dir, filename)
-
-    def _ensure_output_dir(self, file_path):
-        """Ensure the directory for the output file exists"""
-        output_dir = os.path.dirname(file_path)
-        os.makedirs(output_dir, exist_ok=True)
 
     def execution_configuration(self, composition, config_path, default_output_path, raw_config,
                                 filtered_keys, excluded_keys):
@@ -94,6 +94,11 @@ class TFERunner(GenericRunner):
         # Determine what to generate
         generate_tfvars = not args.workspace_only
         generate_workspace = not args.tfvars_only
+        generate_composition = self.get_runner_config('generate_compositions', False)
+
+        # Generate per-cluster composition (working_directory for TFE)
+        if generate_composition:
+            self.generate_composition(composition, raw_config)
 
         # Generate tfvars file
         if generate_tfvars:
@@ -103,81 +108,104 @@ class TFERunner(GenericRunner):
         if generate_workspace:
             self.generate_workspace_config(config_path, raw_config)
 
-    def generate_tfvars(self, config_path, raw_config, filtered_keys, excluded_keys):
-        """Generate the tfvars file for TFE"""
-        himl_name_key = self.get_runner_config('himl_name_key', 'cluster.fullName')
-        workspace_name = self.get_nested_value(raw_config, himl_name_key)
-        if not workspace_name:
-            logger.warning("No name found in hierarchy at '%s'", himl_name_key)
+    def generate_composition(self, composition, raw_config):
+        """
+        Generate per-cluster TFE working_directory with modules.
+        
+        Processes .tf.versioned files and copies static .tf files.
+        Note: Provider config should use native TF variables, not generated from Hiera.
+        
+        Args:
+            composition: Name of the composition (e.g., 'cluster')
+            raw_config: Configuration dictionary from hiera
+        """
+        cluster_name = self.get_hierarchical_name(raw_config)
+        if not cluster_name:
             return
 
-        # Get output configuration
-        clusters_base_dir = self.get_runner_config('clusters_dir', './generated/clusters')
-        use_cluster_subdir = self.get_runner_config('use_cluster_subdir', True)
-        tfvars_format = self.get_runner_config('tfvars_format', 'yaml')
-        tfvars_extension = self.get_runner_config('tfvars_extension', '.tfvars.yaml')
+        # Source composition path
+        source_composition_path = self.get_source_composition_path(composition, raw_config)
+
+        if not os.path.exists(source_composition_path):
+            logger.warning('Source composition directory does not exist: %s', source_composition_path)
+            return
+
+        # Target composition path using new build_output_path helper
+        target_dir = self.build_output_path(
+            base_dir=self.compositions_dir,
+            name=cluster_name,
+            use_subdir=self.use_cluster_subdir
+        )
+
+        self.ensure_directory(target_dir)
+
+        logger.info('Generating TFE composition for %s: %s -> %s',
+                    cluster_name, source_composition_path, target_dir)
+
+        # Process all composition files (versioned + static)
+        # Note: provider.tf should use native TF variables, not generated from Hiera
+        if self.is_versioned_module_sources_enabled():
+            self.process_composition_files(source_composition_path, target_dir, raw_config)
+
+        logger.info('✓ Generated composition for: %s', cluster_name)
+
+    def generate_tfvars(self, config_path, raw_config, filtered_keys, excluded_keys):
+        """Generate the tfvars file for TFE"""
+        workspace_name = self.get_hierarchical_name(raw_config)
+        if not workspace_name:
+            return
+
+        # Determine base filename: use configured name OR cluster name for backward compatibility
+        base_filename = self.tfvars_filename if self.tfvars_filename else workspace_name
+        tfvars_filename = f'{base_filename}{self.tfvars_extension}'
         
-        # Build output path with cluster name in filename
-        output_file = self._build_output_path(
-            base_dir=clusters_base_dir,
-            use_subdir=use_cluster_subdir,
-            raw_config=raw_config,
-            himl_name_key=himl_name_key,
-            fallback_name=workspace_name,
-            filename=f"{workspace_name}{tfvars_extension}"
+        # Build output path using new helper
+        output_file = self.build_output_path(
+            base_dir=self.clusters_dir,
+            name=workspace_name,
+            filename=tfvars_filename,
+            use_subdir=self.use_cluster_subdir
         )
 
         # Ensure output directory exists
-        self._ensure_output_dir(output_file)
+        self.ensure_directory(output_file, is_file_path=True)
 
-        logger.info('Generating TFE tfvars file: %s', output_file)
-
-        # Generate the config - exclude metadata keys
-        self.generate_config(
+        self.generate_terraform_config(
+            target_file=output_file,
             config_path=config_path,
-            filters=filtered_keys,
-            exclude_keys=excluded_keys + ['terraform', 'composition', 'workspaces'],
+            filtered_keys=filtered_keys,
+            excluded_keys=excluded_keys + self.TFE_SYSTEM_KEYS + self.TERRAFORM_SYSTEM_KEYS,
+            output_format=self.tfvars_format,
             enclosing_key='config',
-            output_format=tfvars_format,
-            output_file=output_file,
-            print_data=False,
-            skip_interpolation_resolving=self.himl_args.skip_interpolation_resolving,
-            skip_interpolation_validation=self.himl_args.skip_interpolation_validation,
-            skip_secrets=self.himl_args.skip_secrets,
-            multi_line_string=True
+            print_data=False
         )
 
         logger.info('✓ Generated tfvars: %s', output_file)
 
     def generate_workspace_config(self, config_path, raw_config):
         """Generate the workspace configuration file for TFE workspace creation"""
-        himl_name_key = self.get_runner_config('himl_name_key', 'cluster.fullName')
-        workspace_name = self.get_nested_value(raw_config, himl_name_key)
+        workspace_name = self.get_hierarchical_name(raw_config)
         if not workspace_name:
-            logger.warning("No name found in hierarchy at '%s'", himl_name_key)
             return
 
-        # Get output configuration
-        output_dir = self.get_runner_config('workspaces_dir', './generated/workspaces')
-        workspace_format = self.get_runner_config('workspace_format', 'yaml')
-        workspace_extension = self.get_runner_config('workspace_extension', '.workspace.yaml')
-        output_file = os.path.join(output_dir, f"{workspace_name}{workspace_extension}")
+        # Build output file path
+        output_file = self.build_output_path(
+            base_dir=self.workspaces_dir,
+            filename=f'{workspace_name}{self.workspace_extension}'
+        )
 
         # Ensure output directory exists
-        self._ensure_output_dir(output_file)
+        self.ensure_directory(output_file, is_file_path=True)
 
         logger.info('Generating TFE workspace config: %s', output_file)
 
         # Filter to workspaces and output as-is (keep the workspaces: key)
-        self.generate_config(
+        self.generate_terraform_config(
+            target_file=output_file,
             config_path=config_path,
-            filters=['workspaces'],
-            output_format=workspace_format,
-            output_file=output_file,
-            print_data=False,
-            skip_interpolation_resolving=self.himl_args.skip_interpolation_resolving,
-            skip_interpolation_validation=self.himl_args.skip_interpolation_validation,
-            skip_secrets=self.himl_args.skip_secrets
+            filtered_keys=['workspaces'],
+            output_format=self.workspace_format,
+            print_data=False
         )
 
         logger.info('✓ Generated workspace config: %s', output_file)

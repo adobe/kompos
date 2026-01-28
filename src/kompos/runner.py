@@ -33,11 +33,11 @@ class GenericRunner:
     - Composition discovery and orchestration
     - Common utilities for all runner types (terraform, helmfile, tfe, config, explore)
     """
-    
+
     def __init__(self, kompos_config, config_path, execute, runner_type):
         # Initialize HIML config processor
         self.config_processor = ConfigProcessor()
-        
+
         logging.basicConfig(level=logging.INFO)
 
         self.execute = execute
@@ -49,7 +49,7 @@ class GenericRunner:
         self.himl_args = None
         self.reverse = False
         self.ordered_compositions = False
-        
+
         self.generate_output = True
 
     def generate_config(
@@ -307,7 +307,6 @@ class GenericRunner:
     def execution_post_action():
         return
 
-
     @staticmethod
     def get_nested_value(data, key_path, default=None):
         """
@@ -336,10 +335,10 @@ class GenericRunner:
         """
         if not key_path:
             return default
-        
+
         keys = key_path.split('.')
         value = data
-        
+
         for key in keys:
             # Try to use as array index if it's a digit
             if isinstance(value, list) and key.isdigit():
@@ -353,44 +352,49 @@ class GenericRunner:
                 value = value[key]
             else:
                 return default
-        
+
         return value
 
 
 def discover_compositions(config_path, kompos_config=None, runner_type=None):
     path_params = dict(split_path(x) for x in config_path.split('/'))
 
-    composition_type = path_params.get(COMPOSITION_KEY, None)
-    if not composition_type:
-        # No composition in path - return a dummy composition for config rendering
-        logger.warning("No composition detected in path. Config will be rendered at this level.")
-        return ['config'], {'config': config_path}
-
-    # Check if single composition selected
-    composition = path_params.get(composition_type, None)
+    # Check if composition is directly specified in path (e.g., composition=cluster)
+    composition = path_params.get(COMPOSITION_KEY, None)
     if composition:
+        # Single composition specified - return it directly
         return [composition], {composition: config_path}
 
-    # Default: Discover composition paths from filesystem
+    # No composition specified - discover from filesystem or config
+    # This happens when path ends at cluster level (e.g., cluster=demo-cluster-01)
+    logger.info("No composition specified in path. Discovering compositions...")
+
+    # Try to discover composition paths from filesystem
     paths = {}
     compositions = []
     for subpath in os.listdir(config_path):
-        if composition_type + "=" in subpath:
-            composition = split_path(subpath)[1]
-            paths[composition] = os.path.join(config_path, "{}={}".format(composition_type, composition))
-            compositions.append(composition)
+        if COMPOSITION_KEY + "=" in subpath:
+            comp_name = split_path(subpath)[1]
+            comp_path = os.path.join(config_path, subpath)
+            paths[comp_name] = comp_path
+            compositions.append(comp_name)
 
-    # If nothing found on filesystem, fallback to config
+    # If nothing found on filesystem, fallback to .komposconfig.yaml
     if not compositions and kompos_config and runner_type:
         config_compositions = kompos_config.composition_order(runner_type, default=None)
         if config_compositions:
             logger.info("No compositions found on filesystem. Using .komposconfig.yaml: %s", config_compositions)
             for comp in config_compositions:
-                comp_path = os.path.join(config_path, "{}={}".format(composition_type, comp))
+                comp_path = os.path.join(config_path, "{}={}".format(COMPOSITION_KEY, comp))
                 paths[comp] = comp_path
                 if not os.path.exists(comp_path):
                     logger.warning("Composition %s defined in config but path not found: %s", comp, comp_path)
             return config_compositions, paths
+
+    if not compositions:
+        # No composition in path and none discovered - return dummy for config rendering
+        logger.warning("No composition detected in path. Config will be rendered at this level.")
+        return ['config'], {'config': config_path}
 
     return compositions, paths
 
@@ -457,13 +461,13 @@ def get_himl_args(args):
     if hasattr(args, 'command') and args.command == 'config':
         logger.info("Using HIML arguments from config command")
         return args
-    
+
     # For tfe command, HIML args are mixed with TFE-specific args
     # Return full args object to include both TFE and HIML args
     if hasattr(args, 'command') and args.command == 'tfe':
         logger.info("Using HIML arguments from tfe command")
         return args
-    
+
     # For explore command, return full args for exploration options
     if hasattr(args, 'command') and args.command == 'explore':
         logger.info("Using arguments from explore command")

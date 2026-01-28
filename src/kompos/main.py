@@ -105,15 +105,15 @@ def run(args=None):
 
 def get_config_path(console_args):
     config_path = console_args.config_path
-    
+
     # If a file was provided (e.g., from tab completion), use its parent directory
     if os.path.isfile(config_path):
         config_path = os.path.dirname(config_path)
         logger.info("Config path is a file, using parent directory: %s", config_path)
-    
+
     if not os.path.isdir(config_path):
         raise Exception("Provide a dir config path. Got: {}".format(config_path))
-    
+
     return config_path
 
 
@@ -127,4 +127,3 @@ def get_root_path(args):
         return os.path.realpath(args.root_path)
 
     return os.path.realpath(os.getcwd())
-
