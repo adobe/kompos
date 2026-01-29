@@ -4,30 +4,33 @@
 
 ![kompos](img/kompos.png)
 
-**Kompos** is a configuration-driven tool for managing infrastructure provisioning
-and deployment. It uses a hierarchical folder structure and YAML files to store
-and generate configurations, with runtime value interpolation and injection into
-any runner. Terraform and helmfile are supported as built-in provisioners, but
-the architecture supports custom runners for any tool or platform.
+**Kompos** is a configuration source management tool for infrastructure platforms. It maintains a Git-based layered
+configuration structure that generates environment-specific configurations for Terraform and other infrastructure tools.
+
+**Perfect for:** Multi-environment deployments, cell-based architectures, platform engineering teams managing 10s-100s
+of clusters.
+
+**Workflow:** Layered config source in Git → Kompos generates → Commit → Terraform/TFE consumes → Deploy
 
 ## Key Features
 
-- **Hierarchical Configuration**: Layer configurations across environments, regions, and compositions with automatic merging and inheritance
-- **Runtime Value Interpolation**: Dynamically generate and inject configuration values into any runner at execution time
-- **Universal Runner Architecture**: Built-in support for Terraform and Helmfile, extensible for any provisioning or deployment tool
-- **Configuration Analysis**: Powerful inspection tools to understand hierarchy, trace variable origins, and visualize data flow
-- **Multi-Environment Support**: Unified configuration structure that works across any cloud provider or infrastructure platform
+- **Layered Configuration**: Organize configs by cloud/environment/region/cluster with automatic inheritance and merge
+- **Generate Configurations**: Produce tfvars, workspace configs, and composition files for Terraform/TFE
+- **Value Interpolation**: Dynamic config resolution with `{{key.path}}` placeholders
+- **Configuration Analysis**: Trace value origins, visualize hierarchy, compare environments
+- **Extensible Runners**: Built-in Terraform and TFE runners, extensible architecture for custom destinations
 
 ### Core Benefits
 
-- ✅ **DRY (Don't Repeat Yourself)**: Define common values once at higher levels, override only what differs per environment
-- ✅ **Clear Precedence**: More specific (deeper) configurations automatically override general ones
-- ✅ **Flexible Structure**: Organize by cloud, environment, cluster, composition, or any hierarchy that fits your workflow
-- ✅ **Environment-Specific Overrides**: Dev can use different values than prod (e.g., smaller instances, test versions)
-- ✅ **Easy Maintenance**: Change one file to affect multiple clusters/environments at once
-- ✅ **Clean Separation**: Source files (version controlled) vs. generated files (runtime artifacts)
+- ✅ **Version Controlled**: All changes tracked in Git with full audit trail
+- ✅ **DRY at Scale**: Define once, inherit everywhere. Start with cluster-specific configs, refactor common patterns
+  upward to shared layers
+- ✅ **Clear Precedence**: Specific configs override general ones automatically
+- ✅ **Environment Variants**: Dev uses latest versions, prod uses stable - same codebase
+- ✅ **Effortless Updates**: Change one shared config file → update 50+ clusters instantly
+- ✅ **Clean Separation**: Source configs vs generated artifacts
 
-Below is a graphical representation of the data flow, showing how hierarchical 
+Below is a graphical representation of the data flow, showing how hierarchical
 configurations are merged and interpolated before being injected into runners:
 
 ![kompos-data-flow](img/kompos-diagram.svg)
@@ -75,63 +78,78 @@ source .env/bin/activate
 
 Comprehensive guides for understanding and using Kompos:
 
-- **[📚 Architecture & File Generation](./docs/ARCHITECTURE.md)** - How hierarchical configuration works, file generation, and merge behavior
+- **[📚 Architecture & File Generation](./docs/ARCHITECTURE.md)** - How hierarchical configuration works, file
+  generation, and merge behavior
 - **[📊 Explore Runner](./docs/EXPLORE_RUNNER.md)** - Configuration analysis, value tracing, and hierarchy visualization
-- **[🔧 TFE Runner](./docs/TFE_RUNNER.md)** - Terraform Enterprise workflow and workspace generation
+- **[🔧 TFE Runner](./docs/TFE_RUNNER.md)** - Terraform Enterprise/Cloud: workspace configs, tfvars generation, and
+  composition management
 
-## Hierarchical Configuration
+## Layered Configuration
 
-Kompos leverages [himl](https://github.com/adobe/himl) to provide a
-[hiera](https://puppet.com/docs/puppet/latest/hiera_intro.html#concept-7256)-like
-hierarchical configuration structure. This enables:
+Kompos leverages [himl](https://github.com/adobe/himl) to provide a layered configuration structure as your **Git-based
+source of truth**. Configuration files are organized hierarchically and automatically merged based on directory paths,
+enabling powerful inheritance patterns.
 
-- **Configuration Inheritance**: Define base configurations and override them per environment, cluster, or composition
-- **Value Interpolation**: Reference and reuse values across your configuration hierarchy
-- **Runtime Injection**: Generated configurations are automatically interpolated and injected into Terraform/Helmfile at execution time
-- **Configuration Analysis**: Trace variable origins, visualize data flow, and compare configurations across environments
-- **DRY Principle**: Eliminate configuration duplication across environments
+**How it works:** Base configurations are defined at higher levels (e.g., cloud, region) and automatically inherited by
+more specific levels (e.g., cell, cluster), with the ability to override any value at any level.
+
+**Ideal for cell-based architectures:** Define shared cell configuration once (networking, security, compliance), then
+override per-cell specifics (capacity, module versions, feature flags). One config change can update an entire cell
+deployment pattern.
+
+**The DRY workflow:**
+
+1. **Start specific** - Define per-cluster configs as you build
+2. **Spot patterns** - Notice repeated values across clusters
+3. **Refactor upward** - Move common config to shared layers (region → env → cloud)
+4. **Override when needed** - Keep only differences at cluster level
+
+**Example:** All clusters use `terraform_version: "1.5.0"` → Move to `cloud=aws/defaults.yaml` → One change updates
+everything.
+
+This enables:
+
+- **Git-Based Workflow**: Config changes via PRs → Generate → Terraform/TFE consumes
+- **Config Inheritance**: Define once at base level, override only what differs
+- **Value Interpolation**: Reference values with `{{key.path}}` syntax
+- **Artifact Generation**: Produce tfvars, compositions, workspace configs for downstream tools
+- **Config Analysis**: Trace origins, visualize hierarchy, compare environments
+- **Scale**: Manage 50+ clusters from a handful of config files
 
 ## Examples
 
-The [`examples/features/`](./examples/features/) directory contains working examples demonstrating key Kompos capabilities:
+Comprehensive examples are available in [`examples/`](./examples/) with a progressive learning path:
 
-### [Hierarchical Configuration](./examples/features/hierarchical/)
-Demonstrates how configuration files are layered and merged based on directory paths:
-- Configuration inheritance and overrides
-- Environment-specific values
-- Multi-level hierarchies (cloud → environment → cluster → composition)
+1. **[Layered Configuration](./examples/01-hierarchical-config/)** - Learn configuration inheritance and merge behavior
+2. **[Module Version Pinning](./examples/02-module-version-pinning/)** - Dynamic Terraform module versioning with
+   `.tf.versioned` files
+3. **[Config Exploration](./examples/03-config-exploration/)** - Analyze and visualize configuration hierarchies
+4. **[TFE Multi-Cluster](./examples/04-tfe-multi-cluster/)** - Terraform Enterprise workspace and composition generation
 
-### [Versioned Module Sources](./examples/features/versioned-sources/)
-Shows how to use `.tf.versioned` template files for per-environment Terraform module version pinning:
-- Dynamic module source interpolation
-- Per-cluster/environment version management
-- Gradual rollout patterns (test in dev, promote to prod)
-- Overcoming Terraform's static `source` limitation
-
-Each example includes a README with usage instructions and explanations.
+See the [Examples README](./examples/README.md) for a complete guide with difficulty levels, time estimates, and
+learning paths.
 
 ## Usage
 
-Kompos reads hierarchical configurations, interpolates runtime values, and injects them into the appropriate runner:
+Generate configuration artifacts from layered config source for infrastructure tools:
 
 ```bash
-# Terraform: hierarchical config values are injected as tfvars
-kompos <config_path> terraform <command>
-
-# Helmfile: hierarchical config values are interpolated and injected
-kompos <config_path> helmfile <command>
-
-# TFE: generate workspace configs and tfvars for Terraform Enterprise
+# TFE: Generate workspace configs, tfvars, and compositions (primary)
 kompos <config_path> tfe generate
 
-# Explore: discover and analyze configuration hierarchy and data flow
+# Terraform: Generate configs and run Terraform locally
+kompos <config_path> terraform <command>
+
+# Explore: Analyze config hierarchy and trace values
 kompos <config_path> explore <analyze|trace|visualize|compare>
 
-# View the generated configuration before running
+# Config: View merged configuration
 kompos <config_path> config --format yaml
 ```
 
-The runner architecture is extensible - you can create custom runners for any tool that needs configuration injection.
+**Workflow:** Generate configs → Commit → Terraform/TFE consumes → Deploy
+
+**Note:** helmfile runner is deprecated. For Kubernetes, use GitOps tools (ArgoCD/Flux) or the planned helm runner.
 
 ### Common Config Commands
 
@@ -139,7 +157,7 @@ The `config` command supports all HIML arguments natively for flexible configura
 
 ```bash
 # Example path from hierarchical example
-CONFIG_PATH="examples/features/hierarchical/config/cloud=aws/env=dev/cluster=cluster1/composition=terraform/terraform=cluster"
+CONFIG_PATH="examples/01-hierarchical-config/config/cloud=aws/env=dev/cluster=cluster1/composition=terraform/terraform=cluster"
 
 # View full merged configuration
 kompos $CONFIG_PATH config

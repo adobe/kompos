@@ -10,7 +10,6 @@
 
 import logging
 import os
-from pathlib import Path
 
 from kompos.parser import SubParserConfig
 from kompos.runners.terraform_helper import GenericTerraformRunner
@@ -87,7 +86,7 @@ class TerraformRunner(GenericTerraformRunner):
 
         # Clean and recreate runtime directory to ensure fresh state
         self.ensure_directory(runtime_dir, clean=True)
-        logger.info('Using runtime directory: %s', runtime_dir)
+        logger.info(f'Using runtime directory: {runtime_dir}')
 
         # Note: provider.tf should use native TF variables, not generated from Hiera
 
@@ -114,24 +113,19 @@ class TerraformRunner(GenericTerraformRunner):
 
         # Handle dry-run mode: skip terraform execution
         if args.dry_run:
-            logger.info('DRY-RUN: Skipping terraform execution for composition: %s', composition)
-            logger.info('DRY-RUN: Generated files are in: %s', runtime_dir)
+            logger.info(f'DRY-RUN: Skipping terraform execution for composition: {composition}')
+            logger.info(f'DRY-RUN: Generated files are in: {runtime_dir}')
             # Return a no-op command that always succeeds
             return dict(command="echo 'Dry-run mode: skipping terraform execution'")
 
-        var_file = '-var-file="{}"'.format(
-            TerraformRunner.CONFIG_FILENAME) if args.subcommand in TerraformRunner.SUBCMDS_WITH_VARS else ''
-        terraform_env_config = 'export TF_PLUGIN_CACHE_DIR="{}"'.format(TerraformRunner.local_config_dir())
+        var_file = f'-var-file="{TerraformRunner.CONFIG_FILENAME}"' if args.subcommand in TerraformRunner.SUBCMDS_WITH_VARS else ''
+        terraform_env_config = f'export TF_PLUGIN_CACHE_DIR="{TerraformRunner.local_config_dir()}"'
 
-        cmd = "cd {terraform_path} && " \
-              "{remove_local_cache} " \
-              "{env_config} ; terraform init && terraform {subcommand} {var_file} {extra_args}".format(
-            terraform_path=runtime_dir,
-            remove_local_cache=TerraformRunner.remove_local_cache_cmd(args.subcommand),
-            subcommand=args.subcommand,
-            extra_args=' '.join(extra_args),
-            var_file=var_file,
-            env_config=terraform_env_config)
+        remove_cache = TerraformRunner.remove_local_cache_cmd(args.subcommand)
+        extra_args_str = ' '.join(extra_args)
+        cmd = (f"cd {runtime_dir} && "
+               f"{remove_cache} "
+               f"{terraform_env_config} ; terraform init && terraform {args.subcommand} {var_file} {extra_args_str}")
 
         return dict(command=cmd)
 
@@ -151,13 +145,14 @@ class TerraformRunner(GenericTerraformRunner):
             directory: Optional cache directory path (default: TerraformRunner.CACHE_DIR)
             
         Returns:
-            Path: Expanded path to cache directory
+            str: Expanded path to cache directory
         """
         if directory is None:
             directory = TerraformRunner.CACHE_DIR
 
         try:
-            Path(Path.expanduser(Path(directory))).mkdir(parents=True, exist_ok=True)
-            return Path.expanduser(Path(directory))
+            expanded_path = os.path.expanduser(directory)
+            os.makedirs(expanded_path, exist_ok=True)
+            return expanded_path
         except IOError:
-            logging.error("Failed to create dir in path: %s", directory)
+            logging.error(f"Failed to create dir in path: {directory}")

@@ -75,7 +75,7 @@ class TerraformVersionedSourceProcessor:
             config: Configuration dictionary for value interpolation
         """
         if not os.path.exists(source_dir):
-            logger.warning('Source directory does not exist: %s', source_dir)
+            logger.warning(f'Source directory does not exist: {source_dir}')
             return
 
         processed_count = 0
@@ -98,7 +98,7 @@ class TerraformVersionedSourceProcessor:
 
             # Skip .tf files that have a .versioned counterpart
             elif filename.endswith('.tf') and self._has_versioned_counterpart(source_dir, filename):
-                logger.debug('Skipping %s (generated from .versioned)', filename)
+                logger.debug(f'Skipping {filename} (generated from .versioned)')
                 continue
 
             # Copy everything else
@@ -132,7 +132,7 @@ class TerraformVersionedSourceProcessor:
     def _copy_file(self, source_file, target_dir, filename):
         """Copy a file to target directory."""
         shutil.copy2(source_file, os.path.join(target_dir, filename))
-        logger.debug('Copied %s', filename)
+        logger.debug(f'Copied {filename}')
 
     def _process_file(self, versioned_file, target_dir, config):
         """
@@ -157,7 +157,7 @@ class TerraformVersionedSourceProcessor:
         with open(output_file, 'w') as f:
             f.write(interpolated_content)
 
-        logger.info('Generated %s from %s', output_filename, os.path.basename(versioned_file))
+        logger.info(f'Generated {output_filename} from {os.path.basename(versioned_file)}')
 
     def interpolate_sources(self, content, config):
         """
@@ -208,7 +208,7 @@ class TerraformVersionedSourceProcessor:
 
                     # Replace placeholder with value
                     line = line.replace(f'{{{{{placeholder}}}}}', str(value))
-                    logger.debug('Interpolated {{%s}} -> %s', placeholder, value)
+                    logger.debug(f'Interpolated {{{{{placeholder}}}}} -> {value}')
 
             output_lines.append(line)
 
@@ -225,45 +225,23 @@ class GenericTerraformRunner(GenericRunner):
     - Path management utilities
     """
 
-    # Common exclusion key patterns
-    TERRAFORM_SYSTEM_KEYS = ['provider', 'terraform']
-    TFE_SYSTEM_KEYS = ['workspaces', 'composition']
-
     def __init__(self, kompos_config, config_path, execute, runner_type):
         super(GenericTerraformRunner, self).__init__(kompos_config, config_path, execute, runner_type)
 
         # Initialize versioned source processor
         self.versioned_processor = TerraformVersionedSourceProcessor()
 
-    def get_hierarchical_name(self, raw_config, name_key=None):
-        """
-        Extract an identifier/name from hierarchical configuration.
-        
-        Used by runners that need to generate per-cluster/workspace files.
-        The key path is configurable via runner config 'himl_name_key'.
-        
-        Args:
-            raw_config: Raw configuration dictionary from hiera
-            name_key: Optional override for the config key path
-                     (default: uses runner config 'himl_name_key' → 'cluster.fullName')
-        
-        Returns:
-            str: Name/identifier, or None if not found
-            
-        Example:
-            cluster_name = self.get_hierarchical_name(raw_config)
-            if not cluster_name:
-                return  # Skip processing
-        """
-        if name_key is None:
-            name_key = self.get_runner_config('himl_name_key', 'cluster.fullName')
+        # Load system exclusion keys from config (required in .komposconfig.yaml)
+        system_keys_config = self.kompos_config.kompos.get('compositions', {}).get('system_keys', {})
 
-        name = self.get_nested_value(raw_config, name_key)
+        # Always exclude 'komposconfig' key from output (Kompos runtime settings)
+        self.TERRAFORM_SYSTEM_KEYS = ['komposconfig'] + system_keys_config.get('terraform', [])
+        self.TFE_SYSTEM_KEYS = ['komposconfig'] + system_keys_config.get('tfe', [])
 
-        if not name:
-            logger.warning("No name found in hierarchy at '%s'", name_key)
-
-        return name
+        # Load hierarchical config values from .komposconfig.yaml
+        self.base_dir = self.kompos_config.get_runtime_setting(self.runner_type, 'base_dir', './generated')
+        self.use_composition_subdir = self.kompos_config.get_runtime_setting(self.runner_type, 'use_composition_subdir',
+                                                                             True)
 
     def get_source_composition_path(self, composition, raw_config):
         """
@@ -298,7 +276,7 @@ class GenericTerraformRunner(GenericRunner):
             raw_config: Configuration for interpolation
         """
         if not os.path.exists(source_dir):
-            logger.warning('Source composition directory does not exist: %s', source_dir)
+            logger.warning(f'Source composition directory does not exist: {source_dir}')
             return
 
         self.versioned_processor.process(source_dir, target_dir, raw_config)
@@ -399,11 +377,11 @@ class GenericTerraformRunner(GenericRunner):
         dir_path = os.path.dirname(path) if is_file_path else path
 
         if clean and os.path.exists(dir_path):
-            logger.debug('Cleaning directory: %s', dir_path)
+            logger.debug(f'Cleaning directory: {dir_path}')
             shutil.rmtree(dir_path)
 
         os.makedirs(dir_path, exist_ok=True)
-        logger.debug('Ensured directory exists: %s', dir_path)
+        logger.debug(f'Ensured directory exists: {dir_path}')
         return dir_path
 
     def generate_terraform_config(self, target_file, config_path, filtered_keys=None, excluded_keys=None,
@@ -428,7 +406,7 @@ class GenericTerraformRunner(GenericRunner):
         filtered_keys = filtered_keys or []
         excluded_keys = excluded_keys or []
 
-        logger.info('Generating terraform config: %s', target_file)
+        logger.info(f'Generating terraform config: {target_file}')
 
         self.generate_config(
             config_path=config_path,

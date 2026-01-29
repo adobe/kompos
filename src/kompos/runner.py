@@ -68,7 +68,8 @@ class GenericRunner:
             multi_line_string=False,
             type_strategies=[(list, ["append"]), (dict, ["merge"])],
             fallback_strategies=["override"],
-            type_conflict_strategies=["override"]
+            type_conflict_strategies=["override"],
+            silent=False  # Don't print command (for internal/trace operations)
     ):
         """Generate hierarchical configuration using HIML."""
         cmd = self.get_sh_command(
@@ -86,7 +87,8 @@ class GenericRunner:
             multi_line_string,
         )
 
-        display(cmd, color="yellow")
+        if not silent:
+            display(cmd, color="yellow")
 
         return self.config_processor.process(
             path=config_path,
@@ -122,18 +124,17 @@ class GenericRunner:
             multi_line_string=False,
     ):
         """Build shell command string for displaying HIML invocation."""
-        command = "kompos {} config --format {}".format(
-            config_path, output_format)
+        command = f"kompos {config_path} config --format {output_format}"
         for filter in filters:
-            command += " --filter {}".format(filter)
+            command += f" --filter {filter}"
         for exclude in exclude_keys:
-            command += " --exclude {}".format(exclude)
+            command += f" --exclude {exclude}"
         if enclosing_key:
-            command += " --enclosing-key {}".format(enclosing_key)
+            command += f" --enclosing-key {enclosing_key}"
         if remove_enclosing_key:
-            command += " --remove-enclosing-key {}".format(remove_enclosing_key)
+            command += f" --remove-enclosing-key {remove_enclosing_key}"
         if output_file:
-            command += " --output-file {}".format(output_file)
+            command += f" --output-file {output_file}"
         if print_data:
             command += " --print-data"
         if skip_interpolation_resolving:
@@ -147,32 +148,11 @@ class GenericRunner:
 
         return command
 
-    def get_runner_config(self, key, default=None):
-        """
-        Get configuration value for this runner with default fallback.
-        
-        Looks up configuration from .komposconfig.yaml under the runner's section.
-        For example, TFERunner with runner_type='tfe' will look in config['tfe'][key].
-        
-        Args:
-            key: Configuration key to look up
-            default: Default value if key not found
-            
-        Returns:
-            Configuration value or default
-            
-        Examples:
-            >>> # In TFERunner (runner_type='tfe')
-            >>> self.get_runner_config('clusters_dir', './rendered/clusters')
-            # Returns config['tfe']['clusters_dir'] or './rendered/clusters'
-        """
-        return self.kompos_config.get(self.runner_type, {}).get(key, default)
-
     def run(self, args, extra_args):
-        logger.info("Runner: %s", self.runner_type)
+        logger.debug(f"Runner: {self.runner_type}")
 
         if len(extra_args) > 1:
-            logger.info("Found extra_args %s", extra_args)
+            logger.debug(f"Found extra_args {extra_args}")
 
         self.himl_args = get_himl_args(args)
         self.run_configuration(args)
@@ -205,21 +185,73 @@ class GenericRunner:
 
         if not compositions:
             raise Exception(
-                "No {} compositions were detected in {}.".format(self.runner_type, self.config_path))
+                f"No {self.runner_type} compositions were detected in {self.config_path}.")
 
         return compositions, paths
 
     def get_raw_config(self, config_path, composition):
-        self.kompos_config.excluded_config_keys(composition),
-        self.kompos_config.filtered_output_keys(composition)
-
+        """
+        Generate raw config WITHOUT exclusions/filters for internal use.
+        
+        This config is used by Kompos to read metadata like composition.instance.
+        All keys must be available for interpolation (exclusions break references).
+        
+        Exclusions/filters are applied separately when generating final output files.
+        """
         return self.generate_config(
             config_path=config_path,
-            exclude_keys=self.kompos_config.excluded_config_keys(composition),
-            filters=self.kompos_config.filtered_output_keys(composition),
+            exclude_keys=[],  # No exclusions - all keys available for interpolation
+            filters=[],  # No filters - generate complete config
             skip_interpolation_validation=True,
             skip_secrets=True
         )
+
+    def get_composition_name(self, raw_config):
+        """
+        Get the resolved composition instance identifier from layered config.
+        
+        Reads composition.instance which uses pure Himl interpolation:
+          composition.instance: "{{account.name}}"  or  "{{cluster.fullName}}"
+        
+        Args:
+            raw_config: Raw configuration dictionary from himl
+        
+        Returns:
+            str: Resolved instance identifier (e.g., "my-account", "my-cluster-us-east-1")
+            
+        Example:
+            name = self.get_composition_name(raw_config)
+            if not name:
+                return  # Skip processing
+        """
+        return self.kompos_config.get_composition_name(
+            raw_config=raw_config,
+            get_nested_value_fn=self.get_nested_value
+        )
+
+    def get_composition_output_dir(self, raw_config):
+        """
+        Get the composition instance directory name from layered config.
+        
+        Reads composition.output_dir (or falls back to composition.instance) which uses
+        pure Himl interpolation:
+          composition.instance: "{{account.name}}"  or  "{{cluster.fullName}}"
+        
+        This is Level 3 in the output hierarchy:
+          base/composition_type/composition_instance/
+        
+        Args:
+            raw_config: Raw configuration dictionary from himl
+        
+        Returns:
+            str: Resolved directory name (e.g., "my-account", "my-cluster-us-east-1")
+        """
+        # Try composition.output_dir first (for cases where name and dir differ)
+        output_dir = self.get_nested_value(raw_config, 'composition.output_dir')
+        if not output_dir or '{{' in str(output_dir):
+            # Fallback to composition.instance (typical case - instance = dir)
+            output_dir = self.get_composition_name(raw_config)
+        return output_dir
 
     def run_compositions(self, args, extra_args, compositions, paths):
         # Acquire lock to prevent concurrent kompos runs from interfering
@@ -234,10 +266,10 @@ class GenericRunner:
             # Try to acquire exclusive lock (non-blocking)
             try:
                 fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                logger.debug('Acquired kompos lock: %s', lock_file)
+                logger.debug(f'Acquired kompos lock: {lock_file}')
             except IOError:
                 logger.error('Another kompos process is already running. Please wait or kill the other process.')
-                logger.error('Lock file: %s', lock_file)
+                logger.error(f'Lock file: {lock_file}')
                 return 1
 
             return self._run_compositions_internal(args, extra_args, compositions, paths)
@@ -250,11 +282,11 @@ class GenericRunner:
                     lock_fd.close()
                     logger.debug('Released kompos lock')
                 except Exception as e:
-                    logger.warning('Failed to release lock: %s', e)
+                    logger.warning(f'Failed to release lock: {e}')
 
     def _run_compositions_internal(self, args, extra_args, compositions, paths):
         for composition in compositions:
-            logger.info("Running composition: %s", composition)
+            logger.debug(f"→ {self.runner_type.upper()}: {composition}")
 
             # Set current path
             config_path = paths[composition]
@@ -285,8 +317,8 @@ class GenericRunner:
             return_code = self.execute(self.execution(args, extra_args, default_output_path, composition, raw_config))
             if return_code != 0:
                 logger.error(
-                    "Command finished with nonzero exit code for composition '%s'."
-                    "Will skip remaining compositions.", composition
+                    f"Command finished with nonzero exit code for composition '{composition}'."
+                    f"Will skip remaining compositions."
                 )
                 return return_code
 
@@ -383,12 +415,12 @@ def discover_compositions(config_path, kompos_config=None, runner_type=None):
     if not compositions and kompos_config and runner_type:
         config_compositions = kompos_config.composition_order(runner_type, default=None)
         if config_compositions:
-            logger.info("No compositions found on filesystem. Using .komposconfig.yaml: %s", config_compositions)
+            logger.info(f"No compositions found on filesystem. Using .komposconfig.yaml: {config_compositions}")
             for comp in config_compositions:
-                comp_path = os.path.join(config_path, "{}={}".format(COMPOSITION_KEY, comp))
+                comp_path = os.path.join(config_path, f"{COMPOSITION_KEY}={comp}")
                 paths[comp] = comp_path
                 if not os.path.exists(comp_path):
-                    logger.warning("Composition %s defined in config but path not found: %s", comp, comp_path)
+                    logger.warning(f"Composition {comp} defined in config but path not found: {comp_path}")
             return config_compositions, paths
 
     if not compositions:
@@ -438,8 +470,10 @@ def validate_runner_version(kompos_config, runner):
                           stdout=PIPE,
                           stderr=PIPE)
     except Exception:
-        logging.exception("Runner {} does not appear to be installed, "
-                          "please ensure terraform is in your PATH".format(runner))
+        logging.exception(
+            f"Runner {runner} does not appear to be installed, "
+            f"please ensure terraform is in your PATH"
+        )
         exit(1)
 
     expected_version = kompos_config.runner_version(runner)
@@ -447,8 +481,10 @@ def validate_runner_version(kompos_config, runner):
     current_version = current_version.decode('utf-8').split('\n', 1)[0]
 
     if expected_version not in current_version:
-        raise Exception("Runner [{}] should be {}, but you have {}. Please change your version.".format(
-            runner, expected_version, current_version))
+        raise Exception(
+            f"Runner [{runner}] should be {expected_version}, but you have {current_version}. "
+            f"Please change your version."
+        )
 
     return
 
@@ -459,24 +495,24 @@ def get_himl_args(args):
     # For config command, HIML args are already parsed directly into args
     # ConfigRunner().get_parser() adds all HIML args to the config subcommand
     if hasattr(args, 'command') and args.command == 'config':
-        logger.info("Using HIML arguments from config command")
+        logger.debug("Using HIML arguments from config command")
         return args
 
     # For tfe command, HIML args are mixed with TFE-specific args
     # Return full args object to include both TFE and HIML args
     if hasattr(args, 'command') and args.command == 'tfe':
-        logger.info("Using HIML arguments from tfe command")
+        logger.debug("Using HIML arguments from tfe command")
         return args
 
     # For explore command, return full args for exploration options
     if hasattr(args, 'command') and args.command == 'explore':
-        logger.info("Using arguments from explore command")
+        logger.debug("Using arguments from explore command")
         return args
 
     # For terraform/helmfile commands, use --himl flag if provided
     if hasattr(args, 'himl_args') and args.himl_args:
         himl_args = parser.parse_args(args.himl_args.split())
-        logger.info("Extra himl arguments for %s: %s", args.command, himl_args)
+        logger.info(f"Extra himl arguments for {args.command}: {himl_args}")
         return himl_args
 
     # Default: return empty parsed args with defaults

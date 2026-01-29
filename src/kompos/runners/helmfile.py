@@ -65,7 +65,7 @@ class HelmfileRunner(GenericRunner):
         self.setup_kube_config(raw_config)
 
         output_file = os.path.join(default_output_path, composition, HELMFILE_VARIABLES_FILENAME)
-        logger.info('Generating helmfiles variables file %s', output_file)
+        logger.info(f'Generating helmfiles variables file {output_file}')
 
         self.generate_config(config_path=config_path,
                              filters=filtered_keys,
@@ -78,28 +78,26 @@ class HelmfileRunner(GenericRunner):
     def execution(args, extra_args, default_output_path, composition, raw_config):
         helmfile_composition_path = os.path.join(default_output_path, composition)
 
-        cmd = "cd {helmfile_path} && helmfile {subcommand} {extra_args}".format(
-            helmfile_path=helmfile_composition_path,
-            subcommand=args.subcommand,
-            extra_args=' '.join(extra_args), )
+        extra_args_str = ' '.join(extra_args)
+        cmd = f"cd {helmfile_composition_path} && helmfile {args.subcommand} {extra_args_str}"
 
         return dict(command=cmd)
 
     def setup_kube_config(self, data):
         if data['helm']['global']['cluster']['type'] == 'k8s':
             if all(k in data['helm']['global']['cluster']['kubeconfig'] for k in ("path", "context")):
-                if os.path.isfile(data['helm']['global']['cluster']['kubeconfig']['path']):
-                    logger.info('Using kubeconfig file: %s', data['helm']['global']['cluster']['kubeconfig']['path'])
+                kubeconfig_path = data['helm']['global']['cluster']['kubeconfig']['path']
+                if os.path.isfile(kubeconfig_path):
+                    logger.info(f'Using kubeconfig file: {kubeconfig_path}')
                 else:
-                    logger.warning('kubeconfig file not found: %s',
-                                   data['helm']['global']['cluster']['kubeconfig']['path'])
+                    logger.warning(f'kubeconfig file not found: {kubeconfig_path}')
                     sys.exit(1)
 
-                kubeconfig_abs_path = os.path.abspath(data['helm']['global']['cluster']['kubeconfig']['path'])
+                kubeconfig_abs_path = os.path.abspath(kubeconfig_path)
                 conf = KubeConfig(kubeconfig_abs_path)
                 conf.use_context(data['helm']['global']['cluster']['kubeconfig']['context'])
                 os.environ['KUBECONFIG'] = kubeconfig_abs_path
-                logger.info('Current context: %s', conf.current_context())
+                logger.info(f'Current context: {conf.current_context()}')
             else:
                 logger.warning('path or context keys not found in helm.global.cluster.kubeconfig')
                 sys.exit(1)
@@ -117,12 +115,11 @@ class HelmfileRunner(GenericRunner):
 
     def generate_eks_kube_config(self, cluster_name, aws_profile, region):
         file_location = self.get_tmp_file()
-        cmd = "aws eks update-kubeconfig --name {} --profile {} --region {} --kubeconfig {}".format(
-            cluster_name, aws_profile, region, file_location)
+        cmd = f"aws eks update-kubeconfig --name {cluster_name} --profile {aws_profile} --region {region} --kubeconfig {file_location}"
 
         return_code = self.execute(dict(command=cmd))
         if return_code != 0:
-            raise Exception("Unable to generate EKS kube config. Exit code was {}".format(return_code))
+            raise Exception(f"Unable to generate EKS kube config. Exit code was {return_code}")
         return file_location
 
     @staticmethod

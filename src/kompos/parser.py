@@ -37,7 +37,7 @@ class RootParser:
                             help='Get more verbose output from commands')
         parser.add_argument('--version',
                             action='version',
-                            version='%(prog)s v{version}'.format(version=__version__)
+                            version=f'%(prog)s v{__version__}'
                             )
         parser.add_argument('--himl',
                             action='store',
@@ -64,8 +64,8 @@ class RootParser:
             for value in args:
                 value.encode('utf-8')
         except UnicodeDecodeError as e:
-            print('Invalid character in argument "{0}", most likely an "en dash", replace it with normal dash -'.format(
-                e.args[1]))
+            print(
+                f'Invalid character in argument "{e.args[1]}", most likely an "en dash", replace it with normal dash -')
             raise
 
     def parse_args(self, args=None):
