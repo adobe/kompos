@@ -12,6 +12,43 @@ import argparse
 import sys
 
 from kompos import __version__
+from kompos.helpers import print_error
+
+
+class KomposArgumentParser(argparse.ArgumentParser):
+    """Custom ArgumentParser with better error messages."""
+    
+    def error(self, message):
+        """Override error to provide cleaner, more helpful messages."""
+        # Extract just the essential error message
+        if 'required: subcommand' in message.lower() or 'invalid choice' in message.lower():
+            runner_name = self.prog.split()[-1] if len(self.prog.split()) > 1 else 'unknown'
+            
+            # Try to extract choices from the parser (check both subparsers and regular arguments with choices)
+            choices = []
+            for action in self._actions:
+                if isinstance(action, argparse._SubParsersAction):
+                    choices = list(action.choices.keys()) if action.choices else []
+                    break
+                elif hasattr(action, 'choices') and action.choices and action.dest in ('subcommand', 'command'):
+                    choices = list(action.choices)
+                    break
+            
+            if choices:
+                print_error(f"Missing or invalid subcommand for '{runner_name}'")
+                print("", file=sys.stderr)
+                print(f"Available commands: {', '.join(choices)}", file=sys.stderr)
+                print("", file=sys.stderr)
+                print(f"Usage: kompos <config_path> {runner_name} {{{','.join(choices)}}}", file=sys.stderr)
+            else:
+                print_error(f"Missing required subcommand for '{runner_name}'")
+                print("", file=sys.stderr)
+                print(f"Run 'kompos <config_path> {runner_name} --help' to see available commands.", file=sys.stderr)
+        else:
+            print_error(message)
+            print("", file=sys.stderr)
+            self.print_usage(sys.stderr)
+        sys.exit(2)
 
 
 class RootParser:
@@ -25,7 +62,7 @@ class RootParser:
         self.sub_parsers = sub_parsers
 
     def _get_parser(self):
-        parser = argparse.ArgumentParser(
+        parser = KomposArgumentParser(
             description='Run commands against a definition', prog='kompos')
         parser.add_argument('config_path',
                             type=str,
@@ -45,7 +82,7 @@ class RootParser:
                             default=None,
                             help='for passing arguments to himl'
                                  '--himl="--arg1 --arg2" any himl argument is supported wrapped in quotes')
-        subparsers = parser.add_subparsers(dest='command')
+        subparsers = parser.add_subparsers(dest='command', parser_class=KomposArgumentParser)
 
         for subparser_conf in self.sub_parsers:
             subparser_instance = subparsers.add_parser(subparser_conf.get_name(),

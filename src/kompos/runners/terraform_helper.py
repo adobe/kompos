@@ -107,9 +107,11 @@ class TerraformVersionedSourceProcessor:
                 copied_count += 1
 
         if processed_count > 0:
-            logger.info('Processed %d versioned file(s)', processed_count)
+            logger.debug('Processed %d versioned file(s)', processed_count)
         if copied_count > 0:
-            logger.info('Copied %d static file(s)', copied_count)
+            logger.debug('Copied %d static file(s)', copied_count)
+        
+        return processed_count, copied_count
 
     def _is_versioned_file(self, filename):
         """Check if file is a .tf.versioned template."""
@@ -274,12 +276,15 @@ class GenericTerraformRunner(GenericRunner):
             source_dir: Source composition directory
             target_dir: Target directory for generated files
             raw_config: Configuration for interpolation
+            
+        Returns:
+            tuple: (processed_count, copied_count)
         """
         if not os.path.exists(source_dir):
             logger.warning(f'Source composition directory does not exist: {source_dir}')
-            return
+            return 0, 0
 
-        self.versioned_processor.process(source_dir, target_dir, raw_config)
+        return self.versioned_processor.process(source_dir, target_dir, raw_config)
 
     def is_versioned_module_sources_enabled(self):
         """Check if versioned module sources feature is enabled."""
@@ -406,7 +411,7 @@ class GenericTerraformRunner(GenericRunner):
         filtered_keys = filtered_keys or []
         excluded_keys = excluded_keys or []
 
-        logger.info(f'Generating terraform config: {target_file}')
+        # Don't log the command here - let the caller provide context
 
         self.generate_config(
             config_path=config_path,

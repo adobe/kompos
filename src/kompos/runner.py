@@ -88,7 +88,7 @@ class GenericRunner:
         )
 
         if not silent:
-            display(cmd, color="yellow")
+            logger.debug(cmd)
 
         return self.config_processor.process(
             path=config_path,

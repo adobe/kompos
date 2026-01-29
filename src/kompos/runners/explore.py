@@ -33,8 +33,8 @@ class ExploreParserConfig(SubParserConfig):
     def configure(self, parser):
         # Explore subcommand
         parser.add_argument('subcommand',
-                            choices=['analyze', 'trace', 'visualize', 'compare'],
-                            help='Exploration mode: analyze=distribution, trace=provenance, visualize=diagram, compare=matrix')
+                            choices=['analyze', 'trace', 'visualize', 'compare', 'debug'],
+                            help='Exploration mode: analyze=distribution, trace=provenance, visualize=diagram, compare=matrix, debug=unresolved interpolations')
 
         # Trace-specific options
         parser.add_argument('--key',
@@ -46,6 +46,11 @@ class ExploreParserConfig(SubParserConfig):
                             type=str,
                             nargs='+',
                             help='Specific keys to compare (for compare command)')
+
+        # Debug options
+        parser.add_argument('--interpolation',
+                            type=str,
+                            help='Specific interpolation to debug (e.g., "{{region.name}}")')
 
         # Add all HIML arguments (filter, exclude, skip-secrets, output-file, format, etc.)
         # These are needed for generate_config() calls and output handling
@@ -67,6 +72,9 @@ class ExploreParserConfig(SubParserConfig):
         
         # Compare configs across environments
         kompos data/ explore compare --keys vpc.cidr_block cluster.size
+        
+        # Debug unresolved interpolation
+        kompos data/composition=account explore debug --interpolation '{{region.name}}'
         '''
 
 
@@ -96,8 +104,10 @@ class ExploreRunner(GenericRunner):
             result = self.visualize_hierarchy(config_path, args.output_format)
         elif args.subcommand == 'compare':
             result = self.compare_configs(config_path, args.keys)
+        elif args.subcommand == 'debug':
+            result = self.analyze_interpolation(config_path, raw_config, args.interpolation, excluded_keys)
         else:
-            logger.error("Unknown subcommand: %s", args.subcommand)
+            logger.error(f"Unknown subcommand: {args.subcommand}")
             return
 
         # Output results using HIML args
@@ -115,7 +125,7 @@ class ExploreRunner(GenericRunner):
         Analyze variable distribution across hierarchy.
         Shows what variables are defined at each level.
         """
-        logger.info("Analyzing configuration distribution from: %s", config_path)
+        logger.info(f"Analyzing configuration distribution from: {config_path}")
 
         # Discover all configuration layers in the hierarchy
         layers = self._discover_hierarchy_layers(config_path)
@@ -135,10 +145,11 @@ class ExploreRunner(GenericRunner):
                 layer_config = self.generate_config(
                     config_path=layer_path,
                     skip_interpolation_validation=True,
-                    skip_secrets=True
+                    skip_secrets=True,
+                    silent=True  # Don't print commands during trace
                 )
             except Exception as e:
-                logger.warning("Failed to generate config for %s: %s", layer_path, e)
+                logger.warning(f"Failed to generate config for {layer_path}: {e}")
                 continue
 
             # Analyze changes from previous layer
@@ -167,13 +178,19 @@ class ExploreRunner(GenericRunner):
 
         return distribution
 
-    def trace_value(self, config_path: str, key: str) -> Dict[str, Any]:
+    def trace_value(self, config_path: str, key: str, silent: bool = False) -> Dict[str, Any]:
         """
         Trace a specific variable through the hierarchy.
         Shows where it originates and how it's overridden.
         Supports both leaf values and dictionary keys.
+        
+        Args:
+            config_path: Path to config being processed
+            key: Key to trace (e.g., "cluster.name")
+            silent: If True, suppress logging output
         """
-        logger.info("Tracing key '%s' from: %s", key, config_path)
+        if not silent:
+            logger.info(f"Tracing key '{key}' from: {config_path}")
 
         layers = self._discover_hierarchy_layers(config_path)
         trace = {
@@ -193,7 +210,8 @@ class ExploreRunner(GenericRunner):
                 layer_config = self.generate_config(
                     config_path=layer_path,
                     skip_interpolation_validation=True,
-                    skip_secrets=True
+                    skip_secrets=True,
+                    silent=True  # Don't print commands during trace
                 )
 
                 # First check if key exists in raw config (before flattening)
@@ -273,7 +291,7 @@ class ExploreRunner(GenericRunner):
                     'status': status
                 })
             except Exception as e:
-                logger.warning("Failed to trace in %s: %s", layer_path, e)
+                logger.warning(f"Failed to trace in {layer_path}: {e}")
 
         # Add suggestions if key not found but similar keys exist
         if not found_any_value and similar_keys:
@@ -288,7 +306,7 @@ class ExploreRunner(GenericRunner):
         Generate visual representation of config hierarchy.
         Supports text tree and GraphViz DOT format.
         """
-        logger.info("Visualizing hierarchy from: %s", config_path)
+        logger.info(f"Visualizing hierarchy from: {config_path}")
 
         layers = self._discover_hierarchy_layers(config_path)
 
@@ -305,7 +323,8 @@ class ExploreRunner(GenericRunner):
                 layer_config = self.generate_config(
                     config_path=layer_path,
                     skip_interpolation_validation=True,
-                    skip_secrets=True
+                    skip_secrets=True,
+                    silent=True  # Don't print commands during trace
                 )
 
                 flat_config = self._flatten_dict(layer_config)
@@ -380,7 +399,7 @@ class ExploreRunner(GenericRunner):
                                         'interpolated': interpolated_keys
                                     }
                                 except Exception as e:
-                                    logger.debug("Failed to analyze file %s: %s", file_path, e)
+                                    logger.debug(f"Failed to analyze file {file_path}: {e}")
                                     file_contributions[item] = {'new': 0, 'overridden': 0, 'interpolated': 0}
 
                 # Track contribution (only if this layer adds vars)
@@ -404,7 +423,7 @@ class ExploreRunner(GenericRunner):
 
                 previous_config = flat_config
             except Exception as e:
-                logger.warning("Failed to analyze %s: %s", layer_path, e)
+                logger.warning(f"Failed to analyze {layer_path}: {e}")
 
         hierarchy['output_format'] = output_format
         return hierarchy
@@ -414,7 +433,7 @@ class ExploreRunner(GenericRunner):
         Compare configurations across different paths.
         Shows value differences in a matrix format.
         """
-        logger.info("Comparing configurations from: %s", config_path)
+        logger.info(f"Comparing configurations from: {config_path}")
 
         # Discover all leaf paths (actual deployable configs)
         leaf_paths = self._discover_leaf_paths(config_path)
@@ -437,7 +456,7 @@ class ExploreRunner(GenericRunner):
                     )
                 )
             except Exception as e:
-                logger.warning("Failed to generate config for %s: %s", path, e)
+                logger.warning(f"Failed to generate config for {path}: {e}")
 
         # Build comparison matrix
         # If keys specified, use those; otherwise find common keys
@@ -456,6 +475,203 @@ class ExploreRunner(GenericRunner):
                 comparison['matrix'][key][path] = config.get(key, '(undefined)')
 
         return comparison
+
+    def analyze_interpolation(self, config_path: str, raw_config: Dict[str, Any] = None,
+                              interpolation: str = None, excluded_keys: List[str] = None) -> Dict[str, Any]:
+        """
+        Analyze unresolved interpolations in config generation.
+        Traces back to source files and suggests fixes.
+        
+        Args:
+            config_path: Path to config being processed
+            raw_config: Optional generated config (if None, will only search filesystem)
+            interpolation: Specific interpolation to search for (e.g., "{{region.name}}")
+            excluded_keys: Keys excluded from generation
+        
+        Returns:
+            Analysis results with source locations and suggestions
+        """
+        import re
+
+        logger.info(f"Analyzing interpolations in: {config_path}")
+
+        # Show helpful command for manual exploration
+        if interpolation:
+            unresolved_key = interpolation.strip('{}').strip()
+            logger.info(
+                f"TIP: For detailed value trace, run: kompos {config_path} explore trace --key {unresolved_key}")
+
+        analysis = {
+            'config_path': config_path,
+            'unresolved': [],
+            'excluded_keys': excluded_keys or []
+        }
+
+        # If specific interpolation provided, search for it
+        if interpolation:
+            unresolved_items = [interpolation]
+        elif raw_config:
+            # Scan raw_config for unresolved interpolations
+            unresolved_items = self._find_unresolved_interpolations(raw_config)
+        else:
+            logger.warning("No interpolation specified and no raw_config provided")
+            return analysis
+
+        for unresolved in unresolved_items:
+            # Extract the key being referenced
+            key_match = re.search(r'{{([^}]+)}}', unresolved)
+            key_path = key_match.group(1) if key_match else None
+
+            # Find source files containing this interpolation
+            sources = self._find_interpolation_sources(config_path, unresolved)
+
+            # NEW: Add value trace for the key to show its evolution
+            trace = None
+            if key_path:
+                try:
+                    trace = self.trace_value(config_path, key_path, silent=True)
+                except Exception as e:
+                    logger.warning(f"Could not trace key {key_path}: {e}")
+
+            # Determine likely causes (NOW with trace data!)
+            causes = self._diagnose_interpolation_failure(unresolved, key_path, config_path, excluded_keys, trace)
+
+            analysis['unresolved'].append({
+                'interpolation': unresolved,
+                'key_path': key_path,
+                'sources': sources,
+                'causes': causes,
+                'trace': trace  # Include trace data
+            })
+
+        return analysis
+
+    def _find_unresolved_interpolations(self, data: Any, path: str = '') -> List[str]:
+        """Recursively find all unresolved interpolations in config data"""
+        unresolved = []
+
+        if isinstance(data, dict):
+            for key, value in data.items():
+                new_path = f"{path}.{key}" if path else key
+                unresolved.extend(self._find_unresolved_interpolations(value, new_path))
+        elif isinstance(data, list):
+            for i, item in enumerate(data):
+                unresolved.extend(self._find_unresolved_interpolations(item, f"{path}[{i}]"))
+        elif isinstance(data, str) and '{{' in data:
+            unresolved.append(data)
+
+        return unresolved
+
+    def _find_interpolation_sources(self, config_path: str, interpolation: str) -> List[Dict[str, Any]]:
+        """Find all source files containing the interpolation"""
+        import os
+
+        sources = []
+
+        # Walk up the directory tree to find all relevant YAML files
+        current_dir = os.path.dirname(config_path) if os.path.isfile(config_path) else config_path
+        visited_dirs = set()
+
+        while current_dir and current_dir not in visited_dirs:
+            visited_dirs.add(current_dir)
+
+            if os.path.isdir(current_dir):
+                for file in os.listdir(current_dir):
+                    if file.endswith('.yaml') or file.endswith('.yml'):
+                        file_path = os.path.join(current_dir, file)
+                        try:
+                            with open(file_path, 'r') as f:
+                                content = f.read()
+                                if interpolation in content:
+                                    # Find line numbers
+                                    lines = content.split('\n')
+                                    for line_num, line in enumerate(lines, 1):
+                                        if interpolation in line:
+                                            sources.append({
+                                                'file': file_path,
+                                                'line': line_num,
+                                                'content': line.strip()
+                                            })
+                        except Exception:
+                            pass
+
+            parent = os.path.dirname(current_dir)
+            if parent == current_dir:
+                break
+            current_dir = parent
+
+        return sources
+
+    def _diagnose_interpolation_failure(self, interpolation: str, key_path: str,
+                                        config_path: str, excluded_keys: List[str],
+                                        trace: Dict[str, Any] = None) -> List[str]:
+        """Diagnose why an interpolation might have failed"""
+        import re
+
+        causes = []
+
+        # Extract first-level key
+        if key_path:
+            first_key = key_path.split('.')[0]
+
+            # **NEW: Check if key exists but is excluded (the contradiction!)**
+            if trace and trace.get('trace'):
+                # Check if key has a REAL value in the trace (not undefined)
+                last_value = None
+                for step in trace['trace']:
+                    val = step.get('value')
+                    status = step.get('status', '').lower()
+                    # Accept any value that's not None and status is not 'undefined'
+                    if val is not None and status not in ['undefined']:
+                        last_value = val
+
+                # If it has a value BUT is excluded → ROOT CAUSE!
+                if last_value is not None and first_key in (excluded_keys or []):
+                    causes.append(
+                        f"⚠️  ROOT CAUSE: Key '{first_key}' has value in config hierarchy "
+                        f"('{last_value}') BUT is EXCLUDED from this composition. "
+                        f"The key exists but gets removed before interpolation resolution."
+                    )
+
+                    # Extract composition type from path
+                    comp_match = re.search(r'composition=(\w+)', config_path)
+                    if comp_match:
+                        comp_type = comp_match.group(1)
+                        causes.append(
+                            f"💡 FIX Option 1: Remove '{first_key}' from .komposconfig.yaml exclusions "
+                            f"for '{comp_type}' compositions"
+                        )
+                        causes.append(
+                            f"💡 FIX Option 2: Move files using '{key_path}' interpolation to composition-specific "
+                            f"defaults (e.g., defaults_cluster.yaml instead of defaults_tags.yaml)"
+                        )
+                    return causes  # This is the root cause, show it first!
+
+            # Check if it's excluded (original check, but now supplementary)
+            elif first_key in (excluded_keys or []):
+                causes.append(f"Key '{first_key}' is excluded from config generation")
+
+            # Check if it's a hierarchy level that doesn't exist in path
+            hierarchy_levels = ['region', 'cluster', 'vpc', 'account', 'node_groups']
+            if first_key in hierarchy_levels:
+                if f"{first_key}=" not in config_path:
+                    causes.append(f"No '{first_key}' layer in config path - composition may be at wrong level")
+
+            # Check for common mistakes
+            if 'cluster' in key_path and 'composition=account' in config_path:
+                causes.append("Account composition referencing cluster-specific config")
+
+            if 'region' in key_path and 'composition=account' in config_path:
+                causes.append("Account composition missing region layer (account resources still need default region)")
+
+        # Check for nested interpolation issues
+        if '{{' in interpolation.replace(interpolation[interpolation.find('{{'):interpolation.find('}}') + 2], '', 1):
+            causes.append("Nested interpolation may not be fully resolved by himl")
+
+        if not causes:
+            causes.append("Key not defined in any layer of the config hierarchy")
+
+        return causes
 
     def _discover_hierarchy_layers(self, config_path: str) -> List[str]:
         """
@@ -582,7 +798,7 @@ class ExploreRunner(GenericRunner):
             os.makedirs(os.path.dirname(output_file), exist_ok=True) if os.path.dirname(output_file) else None
             with open(output_file, 'w') as f:
                 f.write(output)
-            logger.info("Results written to: %s", output_file)
+            logger.info(f"Results written to: {output_file}")
         else:
             print(output)
 
@@ -881,6 +1097,76 @@ class ExploreRunner(GenericRunner):
                 for path, value in values.items():
                     output.append(f"  {path}: {value}")
                 output.append("")
+
+        elif 'unresolved' in result:
+            # analyze-interpolation command
+            output.append(colored("=" * 80, 'red'))
+            output.append(colored("UNRESOLVED INTERPOLATION ANALYSIS", 'red', attrs=['bold']))
+            output.append(colored("=" * 80, 'red'))
+            output.append(f"Config Path: {colored(result['config_path'], 'white', attrs=['bold'])}")
+            output.append("")
+
+            if result.get('excluded_keys'):
+                output.append(f"Excluded Keys: {colored(', '.join(result['excluded_keys']), 'yellow')}")
+                output.append("")
+
+            for item in result['unresolved']:
+                output.append(colored(f"Interpolation: {item['interpolation']}", 'red', attrs=['bold']))
+                if item['key_path']:
+                    output.append(f"  Key Path: {colored(item['key_path'], 'cyan')}")
+                output.append("")
+
+                # Show value trace if available
+                if item.get('trace') and item['trace'].get('trace'):
+                    output.append(colored("  Value Trace (hierarchy evolution):", 'blue', attrs=['bold']))
+                    for step in item['trace']['trace'][:5]:  # Show top 5 layers
+                        layer_short = step['layer'].replace('configs/', '')
+                        value_str = str(step['value']) if step['value'] is not None else 'undefined'
+                        status = step['status'].upper()
+
+                        # Color code by status
+                        status_colors = {
+                            'NEW': 'green',
+                            'OVERRIDDEN': 'yellow',
+                            'INTERPOLATED': 'blue',
+                            'UNCHANGED': 'white',
+                            'UNDEFINED': 'red'
+                        }
+                        status_color = status_colors.get(status, 'white')
+
+                        output.append(f"    {layer_short}")
+                        output.append(
+                            f"      Value: {colored(value_str, 'white')} {colored('[' + status + ']', status_color)}")
+
+                    if len(item['trace']['trace']) > 5:
+                        output.append(f"      ... and {len(item['trace']['trace']) - 5} more layers")
+                    output.append("")
+
+                # Show sources
+                if item['sources']:
+                    output.append(colored("  Found in:", 'yellow'))
+                    for source in item['sources']:
+                        rel_path = source['file']
+                        output.append(f"    {colored(rel_path, 'white')}:{colored(str(source['line']), 'cyan')}")
+                        output.append(f"      {colored(source['content'], 'white', attrs=['dark'])}")
+                    output.append("")
+                else:
+                    output.append(colored("  Source not found in config hierarchy", 'red'))
+                    output.append("")
+
+                # Show diagnosis
+                if item['causes']:
+                    output.append(colored("  Possible Causes:", 'yellow', attrs=['bold']))
+                    for cause in item['causes']:
+                        output.append(f"    • {colored(cause, 'yellow')}")
+                    output.append("")
+
+            output.append(colored("Suggestions:", 'green', attrs=['bold']))
+            output.append("  1. Check if key should be excluded from config generation")
+            output.append("  2. Verify config hierarchy has required layers (region, cluster, etc.)")
+            output.append("  3. Move composition-specific config to appropriate defaults file")
+            output.append("  4. Add missing layer to config path if needed")
+            output.append("")
 
         else:
             # Generic output
