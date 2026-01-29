@@ -12,7 +12,6 @@ import logging
 import os
 from typing import Dict, List, Any
 
-from himl import ConfigRunner
 from termcolor import colored
 
 from kompos.parser import SubParserConfig
@@ -31,6 +30,7 @@ class ExploreParserConfig(SubParserConfig):
         return 'Explore hierarchical configuration distribution and data flow'
 
     def configure(self, parser):
+        """Add explore-specific arguments and standard HIML arguments."""
         # Explore subcommand
         parser.add_argument('subcommand',
                             choices=['analyze', 'trace', 'visualize', 'compare', 'debug'],
@@ -52,10 +52,8 @@ class ExploreParserConfig(SubParserConfig):
                             type=str,
                             help='Specific interpolation to debug (e.g., "{{region.name}}")')
 
-        # Add all HIML arguments (filter, exclude, skip-secrets, output-file, format, etc.)
-        # These are needed for generate_config() calls and output handling
-        ConfigRunner().get_parser(parser)
-
+        # Add HIML arguments (needed for generate_config() calls)
+        self.add_himl_arguments(parser)
         return parser
 
     def get_epilog(self):
@@ -157,7 +155,7 @@ class ExploreRunner(GenericRunner):
             overridden_vars = []
             unchanged_vars = []
 
-            for key, value in self._flatten_dict(layer_config).items():
+            for key, value in self.flatten_dict(layer_config).items():
                 if key not in previous_config:
                     new_vars.append(key)
                 elif previous_config[key] != value:
@@ -174,7 +172,7 @@ class ExploreRunner(GenericRunner):
             }
 
             distribution['layers'].append(layer_info)
-            previous_config = self._flatten_dict(layer_config)
+            previous_config = self.flatten_dict(layer_config)
 
         return distribution
 
@@ -246,7 +244,7 @@ class ExploreRunner(GenericRunner):
                     continue
 
                 # Otherwise handle as flat key
-                flat_config = self._flatten_dict(layer_config)
+                flat_config = self.flatten_dict(layer_config)
                 value = flat_config.get(key, None)
 
                 # Collect keys that start with our search key (for suggestions)
@@ -327,7 +325,7 @@ class ExploreRunner(GenericRunner):
                     silent=True  # Don't print commands during trace
                 )
 
-                flat_config = self._flatten_dict(layer_config)
+                flat_config = self.flatten_dict(layer_config)
 
                 # Track what's new at this layer
                 new_vars = []
@@ -350,7 +348,7 @@ class ExploreRunner(GenericRunner):
                                 skip_interpolation_validation=True,
                                 skip_secrets=True
                             )
-                            parent_config = self._flatten_dict(parent_config_obj)
+                            parent_config = self.flatten_dict(parent_config_obj)
                         except:
                             parent_config = previous_config
                     else:
@@ -368,7 +366,7 @@ class ExploreRunner(GenericRunner):
                                     import yaml
                                     with open(file_path, 'r') as f:
                                         file_data = yaml.safe_load(f) or {}
-                                    file_flat = self._flatten_dict(file_data)
+                                    file_flat = self.flatten_dict(file_data)
 
                                     # Count keys by type: new, overridden, interpolated
                                     new_keys = 0
@@ -448,7 +446,7 @@ class ExploreRunner(GenericRunner):
         configs = {}
         for path in leaf_paths:
             try:
-                configs[path] = self._flatten_dict(
+                configs[path] = self.flatten_dict(
                     self.generate_config(
                         config_path=path,
                         skip_interpolation_validation=True,
@@ -722,20 +720,6 @@ class ExploreRunner(GenericRunner):
 
         walk_path(config_path)
         return sorted(leaf_paths)
-
-    def _flatten_dict(self, d: Dict[str, Any], parent_key: str = '', sep: str = '.') -> Dict[str, Any]:
-        """
-        Flatten nested dictionary into dot-notation keys.
-        Example: {'vpc': {'cidr': '10.0.0.0/16'}} -> {'vpc.cidr': '10.0.0.0/16'}
-        """
-        items = []
-        for k, v in d.items():
-            new_key = f"{parent_key}{sep}{k}" if parent_key else k
-            if isinstance(v, dict):
-                items.extend(self._flatten_dict(v, new_key, sep=sep).items())
-            else:
-                items.append((new_key, v))
-        return dict(items)
 
     def _highlight_diff(self, prev_value: str, curr_value: str) -> str:
         """

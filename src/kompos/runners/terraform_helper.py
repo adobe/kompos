@@ -22,7 +22,6 @@ import os
 import re
 import shutil
 
-from kompos.komposconfig import get_value_or
 from kompos.runner import GenericRunner
 
 logger = logging.getLogger(__name__)
@@ -51,17 +50,9 @@ class TerraformVersionedSourceProcessor:
               source = "git::https://github.com/org/repo.git?ref=v2.0.0"
             }
     """
-
-    def __init__(self, versioned_extension=".tf.versioned"):
-        """
-        Initialize the processor.
-        
-        Args:
-            versioned_extension: File extension for versioned terraform files
-        """
-        self.versioned_extension = versioned_extension
-
-    def process(self, source_dir, target_dir, config):
+    
+    @staticmethod
+    def process(source_dir, target_dir, config, versioned_extension=".tf.versioned"):
         """
         Process all terraform files in source directory and generate in target directory.
         
@@ -73,10 +64,15 @@ class TerraformVersionedSourceProcessor:
             source_dir: Path to the source composition directory
             target_dir: Path to the runtime directory
             config: Configuration dictionary for value interpolation
+            versioned_extension: File extension for versioned terraform files 
+                               (default: .tf.versioned, configurable via .komposconfig.yaml)
+        
+        Returns:
+            Tuple of (processed_count, copied_count)
         """
         if not os.path.exists(source_dir):
             logger.warning(f'Source directory does not exist: {source_dir}')
-            return
+            return 0, 0
 
         processed_count = 0
         copied_count = 0
@@ -88,22 +84,24 @@ class TerraformVersionedSourceProcessor:
                 continue
 
             # Process .tf.versioned files
-            if self._is_versioned_file(filename):
-                self._process_file(source_file, target_dir, config)
+            if TerraformVersionedSourceProcessor._is_versioned_file(filename, versioned_extension):
+                TerraformVersionedSourceProcessor._process_file(
+                    source_file, target_dir, config, versioned_extension)
                 processed_count += 1
 
             # Skip files generated from hiera
-            elif self._should_skip_file(filename):
+            elif TerraformVersionedSourceProcessor._should_skip_file(filename):
                 continue
 
             # Skip .tf files that have a .versioned counterpart
-            elif filename.endswith('.tf') and self._has_versioned_counterpart(source_dir, filename):
+            elif filename.endswith('.tf') and TerraformVersionedSourceProcessor._has_versioned_counterpart(
+                    source_dir, filename, versioned_extension):
                 logger.debug(f'Skipping {filename} (generated from .versioned)')
                 continue
 
             # Copy everything else
             else:
-                self._copy_file(source_file, target_dir, filename)
+                TerraformVersionedSourceProcessor._copy_file(source_file, target_dir, filename)
                 copied_count += 1
 
         if processed_count > 0:
@@ -113,11 +111,13 @@ class TerraformVersionedSourceProcessor:
         
         return processed_count, copied_count
 
-    def _is_versioned_file(self, filename):
+    @staticmethod
+    def _is_versioned_file(filename, versioned_extension):
         """Check if file is a .tf.versioned template."""
-        return filename.endswith(self.versioned_extension)
+        return filename.endswith(versioned_extension)
 
-    def _should_skip_file(self, filename):
+    @staticmethod
+    def _should_skip_file(filename):
         """
         Check if file should be skipped during processing.
         
@@ -126,17 +126,20 @@ class TerraformVersionedSourceProcessor:
         """
         return False
 
-    def _has_versioned_counterpart(self, source_dir, filename):
+    @staticmethod
+    def _has_versioned_counterpart(source_dir, filename, versioned_extension):
         """Check if a .tf file has a corresponding .tf.versioned file."""
-        versioned_file = os.path.join(source_dir, filename.replace('.tf', self.versioned_extension))
+        versioned_file = os.path.join(source_dir, filename.replace('.tf', versioned_extension))
         return os.path.exists(versioned_file)
 
-    def _copy_file(self, source_file, target_dir, filename):
+    @staticmethod
+    def _copy_file(source_file, target_dir, filename):
         """Copy a file to target directory."""
         shutil.copy2(source_file, os.path.join(target_dir, filename))
         logger.debug(f'Copied {filename}')
 
-    def _process_file(self, versioned_file, target_dir, config):
+    @staticmethod
+    def _process_file(versioned_file, target_dir, config, versioned_extension):
         """
         Process a single .tf.versioned file.
         
@@ -144,16 +147,17 @@ class TerraformVersionedSourceProcessor:
             versioned_file: Path to the .tf.versioned template file
             target_dir: Directory where the generated .tf file will be written
             config: Configuration dictionary for value interpolation
+            versioned_extension: The extension to replace (e.g., '.tf.versioned')
         """
         # Read the versioned file
         with open(versioned_file, 'r') as f:
             content = f.read()
 
         # Interpolate {{key.path}} placeholders
-        interpolated_content = self.interpolate_sources(content, config)
+        interpolated_content = TerraformVersionedSourceProcessor.interpolate_sources(content, config)
 
         # Write to .tf file (remove .versioned extension) in target directory
-        output_filename = os.path.basename(versioned_file).replace(self.versioned_extension, '.tf')
+        output_filename = os.path.basename(versioned_file).replace(versioned_extension, '.tf')
         output_file = os.path.join(target_dir, output_filename)
 
         with open(output_file, 'w') as f:
@@ -161,9 +165,15 @@ class TerraformVersionedSourceProcessor:
 
         logger.info(f'Generated {output_filename} from {os.path.basename(versioned_file)}')
 
-    def interpolate_sources(self, content, config):
+    @staticmethod
+    def interpolate_sources(content, config):
         """
         Interpolate {{key.path}} patterns in module source lines only.
+        
+        Why custom interpolation instead of HIML?
+        - HIML only processes YAML files
+        - These are Terraform .tf files (HCL syntax)
+        - We only interpolate 'source' lines for safety (avoid breaking Terraform syntax)
         
         This method processes terraform configuration line by line, looking for
         module source declarations containing placeholders. Only lines with both
@@ -196,9 +206,8 @@ class TerraformVersionedSourceProcessor:
                 placeholders = re.findall(r'\{\{([^}]+)\}\}', line)
 
                 for placeholder in placeholders:
-                    # Get value from config using dot notation
-                    # Convert dots to slashes for get_value_or (vpc.version -> vpc/version)
-                    value = get_value_or(config, placeholder.replace('.', '/'))
+                    # Get value from config using GenericRunner's static helper
+                    value = GenericRunner.get_nested_value(config, placeholder)
 
                     if value is None:
                         raise ValueError(
@@ -230,8 +239,9 @@ class GenericTerraformRunner(GenericRunner):
     def __init__(self, kompos_config, config_path, execute, runner_type):
         super(GenericTerraformRunner, self).__init__(kompos_config, config_path, execute, runner_type)
 
-        # Initialize versioned source processor
-        self.versioned_processor = TerraformVersionedSourceProcessor()
+        # Get versioned extension from config (default: .tf.versioned)
+        self.versioned_extension = self.kompos_config.get_runtime_setting(
+            self.runner_type, 'versioned_extension', '.tf.versioned')
 
         # Load system exclusion keys from config (required in .komposconfig.yaml)
         system_keys_config = self.kompos_config.kompos.get('compositions', {}).get('system_keys', {})
@@ -284,7 +294,8 @@ class GenericTerraformRunner(GenericRunner):
             logger.warning(f'Source composition directory does not exist: {source_dir}')
             return 0, 0
 
-        return self.versioned_processor.process(source_dir, target_dir, raw_config)
+        return TerraformVersionedSourceProcessor.process(
+            source_dir, target_dir, raw_config, self.versioned_extension)
 
     def is_versioned_module_sources_enabled(self):
         """Check if versioned module sources feature is enabled."""

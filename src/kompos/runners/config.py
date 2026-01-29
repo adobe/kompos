@@ -10,8 +10,6 @@
 
 import logging
 
-from himl import ConfigRunner
-
 from kompos.parser import SubParserConfig
 from kompos.runner import GenericRunner
 
@@ -28,7 +26,9 @@ class ConfigRenderParserConfig(SubParserConfig):
         return 'Generate configurations based on a hierarchical structure, with templating support'
 
     def configure(self, parser):
-        ConfigRunner().get_parser(parser)
+        """Config runner only needs HIML arguments."""
+        self.add_himl_arguments(parser)
+        return parser
 
     def get_epilog(self):
         return '''

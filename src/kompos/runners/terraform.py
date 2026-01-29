@@ -14,7 +14,7 @@ import os
 from kompos.parser import SubParserConfig
 from kompos.runners.terraform_helper import GenericTerraformRunner
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)  
 
 RUNNER_TYPE = "terraform"
 
@@ -27,10 +27,10 @@ class TerraformParser(SubParserConfig):
         return 'Wrap common terraform tasks with full templated configuration support'
 
     def configure(self, parser):
+        """Add terraform-specific arguments."""
         parser.add_argument('subcommand', help='One of the terraform commands', type=str)
         parser.add_argument('--dry-run', action='store_true',
                             help='Generate all files but do not execute terraform command')
-
         return parser
 
     def get_epilog(self):

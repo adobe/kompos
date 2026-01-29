@@ -33,8 +33,8 @@ class HelmfileParser(SubParserConfig):
         return 'Wrap common helmfile tasks using hierarchical configuration support'
 
     def configure(self, parser):
+        """Add helmfile-specific arguments."""
         parser.add_argument('subcommand', help='One of the helmfile commands', type=str)
-
         return parser
 
     def get_epilog(self):

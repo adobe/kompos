@@ -2,6 +2,7 @@
 Kompos helper utilities.
 """
 from kompos.helpers.console import (
+    Colors,
     print_error,
     print_success,
     print_info,
@@ -16,6 +17,7 @@ from kompos.helpers.console import (
 )
 
 __all__ = [
+    'Colors',
     'print_error',
     'print_success',
     'print_info',

@@ -119,6 +119,18 @@ class SubParserConfig:
         pass
 
     def configure(self, parser):
+        """
+        Configure parser arguments for this runner.
+        
+        Override this method to add runner-specific arguments.
+        Call self.add_himl_arguments(parser) to add standard HIML arguments.
+        
+        Args:
+            parser: The argument parser to configure
+        
+        Returns:
+            The configured parser
+        """
         pass
 
     def get_formatter(self):
@@ -129,3 +141,25 @@ class SubParserConfig:
 
     def get_epilog(self):
         return ""
+    
+    def add_himl_arguments(self, parser):
+        """
+        Helper to add all HIML arguments to the parser.
+        
+        Call this from your configure() method if your runner needs HIML args.
+        Most runners that call generate_config() will need this.
+        
+        Args:
+            parser: The argument parser to add HIML arguments to
+        
+        Returns:
+            The parser with HIML arguments added
+        
+        Example:
+            def configure(self, parser):
+                parser.add_argument('--my-flag', help='My custom flag')
+                self.add_himl_arguments(parser)  # Add standard HIML args
+                return parser
+        """
+        from himl import ConfigRunner
+        return ConfigRunner().get_parser(parser)

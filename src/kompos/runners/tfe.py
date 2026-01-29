@@ -10,21 +10,11 @@
 
 import logging
 import os
-import sys
 import time
-
-from himl import ConfigRunner
 
 from kompos.parser import SubParserConfig
 from kompos.runners.terraform_helper import GenericTerraformRunner
-from kompos.helpers import (
-    print_composition_header,
-    print_file_generation,
-    print_success,
-    print_separator,
-    print_summary,
-)
-from kompos.helpers.console import Colors
+from kompos.helpers import console
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +29,7 @@ class TFEParserConfig(SubParserConfig):
         return 'Generate Terraform Enterprise (TFE) workspace and tfvars configurations'
 
     def configure(self, parser):
+        """Add TFE-specific arguments and standard HIML arguments."""
         # TFE subcommand
         parser.add_argument('subcommand',
                             metavar='SUBCOMMAND',
@@ -53,9 +44,8 @@ class TFEParserConfig(SubParserConfig):
                             action='store_true',
                             help='Generate only workspace config (skip tfvars)')
 
-        # Add all HIML arguments (filter, exclude, skip-secrets, etc.)
-        ConfigRunner().get_parser(parser)
-
+        # Add HIML arguments
+        self.add_himl_arguments(parser)
         return parser
 
     def get_epilog(self):
@@ -87,24 +77,38 @@ class TFERunner(GenericTerraformRunner):
         super(TFERunner, self).__init__(kompos_config, config_path, execute, RUNNER_TYPE)
 
         # Cache TFE-specific configuration from .komposconfig.yaml for performance
-        # base_dir and use_composition_subdir are inherited from GenericTerraformRunner
-
-        # TFE-specific output directories
-        self.workspaces_dir = self.kompos_config.get_runtime_setting(self.runner_type, 'workspaces_dir',
-                                                                     './generated/workspaces')
-
-        # Tfvars configuration
-        self.tfvars_format = self.kompos_config.get_runtime_setting(self.runner_type, 'tfvars_format', 'yaml')
-        self.tfvars_extension = self.kompos_config.get_runtime_setting(self.runner_type, 'tfvars_extension',
-                                                                       '.tfvars.yaml')
-        # If tfvars_filename is None/not set, will use composition name (backward compatible)
-        # If set to a string like "generated", will use that instead
-        self.tfvars_filename = self.kompos_config.get_runtime_setting(self.runner_type, 'tfvars_filename', None)
+        # base_dir and use_composition_output_dir are inherited from GenericTerraformRunner
+        
+        # Generation config
+        self.generate_compositions = self.kompos_config.get_runtime_setting(
+            self.runner_type, 'generation_config.generate_compositions', True)
 
         # Workspace configuration
-        self.workspace_format = self.kompos_config.get_runtime_setting(self.runner_type, 'workspace_format', 'yaml')
-        self.workspace_extension = self.kompos_config.get_runtime_setting(self.runner_type, 'workspace_extension',
-                                                                          '.workspace.yaml')
+        workspace_config = self.kompos_config.get_runtime_setting(
+            self.runner_type, 'workspaces_config', {})
+        
+        self.generate_workspaces = workspace_config.get('generate', True)
+        self.workspace_config_key = workspace_config.get('config_key', 'workspace')
+        
+        # Build workspaces directory from base + subdir
+        base_output_dir = self.kompos_config.get_runtime_setting(
+            self.runner_type, 'generation_config.base_output_dir', './generated')
+        workspaces_subdir = workspace_config.get('workspaces_sub_dir', 'workspaces')
+        self.workspaces_dir = os.path.join(base_output_dir, workspaces_subdir)
+        
+        self.workspace_extension = workspace_config.get('workspace_extension', '.workspace.yaml')
+        self.workspace_format = self.extract_format_from_extension(self.workspace_extension)
+
+        # Tfvars configuration
+        tfvars_config = self.kompos_config.get_runtime_setting(
+            self.runner_type, 'tfvars_config', {})
+        
+        self.tfvars_extension = tfvars_config.get('extension', '.tfvars.yaml')
+        self.tfvars_format = self.extract_format_from_extension(self.tfvars_extension)
+        
+        # If tfvars_filename is None/not set, will use composition name (backward compatible)
+        # If set to a string like "generated", will use that instead
+        self.tfvars_filename = tfvars_config.get('filename', None)
 
     def run_configuration(self, args):
         self.validate_runner = False
@@ -123,8 +127,8 @@ class TFERunner(GenericTerraformRunner):
 
         # Determine what to generate
         generate_tfvars = not args.workspace_only
-        generate_workspace = not args.tfvars_only
-        generate_composition = self.kompos_config.get_runtime_setting(self.runner_type, 'generate_compositions', False)
+        generate_workspace = not args.tfvars_only and self.generate_workspaces
+        generate_composition = self.generate_compositions
 
         # Generate per-cluster composition (working_directory for TFE)
         if generate_composition:
@@ -147,7 +151,7 @@ class TFERunner(GenericTerraformRunner):
         # Print summary with metrics (disabled for now)
         # total_files = composition_files + config_files
         # elapsed_time = time.time() - start_time
-        # print_summary(total_files=total_files, composition_files=composition_files, 
+        # console.print_summary(total_files=total_files, composition_files=composition_files, 
         #              config_files=config_files, elapsed_time=elapsed_time)
 
     def generate_composition(self, composition, raw_config):
@@ -189,7 +193,7 @@ class TFERunner(GenericTerraformRunner):
 
         self.ensure_directory(target_dir)
 
-        print_composition_header(
+        console.print_composition_header(
             composition_name=cluster_name,
             composition_type=composition,
             source=source_composition_path,
@@ -204,7 +208,7 @@ class TFERunner(GenericTerraformRunner):
             processed, copied = self.process_composition_files(source_composition_path, target_dir, raw_config)
             file_count = processed + copied
 
-        print_success(f"Composition files copied ({file_count} files)")
+        console.print_success(f"Composition files copied ({file_count} files)")
         
         return file_count
 
@@ -231,7 +235,7 @@ class TFERunner(GenericTerraformRunner):
         # Ensure output directory exists
         self.ensure_directory(output_file, is_file_path=True)
 
-        print_file_generation("tfvars", output_file)
+        console.print_file_generation("tfvars", output_file)
 
         self.generate_terraform_config(
             target_file=output_file,
@@ -258,13 +262,13 @@ class TFERunner(GenericTerraformRunner):
         # Ensure output directory exists
         self.ensure_directory(output_file, is_file_path=True)
 
-        print_file_generation("workspace", output_file)
+        console.print_file_generation("workspace", output_file)
 
-        # Filter to workspaces and output as-is (keep the workspaces: key)
+        # Filter to workspace key (config_key from .komposconfig.yaml)
         self.generate_terraform_config(
             target_file=output_file,
             config_path=config_path,
-            filtered_keys=['workspaces'],
+            filtered_keys=[self.workspace_config_key],
             output_format=self.workspace_format,
             print_data=False
         )

@@ -26,6 +26,7 @@ class ValidateParserConfig(SubParserConfig):
         return 'Validate configuration for common issues before generation'
 
     def configure(self, parser):
+        """Add validate-specific arguments. No HIML args needed."""
         parser.add_argument(
             '--rule',
             help='Run specific validation rule only',
@@ -40,6 +41,7 @@ class ValidateParserConfig(SubParserConfig):
             action='store_true',
             help='Exit with error code if any validation fails'
         )
+        return parser
 
 
 class ValidateRunner(GenericRunner):

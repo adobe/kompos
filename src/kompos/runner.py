@@ -17,8 +17,6 @@ from subprocess import Popen, PIPE
 from himl import ConfigRunner
 from himl.config_generator import ConfigProcessor
 
-from kompos import display
-
 logger = logging.getLogger(__name__)
 
 COMPOSITION_KEY = "composition"
@@ -51,6 +49,30 @@ class GenericRunner:
         self.ordered_compositions = False
 
         self.generate_output = True
+
+    @staticmethod
+    def extract_format_from_extension(extension):
+        """
+        Extract output format (yaml/json) from file extension.
+        
+        Args:
+            extension: File extension (e.g., '.workspace.yaml', '.tfvars.json')
+        
+        Returns:
+            'yaml' or 'json'
+        
+        Examples:
+            '.workspace.yaml' -> 'yaml'
+            '.tfvars.yaml' -> 'yaml'
+            '.json' -> 'json'
+            '.workspace.json' -> 'json'
+        """
+        if 'yaml' in extension.lower() or 'yml' in extension.lower():
+            return 'yaml'
+        elif 'json' in extension.lower():
+            return 'json'
+        # Default to yaml if uncertain
+        return 'yaml'
 
     def generate_config(
             self,
@@ -386,6 +408,36 @@ class GenericRunner:
                 return default
 
         return value
+
+    @staticmethod
+    def flatten_dict(d, parent_key='', sep='.'):
+        """
+        Flatten nested dictionary into dot-notation keys.
+        
+        Args:
+            d: Dictionary to flatten
+            parent_key: Parent key for recursion
+            sep: Separator for key concatenation (default: '.')
+        
+        Returns:
+            Flattened dictionary with dot-notation keys
+        
+        Examples:
+            >>> data = {'vpc': {'cidr': '10.0.0.0/16'}}
+            >>> GenericRunner.flatten_dict(data)
+            {'vpc.cidr': '10.0.0.0/16'}
+            >>> data = {'cluster': {'name': 'prod', 'region': 'us-east-1'}}
+            >>> GenericRunner.flatten_dict(data)
+            {'cluster.name': 'prod', 'cluster.region': 'us-east-1'}
+        """
+        items = []
+        for k, v in d.items():
+            new_key = f"{parent_key}{sep}{k}" if parent_key else k
+            if isinstance(v, dict):
+                items.extend(GenericRunner.flatten_dict(v, new_key, sep=sep).items())
+            else:
+                items.append((new_key, v))
+        return dict(items)
 
 
 def discover_compositions(config_path, kompos_config=None, runner_type=None):
