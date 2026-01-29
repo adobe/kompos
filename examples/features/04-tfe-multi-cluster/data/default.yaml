@@ -1,0 +1,68 @@
+# Global defaults
+project: demo
+environment: unknown
+cloud:
+  type: aws
+  provider: aws
+
+# Default tags
+tags:
+  ManagedBy: Kompos
+  Project: "{{project}}"
+  Environment: "{{environment}}"
+
+# Default module versions (can be overridden per cluster)
+vpc:
+  module_version: v5.1.2
+  enable_nat_gateway: true
+  single_nat_gateway: false
+
+eks:
+  module_version: v19.16.0
+  cluster_version: "1.28"
+  endpoint_public_access: true
+  endpoint_private_access: true
+
+iam:
+  module_version: v5.30.0
+
+# Provider configuration (region-specific)
+provider:
+  aws:
+    region: "{{region.location}}"
+    assume_role:
+      role_arn: "{{account.role_arn}}"
+
+# Terraform backend
+terraform:
+  backend:
+    s3:
+      bucket: "terraform-state-{{account.name}}"
+      key: "{{cluster.fullName}}/terraform.tfstate"
+      region: "{{region.location}}"
+      encrypt: true
+      dynamodb_table: "terraform-locks"
+
+# TFE workspace configuration
+workspaces:
+  - name: "{{cluster.fullName}}"
+    description: "Terraform workspace for {{cluster.fullName}}"
+    terraform_version: "1.5.7"
+    working_directory: "{{cluster.fullName}}"
+    auto_apply: false
+    queue_all_runs: false
+    speculative_enabled: true
+    variables:
+      - key: "TF_VAR_region"
+        value: "{{region.location}}"
+        category: "env"
+        sensitive: false
+      - key: "AWS_ROLE_ARN"
+        value: "{{account.role_arn}}"
+        category: "env"
+        sensitive: true
+    tags:
+      - "cluster:{{cluster.name}}"
+      - "env:{{environment}}"
+      - "region:{{region.name}}"
+

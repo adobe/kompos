@@ -1,0 +1,46 @@
+# Demo Cluster 02 (Production)
+cluster:
+  name: demo-cluster-02
+  fullName: demo-prod-use1-cluster-02
+
+# VPC Configuration
+vpc:
+  cidr_block: "10.200.0.0/16"
+  private_subnets: [ "10.200.1.0/24", "10.200.2.0/24", "10.200.3.0/24" ]
+  public_subnets: [ "10.200.101.0/24", "10.200.102.0/24", "10.200.103.0/24" ]
+
+# EKS Configuration
+eks:
+  node_groups:
+    default:
+      desired_size: 3
+      min_size: 3
+      max_size: 10
+      instance_types: [ "t3.large" ]
+      capacity_type: "ON_DEMAND"
+      labels:
+        Environment: prod
+        Cluster: demo-cluster-02
+    spot:
+      desired_size: 2
+      min_size: 0
+      max_size: 5
+      instance_types: [ "t3.large", "t3a.large" ]
+      capacity_type: "SPOT"
+      labels:
+        Environment: prod
+        Cluster: demo-cluster-02
+        NodeType: spot
+
+# IAM Configuration
+iam:
+  trusted_role_arns:
+    - "arn:aws:iam::111122223333:role/AdminRole"
+    - "arn:aws:iam::111122223333:role/ProdOpsRole"
+
+# Tags
+tags:
+  Cluster: demo-cluster-02
+  CostCenter: production
+  Criticality: high
+

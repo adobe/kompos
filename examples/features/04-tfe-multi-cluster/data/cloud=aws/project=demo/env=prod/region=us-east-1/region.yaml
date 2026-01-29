@@ -1,0 +1,9 @@
+# US East 1 Region
+region:
+  name: us-east-1
+  location: us-east-1
+  azs: 3
+
+vpc:
+  availability_zones: [ "us-east-1a", "us-east-1b", "us-east-1c" ]
+

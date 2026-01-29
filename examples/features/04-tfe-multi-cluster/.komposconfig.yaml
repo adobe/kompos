@@ -1,0 +1,47 @@
+---
+compositions:
+  order:
+    terraform:
+      - cluster
+  
+  # System/metadata keys to exclude from generated outputs
+  system_keys:
+    terraform:
+      - provider    # Terraform provider config (managed in .tf files)
+      - terraform   # Terraform backend/version config
+    tfe:
+      - workspaces  # TFE workspace metadata
+      - composition # Composition metadata (type, name)
+      - tfe         # TFE runner config (himl_name_key, composition_name_keys, etc.)
+
+# Terraform configuration
+terraform:
+  version: "v1.12.2"
+  versioned_module_sources: true
+  local_path: "./compositions/terraform"
+  root_path: ""
+
+# TFE runner configuration
+tfe:
+  himl_name_key: "cluster.fullName"           # Hiera key path used for all naming
+  use_cluster_subdir: true                    # Create cluster-specific subdirectories
+  
+  # Source paths
+  local_path: "./compositions/terraform"      # Source path for compositions
+  root_path: ""                               # Root path within local_path
+  
+  # Output directories (consolidated: compositions and clusters in same place)
+  clusters_dir: "./generated/clusters"        # tfvars and compositions per cluster
+  workspaces_dir: "./generated/workspaces"    # workspace configs
+  compositions_dir: "./generated/clusters"    # per-cluster working_directory (same as clusters_dir)
+  
+  # Output formats
+  tfvars_format: "yaml"
+  tfvars_extension: ".tfvars.yaml"
+  tfvars_filename: "generated"                # Simple filename (or omit to use cluster name)
+  workspace_format: "yaml"
+  workspace_extension: ".workspace.yaml"
+  
+  # Composition generation
+  generate_compositions: true                 # Generate per-cluster working_directory
+

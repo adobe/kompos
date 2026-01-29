@@ -1,0 +1,16 @@
+# Kompos generated files
+generated/
+.kompos-runtime/
+
+# Terraform files
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+

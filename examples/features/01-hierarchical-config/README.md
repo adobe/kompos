@@ -1,4 +1,8 @@
-# Hierarchical Configuration Example
+# Example 01: Hierarchical Configuration
+
+**Learn how Kompos merges configuration files based on directory structure**
+
+---
 
 ## Overview
 
@@ -9,6 +13,7 @@ This example demonstrates Kompos's hierarchical configuration system powered by 
 ## How It Works
 
 ### Directory Structure
+
 ```
 config/
 └── cloud=aws/
@@ -27,11 +32,13 @@ config/
 ### Configuration Merging
 
 When you run:
+
 ```bash
 kompos config/cloud=aws/env=dev/cluster=cluster1/composition=terraform/terraform=cluster ...
 ```
 
 Kompos merges configs in order:
+
 ```
 1. cloud=aws/aws.yaml
 2. cloud=aws/env=dev/dev.yaml
@@ -44,6 +51,7 @@ Final merged configuration
 ### Example Merging
 
 **`cloud=aws/aws.yaml`:**
+
 ```yaml
 cloud:
   provider: aws
@@ -54,6 +62,7 @@ defaults:
 ```
 
 **`cloud=aws/env=dev/dev.yaml`:**
+
 ```yaml
 environment: dev
 
@@ -62,6 +71,7 @@ defaults:
 ```
 
 **`cloud=aws/env=dev/cluster=cluster1/conf.yaml`:**
+
 ```yaml
 cluster:
   name: cluster1
@@ -69,6 +79,7 @@ cluster:
 ```
 
 **Merged Result:**
+
 ```yaml
 cloud:
   provider: aws
@@ -86,24 +97,28 @@ cluster:
 > Note: You need `.komposconfig.yaml` (already present in this folder) for this to work.
 
 ### 1. View merged configuration
+
 ```bash
 # View the final merged config for a specific path
 kompos config/env=dev/cluster=cluster1/composition=network config --format yaml
 ```
 
 ### 2. Run Terraform for all compositions
+
 ```bash
 # Generates config and runs terraform plan for all compositions in cluster1
 kompos config/env=dev/cluster=cluster1 terraform plan
 ```
 
 ### 3. Run Terraform for single composition
+
 ```bash
 # Run only the network composition
 kompos config/env=dev/cluster=cluster1/composition=network terraform apply --skip-plan
 ```
 
 ### 4. Compare different clusters
+
 ```bash
 # View cluster1 config
 kompos config/env=dev/cluster=cluster1 config --format yaml > cluster1.yaml

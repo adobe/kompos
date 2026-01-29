@@ -1,0 +1,11 @@
+# AWS Cloud configuration
+cloud:
+  type: aws
+  provider: aws
+
+# AWS Account configuration
+account:
+  name: demo-account
+  id: "111122223333"
+  role_arn: "arn:aws:iam::111122223333:role/TerraformExecutionRole"
+

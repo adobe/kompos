@@ -1,4 +1,10 @@
-# Explore Runner Example
+# Example 03: Configuration Exploration
+
+**Learn how to explore, trace, and compare hierarchical configurations using the `explore` runner**
+
+---
+
+## Overview
 
 This example demonstrates the `explore` runner capabilities for exploring hierarchical configuration.
 
@@ -25,6 +31,7 @@ config/
 ## Sample Configurations
 
 **defaults.yaml:**
+
 ```yaml
 cloud:
   type: aws
@@ -42,6 +49,7 @@ cluster:
 ```
 
 **cloud=aws/aws.yaml:**
+
 ```yaml
 cloud:
   provider: aws
@@ -56,6 +64,7 @@ vpc:
 ```
 
 **env=dev/dev.yaml:**
+
 ```yaml
 cluster:
   size: small               # Override for dev
@@ -69,6 +78,7 @@ terraform:
 ```
 
 **cluster=cluster1/cluster1.yaml:**
+
 ```yaml
 cluster:
   name: cluster1
@@ -91,6 +101,7 @@ kompos config/cloud=aws/env=dev/cluster=cluster1 explore analyze
 ```
 
 **Expected Output:**
+
 ```
 ================================================================================
 HIERARCHICAL CONFIGURATION ANALYSIS
@@ -143,6 +154,7 @@ kompos config/cloud=aws/env=dev/cluster=cluster1 explore trace --key vpc.cidr_bl
 ```
 
 **Expected Output:**
+
 ```
 ================================================================================
 VALUE TRACE: vpc.cidr_block
@@ -176,6 +188,7 @@ kompos config/cloud=aws/env=dev explore compare --keys vpc.cidr_block cluster.si
 ```
 
 **Expected Output:**
+
 ```
 ================================================================================
 CONFIGURATION COMPARISON MATRIX

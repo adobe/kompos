@@ -1,0 +1,9 @@
+# US West 2 Region
+region:
+  name: us-west-2
+  location: us-west-2
+  azs: 3
+
+vpc:
+  availability_zones: [ "us-west-2a", "us-west-2b", "us-west-2c" ]
+

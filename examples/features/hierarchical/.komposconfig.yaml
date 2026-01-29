@@ -1,9 +1,0 @@
----
-compositions:
-  order:
-    terraform:
-      - account
-      - network
-      - cluster
-    helmfile:
-      - helmfiles

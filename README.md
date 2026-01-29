@@ -76,13 +76,9 @@ source .env/bin/activate
 
 ## Documentation
 
-Comprehensive guides for understanding and using Kompos:
-
-- **[📚 Architecture & File Generation](./docs/ARCHITECTURE.md)** - How hierarchical configuration works, file
-  generation, and merge behavior
-- **[📊 Explore Runner](./docs/EXPLORE_RUNNER.md)** - Configuration analysis, value tracing, and hierarchy visualization
-- **[🔧 TFE Runner](./docs/TFE_RUNNER.md)** - Terraform Enterprise/Cloud: workspace configs, tfvars generation, and
-  composition management
+- **[📖 Quick Guide](./docs/GUIDE.md)** - Get started in 5 minutes
+- **[📚 Advanced Guide](./docs/ADVANCED.md)** - Architecture, runners, debugging, best practices
+- **[💡 Examples](./examples/)** - Hands-on tutorials (beginner to advanced)
 
 ## Layered Configuration
 
