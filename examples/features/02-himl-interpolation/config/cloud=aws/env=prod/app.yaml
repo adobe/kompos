@@ -1,0 +1,22 @@
+---
+# Composition-specific config demonstrating double interpolation
+composition:
+  type: app
+  instance: "{{project.name}}-{{env.name}}"  # myproject-prod
+
+# This uses double interpolation to get composition-type-specific settings
+# {{komposconfig.compositions.properties.{{composition.type}}.output_subdir}}
+# Step 1: {{composition.type}} -> app
+# Step 2: {{komposconfig.compositions.properties.app.output_subdir}} -> applications
+
+app:
+  name: webapp
+  full_name: "{{app.name}}-{{regions.region_code}}-{{env.name}}"  # webapp-or2-prod
+  endpoint: "{{app.full_name}}.{{project.fqdn}}"
+  # Complex nested: webapp-or2-prod.myproject.aws.prod.example.com
+  
+  config:
+    replicas: "{{settings.replicas}}"  # Uses double interpolation result: 3
+    output_path: "generated/{{settings.output_dir}}/{{composition.instance}}"
+    # Complex: generated/applications/myproject-prod
+

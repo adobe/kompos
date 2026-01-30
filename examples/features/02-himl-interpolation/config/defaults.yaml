@@ -1,0 +1,42 @@
+---
+# Global defaults demonstrating various interpolation patterns
+
+# === 1. SIMPLE INTERPOLATION ===
+# Direct reference: {{key.path}}
+cloud:
+  name: aws
+  provider: amazon
+  full_name: "{{cloud.name}}-cloud"  # Simple: aws-cloud
+
+# === 2. NESTED INTERPOLATION ===
+# Using one interpolation result in another: {{outer.{{inner}}}}
+env:
+  name: dev
+  type_mapping:
+    dev: development
+    prod: production
+  full_type: "{{env.type_mapping.{{env.name}}}}"  # Nested: development
+
+# === 3. COMPOSITION TYPE FOR DOUBLE INTERPOLATION ===
+composition:
+  type: app  # This will be overridden per composition
+  instance: default
+
+# === 4. DYNAMIC PROPERTY LOOKUP ===
+# Double interpolation: {{config.{{variable}}.property}}
+settings:
+  output_dir: "{{komposconfig.compositions.properties.{{composition.type}}.output_subdir}}"
+  replicas: "{{komposconfig.compositions.properties.{{composition.type}}.default_replicas}}"
+
+# === 5. MULTI-LEVEL INTERPOLATION ===
+project:
+  name: myproject
+  fqdn: "{{project.name}}.{{cloud.name}}.{{env.name}}.example.com"  # myproject.aws.dev.example.com
+  
+# === 6. INTERPOLATION IN LISTS ===
+tags:
+  - "cloud:{{cloud.name}}"
+  - "env:{{env.name}}"
+  - "project:{{project.name}}"
+  - "fqdn:{{project.fqdn}}"  # Nested: uses already interpolated value
+

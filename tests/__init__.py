@@ -1,0 +1,4 @@
+"""
+Kompos test suite.
+"""
+

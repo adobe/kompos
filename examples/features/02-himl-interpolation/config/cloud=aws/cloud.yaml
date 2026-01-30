@@ -1,0 +1,15 @@
+---
+# Cloud-specific overrides
+cloud:
+  region: us-west-2
+  availability_zones:
+    - "{{cloud.region}}a"  # us-west-2a
+    - "{{cloud.region}}b"  # us-west-2b
+    - "{{cloud.region}}c"  # us-west-2c
+
+# Region mapping for nested interpolation
+regions:
+  us-west-2: or2
+  us-east-1: va7
+  region_code: "{{regions.{{cloud.region}}}}"  # Nested: or2
+

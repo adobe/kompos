@@ -1,0 +1,25 @@
+---
+komposconfig:
+  terraform:
+    version: "1.0.0"
+    local_path: "./compositions/terraform"
+  
+  compositions:
+    order:
+      terraform:
+        - app
+    
+    # Properties per composition type (used in double interpolation)
+    properties:
+      app:
+        output_subdir: "applications"
+        default_replicas: 3
+      database:
+        output_subdir: "databases"
+        default_replicas: 5
+    
+    system_keys:
+      terraform:
+        - provider
+        - terraform
+

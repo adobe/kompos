@@ -1,19 +1,23 @@
 ---
-compositions:
-  order:
-    terraform:
-      - account
-      - network
-      - cluster
-    helmfile:
-      - helmfiles
+komposconfig:
+  terraform:
+    local_path: "./compositions/terraform"
   
-  # System/metadata keys to exclude from generated outputs
-  system_keys:
-    terraform:
-      - provider
-      - terraform
-    tfe:
-      - workspaces
-      - composition
-      - tfe
+  compositions:
+    order:
+      terraform:
+        - account
+        - network
+        - cluster
+      helmfile:
+        - helmfiles
+    
+    # System/metadata keys to exclude from generated outputs
+    system_keys:
+      terraform:
+        - provider
+        - terraform
+      tfe:
+        - workspaces
+        - composition
+        - tfe

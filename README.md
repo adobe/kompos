@@ -79,6 +79,20 @@ source .env/bin/activate
 - **[📖 Quick Guide](./docs/GUIDE.md)** - Get started in 5 minutes
 - **[📚 Advanced Guide](./docs/ADVANCED.md)** - Architecture, runners, debugging, best practices
 - **[💡 Examples](./examples/)** - Hands-on tutorials (beginner to advanced)
+- **[🧪 Testing](./tests/README.md)** - Run tests and add new ones
+
+## Testing
+
+```bash
+# Quick tests (no dependencies)
+python tests/run_tests.py
+
+# Comprehensive tests (requires pytest)
+pip install pytest pyyaml
+pytest tests/ -v
+```
+
+See [tests/README.md](./tests/README.md) for details.
 
 ## Layered Configuration
 
