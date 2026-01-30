@@ -21,6 +21,15 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+# Determine kompos executable path
+# Local dev: Use .venv/bin/kompos if available
+# CI: Use 'kompos' from PATH (installed via pip install -e .)
+VENV_KOMPOS = PROJECT_ROOT / ".venv" / "bin" / "kompos"
+if VENV_KOMPOS.exists():
+    KOMPOS_CMD = str(VENV_KOMPOS)
+else:
+    KOMPOS_CMD = None  # Will use 'kompos' from PATH
+
 # Test fixture paths
 EXAMPLE_DIR = PROJECT_ROOT / "examples" / "features" / "01-hierarchical-config"
 CONFIG_PATH = EXAMPLE_DIR / "config" / "cloud=aws" / "env=dev" / "cluster=cluster1" / "composition=terraform" / "terraform=cluster"
@@ -37,8 +46,15 @@ TFE_CONFIG_PROD = TFE_EXAMPLE / "data" / "cloud=aws" / "project=demo" / "env=pro
 
 def run_kompos(args, cwd=None):
     """Helper to run kompos command and return result"""
+    if KOMPOS_CMD:
+        # Local dev: use .venv kompos
+        cmd = [KOMPOS_CMD] + args
+    else:
+        # CI: use kompos from PATH
+        cmd = ["kompos"] + args
+    
     result = subprocess.run(
-        ["kompos"] + args,
+        cmd,
         cwd=cwd or str(EXAMPLE_DIR),
         capture_output=True,
         text=True
