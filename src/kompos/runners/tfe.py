@@ -148,11 +148,10 @@ class TFERunner(GenericTerraformRunner):
             self.generate_workspace_config(config_path, raw_config)
             config_files += 1
         
-        # Print summary with metrics (disabled for now)
-        # total_files = composition_files + config_files
-        # elapsed_time = time.time() - start_time
-        # console.print_summary(total_files=total_files, composition_files=composition_files, 
-        #              config_files=config_files, elapsed_time=elapsed_time)
+        # Print summary with metrics
+        total_files = composition_files + config_files
+        elapsed_time = time.time() - start_time
+        console.print_summary(total_files=total_files, elapsed_time=elapsed_time)
 
     def generate_composition(self, composition, raw_config):
         """
@@ -176,8 +175,10 @@ class TFERunner(GenericTerraformRunner):
         source_composition_path = self.get_source_composition_path(composition, raw_config)
 
         if not os.path.exists(source_composition_path):
-            logger.warning(f'Source composition directory does not exist: {source_composition_path}')
-            return
+            raise FileNotFoundError(
+                f'Source composition directory does not exist: {source_composition_path}\n'
+                f'Composition: {composition}, Cloud provider: {raw_config["cloud"]["provider"]}'
+            )
 
         # Target composition path: base/composition_type/composition_instance
         # - base: ./generated (from .komposconfig.yaml defaults.base_dir)
@@ -208,6 +209,7 @@ class TFERunner(GenericTerraformRunner):
             processed, copied = self.process_composition_files(source_composition_path, target_dir, raw_config)
             file_count = processed + copied
 
+        print()  # Blank line for spacing
         console.print_success(f"Composition files copied ({file_count} files)")
         
         return file_count
@@ -235,8 +237,6 @@ class TFERunner(GenericTerraformRunner):
         # Ensure output directory exists
         self.ensure_directory(output_file, is_file_path=True)
 
-        console.print_file_generation("tfvars", output_file)
-
         self.generate_terraform_config(
             target_file=output_file,
             config_path=config_path,
@@ -246,6 +246,10 @@ class TFERunner(GenericTerraformRunner):
             enclosing_key='config',
             print_data=False
         )
+        
+        print()  # Blank line for spacing
+        console.print_success("Configuration generated")
+        console.print_file_generation("tfvars", output_file)
 
     def generate_workspace_config(self, config_path, raw_config):
         """Generate the workspace configuration file for TFE workspace creation"""
@@ -262,8 +266,6 @@ class TFERunner(GenericTerraformRunner):
         # Ensure output directory exists
         self.ensure_directory(output_file, is_file_path=True)
 
-        console.print_file_generation("workspace", output_file)
-
         # Filter to workspace key (config_key from .komposconfig.yaml)
         self.generate_terraform_config(
             target_file=output_file,
@@ -272,6 +274,8 @@ class TFERunner(GenericTerraformRunner):
             output_format=self.workspace_format,
             print_data=False
         )
+        
+        console.print_file_generation("workspace", output_file)
 
     @staticmethod
     def execution(args, extra_args, default_output_path, composition, raw_config):

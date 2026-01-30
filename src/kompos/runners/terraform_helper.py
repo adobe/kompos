@@ -23,6 +23,7 @@ import re
 import shutil
 
 from kompos.runner import GenericRunner
+from kompos.helpers import console
 
 logger = logging.getLogger(__name__)
 
@@ -153,8 +154,8 @@ class TerraformVersionedSourceProcessor:
         with open(versioned_file, 'r') as f:
             content = f.read()
 
-        # Interpolate {{key.path}} placeholders
-        interpolated_content = TerraformVersionedSourceProcessor.interpolate_sources(content, config)
+        # Interpolate {{key.path}} placeholders and get interpolation info
+        interpolated_content, interpolations = TerraformVersionedSourceProcessor.interpolate_sources(content, config)
 
         # Write to .tf file (remove .versioned extension) in target directory
         output_filename = os.path.basename(versioned_file).replace(versioned_extension, '.tf')
@@ -163,7 +164,14 @@ class TerraformVersionedSourceProcessor:
         with open(output_file, 'w') as f:
             f.write(interpolated_content)
 
-        logger.info(f'Generated {output_filename} from {os.path.basename(versioned_file)}')
+        # Display interpolations to user
+        if interpolations:
+            for placeholder, value in interpolations:
+                # Extract module name from placeholder (e.g., "vpc.module_version" -> "vpc")
+                module_name = placeholder.split('.')[0] if '.' in placeholder else placeholder
+                console.print_info(f"  → versioned: {module_name} = {value}", indent=1)
+        
+        logger.debug(f'Generated {output_filename} from {os.path.basename(versioned_file)}')
 
     @staticmethod
     def interpolate_sources(content, config):
@@ -185,7 +193,9 @@ class TerraformVersionedSourceProcessor:
             config: Configuration dictionary for value lookup
             
         Returns:
-            String with interpolated values
+            Tuple of (interpolated_content, interpolations)
+            - interpolated_content: String with interpolated values
+            - interpolations: List of (placeholder, value) tuples for display
             
         Example:
             Input:
@@ -198,6 +208,7 @@ class TerraformVersionedSourceProcessor:
         """
         lines = content.split('\n')
         output_lines = []
+        interpolations = []
 
         for line in lines:
             # Only interpolate lines containing 'source' and placeholders
@@ -219,11 +230,12 @@ class TerraformVersionedSourceProcessor:
 
                     # Replace placeholder with value
                     line = line.replace(f'{{{{{placeholder}}}}}', str(value))
+                    interpolations.append((placeholder, str(value)))
                     logger.debug(f'Interpolated {{{{{placeholder}}}}} -> {value}')
 
             output_lines.append(line)
 
-        return '\n'.join(output_lines)
+        return '\n'.join(output_lines), interpolations
 
 
 class GenericTerraformRunner(GenericRunner):
