@@ -2,8 +2,6 @@
 
 [![Tests](https://github.com/adobe/kompos/actions/workflows/test.yml/badge.svg)](https://github.com/adobe/kompos/actions/workflows/test.yml) [![Docker pull](https://img.shields.io/docker/pulls/adobe/kompos)](https://hub.docker.com/r/adobe/kompos) [![](https://images.microbadger.com/badges/version/adobe/kompos.svg)](https://microbadger.com/images/adobe/kompos "Get your own version badge on microbadger.com") [![License](https://img.shields.io/github/license/adobe/kompos)](https://github.com/adobe/kompos/blob/master/LICENSE) [![PyPI pyversions](https://img.shields.io/pypi/pyversions/kompos.svg)](https://pypi.python.org/pypi/kompos/)
 
-![kompos](img/kompos.png)
-
 **Kompos** is a configuration source management tool for infrastructure platforms. It maintains a Git-based layered
 configuration structure that generates environment-specific configurations for Terraform, Helm, and other tools.
 
@@ -29,9 +27,6 @@ of clusters.
 - ✅ **Environment Variants**: Dev uses latest versions, prod uses stable - same codebase
 - ✅ **Effortless Updates**: Change one shared config file → update 50+ clusters instantly
 - ✅ **Clean Separation**: Source configs vs generated artifacts
-
-Below is a graphical representation of the data flow, showing how hierarchical
-configurations are merged and interpolated before being injected into runners:
 
 ![kompos-data-flow](img/kompos-diagram.svg)
 
@@ -133,8 +128,8 @@ Comprehensive examples are available in [`examples/`](./examples/) with a progre
 1. **[Layered Configuration](./examples/features/01-hierarchical-config/)** - Configuration inheritance and merge behavior
 2. **[Module Version Pinning](./examples/features/02-module-version-pinning/)** - Dynamic Terraform module versioning with `.tf.versioned` files
 3. **[Config Exploration](./examples/features/03-config-exploration/)** - Analyze and visualize configuration hierarchies
-4. **[TFE Multi-Cluster](./examples/features/04-tfe-multi-cluster/)** - Terraform Enterprise workspace and composition generation
-5. **[Helm Values Rendering](./examples/features/05-helm-values/)** - Render cluster-specific Helm values from hierarchy + TFE outputs
+4. **[TFE Multi-Cluster](./examples/features/04-tfe-multi-cluster/)** - Terraform Enterprise workspace and composition generation per cluster
+5. **[Helm Values Rendering](./examples/features/05-helm-values/)** - Render cluster-specific Helm values from hierarchy + TFE outputs for ArgoCD
 
 See the [Examples README](./examples/README.md) for a complete guide with difficulty levels, time estimates, and
 learning paths.

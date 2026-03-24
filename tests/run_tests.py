@@ -720,334 +720,93 @@ def test_deterministic_output():
 
 
 # =============================================================================
-# 5. TFE GENERATION - Real file generation with versioned compositions
+# 5. TFE GENERATION
 # =============================================================================
 
 def test_tfe_help():
-    """Test TFE runner help shows all options"""
+    """Test TFE runner help"""
     print("5.1 Testing TFE runner help...")
-    
-    result = run_kompos([".", "tfe", "--help"])
-    
+    result = run_kompos([".", "tfe", "--help"], cwd=str(TFE_EXAMPLE))
     help_text = result.stdout + result.stderr
-    
-    # Verify TFE-specific options
-    assert "generate" in help_text, "Should show generate subcommand"
-    assert "--tfvars-only" in help_text, "Should show --tfvars-only"
+    assert "generate"        in help_text, "Should show generate subcommand"
+    assert "--tfvars-only"   in help_text, "Should show --tfvars-only"
     assert "--workspace-only" in help_text, "Should show --workspace-only"
-    
     print("  ✓ TFE help complete")
 
 
 def test_tfe_generates_tfvars():
-    """Test TFE actually generates tfvars files to temp directory"""
+    """Test TFE generates tfvars with config enclosing key and system keys excluded"""
     print("5.2 Testing TFE tfvars generation...")
-    
     if not TFE_CONFIG_DEV.exists():
         print("  ⊘ Skipped (TFE example not found)")
         return
-    
-    import tempfile
-    import shutil
-    
-    with tempfile.TemporaryDirectory() as tmpdir:
-        temp_dir = Path(tmpdir)
-        
-        # Copy TFE example to temp
-        example_copy = temp_dir / "tfe-test"
-        shutil.copytree(TFE_EXAMPLE, example_copy)
-        
-        # Update .komposconfig to use temp output
-        komposconfig_file = example_copy / ".komposconfig.yaml"
-        with open(komposconfig_file) as f:
-            config = yaml.safe_load(f)
-        
-        # Update output paths
-        if "komposconfig" in config and "tfe" in config["komposconfig"]:
-            config["komposconfig"]["tfe"]["clusters_dir"] = str(temp_dir / "generated" / "clusters")
-            config["komposconfig"]["tfe"]["workspaces_dir"] = str(temp_dir / "generated" / "workspaces")
-            config["komposconfig"]["tfe"]["compositions_dir"] = str(temp_dir / "generated" / "clusters")
-        
-        with open(komposconfig_file, 'w') as f:
-            yaml.dump(config, f)
-        
-        # Run TFE generation (tfvars only)
-        config_path = example_copy / "data" / "cloud=aws" / "project=demo" / "env=dev" / "region=us-west-2" / "cluster=demo-cluster-01" / "composition=terraform"
-        
-        result = run_kompos(
-            [str(config_path), "tfe", "generate", "--tfvars-only"],
-            cwd=str(example_copy)
-        )
-        
-        if result.returncode != 0:
-            print(f"  ⊘ Skipped (generation failed - old config format)")
-            print(f"     Note: Example uses legacy config format, would need migration")
-            return
-        
-        # Verify tfvars file created
-        generated_dir = temp_dir / "generated"
-        tfvars_files = list(generated_dir.rglob("*.tfvars.yaml"))
-        
-        if len(tfvars_files) == 0:
-            print("  ⊘ Skipped (no tfvars generated - legacy config format)")
-            return
-        
-        # Verify tfvars content
-        tfvars_file = tfvars_files[0]
-        with open(tfvars_file) as f:
-            tfvars = yaml.safe_load(f)
-        
-        assert isinstance(tfvars, dict), "Tfvars should be a dict"
-        assert "config" in tfvars, "Tfvars should have 'config' enclosing key"
-        
-        # Verify system keys excluded
-        config_data = tfvars["config"]
-        assert "terraform" not in config_data, "System keys should be excluded"
-        assert "provider" not in config_data, "System keys should be excluded"
-        
-        print(f"  ✓ TFE tfvars generated ({tfvars_file.name}, {len(config_data)} keys)")
+    result = run_kompos(
+        [str(TFE_CONFIG_DEV), "tfe", "generate", "--tfvars-only"],
+        cwd=str(TFE_EXAMPLE)
+    )
+    assert result.returncode == 0, f"tfe generate failed:\n{result.stderr}"
+    tfvars_files = list((TFE_EXAMPLE / "generated").rglob("*.tfvars.yaml"))
+    assert len(tfvars_files) > 0, "Should generate at least one tfvars file"
+    tfvars = yaml.safe_load(tfvars_files[0].read_text())
+    assert "config" in tfvars,                "Tfvars should have 'config' enclosing key"
+    assert "terraform" not in tfvars["config"], "System key 'terraform' should be excluded"
+    assert "provider"  not in tfvars["config"], "System key 'provider' should be excluded"
+    print(f"  ✓ TFE tfvars generated ({tfvars_files[0].name}, {len(tfvars['config'])} keys)")
 
 
 def test_tfe_generates_versioned_compositions():
-    """Test TFE processes .tf.versioned files and generates compositions"""
+    """Test TFE resolves .tf.versioned module sources"""
     print("5.3 Testing versioned composition processing...")
-    
     if not TFE_CONFIG_DEV.exists():
         print("  ⊘ Skipped (TFE example not found)")
         return
-    
-    import tempfile
-    import shutil
-    
-    with tempfile.TemporaryDirectory() as tmpdir:
-        temp_dir = Path(tmpdir)
-        
-        # Copy TFE example to temp
-        example_copy = temp_dir / "tfe-test"
-        shutil.copytree(TFE_EXAMPLE, example_copy)
-        
-        # Update .komposconfig to use temp output
-        komposconfig_file = example_copy / ".komposconfig.yaml"
-        with open(komposconfig_file) as f:
-            config = yaml.safe_load(f)
-        
-        if "tfe" in config:
-            config["tfe"]["clusters_dir"] = str(temp_dir / "generated" / "clusters")
-            config["tfe"]["compositions_dir"] = str(temp_dir / "generated" / "clusters")
-        
-        with open(komposconfig_file, 'w') as f:
-            yaml.dump(config, f)
-        
-        # Run TFE generation (compositions only)
-        config_path = example_copy / "data" / "cloud=aws" / "project=demo" / "env=dev" / "region=us-west-2" / "cluster=demo-cluster-01" / "composition=terraform"
-        
-        result = run_kompos(
-            [str(config_path), "tfe", "generate", "--tfvars-only"],  # This also generates compositions
-            cwd=str(example_copy)
-        )
-        
-        if result.returncode != 0:
-            print(f"  ⊘ Skipped (generation failed): {result.stderr[:200]}")
-            return
-        
-        # Verify composition files created
-        generated_dir = temp_dir / "generated" / "clusters"
-        
-        # Should have cluster directory
-        cluster_dirs = [d for d in generated_dir.iterdir() if d.is_dir()] if generated_dir.exists() else []
-        
-        if len(cluster_dirs) == 0:
-            print("  ⊘ No cluster directories generated")
-            return
-        
-        cluster_dir = cluster_dirs[0]
-        
-        # Check for .tf files (generated from .tf.versioned)
-        tf_files = list(cluster_dir.glob("*.tf"))
-        
-        if len(tf_files) == 0:
-            print("  ⊘ No .tf files generated from .tf.versioned")
-            return
-        
-        # Verify main.tf was generated and interpolated
-        main_tf = cluster_dir / "main.tf"
-        if main_tf.exists():
-            with open(main_tf) as f:
-                content = f.read()
-            
-            # Verify interpolations were resolved (no {{}} placeholders)
-            assert "{{vpc.module_version}}" not in content, "Interpolations should be resolved"
-            assert "{{eks.module_version}}" not in content, "Interpolations should be resolved"
-            
-            # Should have actual git refs
-            assert "?ref=" in content, "Should have module version refs"
-            
-            print(f"  ✓ Versioned compositions processed ({len(tf_files)} .tf files generated)")
-        else:
-            print("  ⊘ main.tf not found")
+    result = run_kompos(
+        [str(TFE_CONFIG_DEV), "tfe", "generate", "--tfvars-only"],
+        cwd=str(TFE_EXAMPLE)
+    )
+    assert result.returncode == 0, f"tfe generate failed:\n{result.stderr}"
+    tf_files = list((TFE_EXAMPLE / "generated").rglob("main.tf"))
+    assert len(tf_files) > 0, "main.tf should be generated from main.tf.versioned"
+    content = tf_files[0].read_text()
+    assert "{{vpc.module_version}}" not in content, "Version placeholders should be resolved"
+    assert "?ref=" in content,                      "Should have resolved module refs"
+    print(f"  ✓ Versioned compositions processed (main.tf generated with resolved refs)")
 
 
 def test_tfe_generates_workspaces():
-    """Test TFE generates workspace configuration files"""
+    """Test TFE generates workspace config files"""
     print("5.4 Testing TFE workspace generation...")
-    
     if not TFE_CONFIG_DEV.exists():
         print("  ⊘ Skipped (TFE example not found)")
         return
-    
-    import tempfile
-    import shutil
-    
-    with tempfile.TemporaryDirectory() as tmpdir:
-        temp_dir = Path(tmpdir)
-        
-        # Copy TFE example to temp
-        example_copy = temp_dir / "tfe-test"
-        shutil.copytree(TFE_EXAMPLE, example_copy)
-        
-        # Update .komposconfig to use temp output
-        komposconfig_file = example_copy / ".komposconfig.yaml"
-        with open(komposconfig_file) as f:
-            config = yaml.safe_load(f)
-        
-        if "tfe" in config:
-            config["tfe"]["workspaces_dir"] = str(temp_dir / "generated" / "workspaces")
-        
-        with open(komposconfig_file, 'w') as f:
-            yaml.dump(config, f)
-        
-        # Run TFE generation (workspace only)
-        config_path = example_copy / "data" / "cloud=aws" / "project=demo" / "env=dev" / "region=us-west-2" / "cluster=demo-cluster-01" / "composition=terraform"
-        
-        result = run_kompos(
-            [str(config_path), "tfe", "generate", "--workspace-only"],
-            cwd=str(example_copy)
-        )
-        
-        if result.returncode != 0:
-            print(f"  ⊘ Skipped (workspace generation failed): {result.stderr[:200]}")
-            return
-        
-        # Verify workspace file created
-        workspaces_dir = temp_dir / "generated" / "workspaces"
-        workspace_files = list(workspaces_dir.glob("*.workspace.yaml")) if workspaces_dir.exists() else []
-        
-        if len(workspace_files) == 0:
-            print("  ⊘ No workspace files generated")
-            return
-        
-        # Verify workspace content
-        workspace_file = workspace_files[0]
-        with open(workspace_file) as f:
-            workspace_data = yaml.safe_load(f)
-        
-        # Check structure (should be a list of workspaces)
-        if isinstance(workspace_data, dict) and "workspaces" in workspace_data:
-            workspaces = workspace_data["workspaces"]
-            assert len(workspaces) > 0, "Should have at least one workspace"
-            
-            workspace = workspaces[0]
-            assert "name" in workspace, "Workspace should have name"
-            assert "working_directory" in workspace, "Workspace should have working_directory"
-            
-            print(f"  ✓ Workspace generated ({workspace_file.name}, name: {workspace['name']})")
-        else:
-            print(f"  ⊘ Unexpected workspace structure: {type(workspace_data)}")
-
-
-def test_tfe_full_generation():
-    """Test full TFE generation (tfvars + compositions + workspace)"""
-    print("5.5 Testing full TFE generation...")
-    
-    if not TFE_CONFIG_DEV.exists():
-        print("  ⊘ Skipped (TFE example not found)")
-        return
-    
-    import tempfile
-    import shutil
-    
-    with tempfile.TemporaryDirectory() as tmpdir:
-        temp_dir = Path(tmpdir)
-        
-        # Copy TFE example to temp
-        example_copy = temp_dir / "tfe-test"
-        shutil.copytree(TFE_EXAMPLE, example_copy)
-        
-        # Update .komposconfig to use temp output
-        komposconfig_file = example_copy / ".komposconfig.yaml"
-        with open(komposconfig_file) as f:
-            config = yaml.safe_load(f)
-        
-        if "komposconfig" in config and "tfe" in config["komposconfig"]:
-            config["komposconfig"]["tfe"]["clusters_dir"] = str(temp_dir / "generated" / "clusters")
-            config["komposconfig"]["tfe"]["workspaces_dir"] = str(temp_dir / "generated" / "workspaces")
-            config["komposconfig"]["tfe"]["compositions_dir"] = str(temp_dir / "generated" / "clusters")
-        
-        with open(komposconfig_file, 'w') as f:
-            yaml.dump(config, f)
-        
-        # Run full TFE generation
-        config_path = example_copy / "data" / "cloud=aws" / "project=demo" / "env=dev" / "region=us-west-2" / "cluster=demo-cluster-01" / "composition=terraform"
-        
-        result = run_kompos(
-            [str(config_path), "tfe", "generate"],
-            cwd=str(example_copy)
-        )
-        
-        if result.returncode != 0:
-            print(f"  ⊘ Skipped (full generation failed - legacy config format)")
-            return
-        
-        generated_dir = temp_dir / "generated"
-        
-        if not generated_dir.exists():
-            print("  ⊘ Skipped (generated directory not created)")
-            return
-        
-        # Count all generated files
-        tfvars_files = list(generated_dir.rglob("*.tfvars.yaml"))
-        tf_files = list(generated_dir.rglob("*.tf"))
-        workspace_files = list(generated_dir.rglob("*.workspace.yaml"))
-        
-        total_files = len(tfvars_files) + len(tf_files) + len(workspace_files)
-        
-        if total_files == 0:
-            print("  ⊘ Skipped (no files generated - legacy config format)")
-            return
-        
-        print(f"  ✓ Full TFE generation complete ({total_files} files: {len(tfvars_files)} tfvars, {len(tf_files)} tf, {len(workspace_files)} workspaces)")
+    result = run_kompos(
+        [str(TFE_CONFIG_DEV), "tfe", "generate", "--workspace-only"],
+        cwd=str(TFE_EXAMPLE)
+    )
+    assert result.returncode == 0, f"tfe generate --workspace-only failed:\n{result.stderr}"
+    workspace_files = list((TFE_EXAMPLE / "generated").rglob("*.workspace.yaml"))
+    assert len(workspace_files) > 0, "Should generate at least one workspace file"
+    print(f"  ✓ Workspace generated ({workspace_files[0].name})")
 
 
 def test_tfe_multi_cluster():
-    """Test TFE can generate for multiple clusters"""
-    print("5.6 Testing multi-cluster generation...")
-    
-    # Test that both dev and prod clusters can be generated
+    """Test dev and prod cluster configs both exist and have expected structure"""
+    print("5.5 Testing multi-cluster configs...")
     if not TFE_CONFIG_DEV.exists() or not TFE_CONFIG_PROD.exists():
         print("  ⊘ Skipped (multi-cluster configs not found)")
         return
-    
-    # Just verify both configs exist and have expected structure
-    assert TFE_CONFIG_DEV.exists(), "Dev cluster config should exist"
-    assert TFE_CONFIG_PROD.exists(), "Prod cluster config should exist"
-    
-    # Verify they have cluster.yaml files
-    dev_cluster_yaml = TFE_CONFIG_DEV.parent / "cluster.yaml"
-    prod_cluster_yaml = TFE_CONFIG_PROD.parent / "cluster.yaml"
-    
-    assert dev_cluster_yaml.exists(), "Dev cluster.yaml should exist"
-    assert prod_cluster_yaml.exists(), "Prod cluster.yaml should exist"
-    
-    print("  ✓ Multi-cluster configs valid (dev + prod clusters)")
-
-
-def test_tfe_known_bugs():
-    """Document known TFE bugs"""
-    print("5.7 Documenting known TFE bugs...")
-    
-    print("  ⚠ Known bug: workspace files may be affected by .komposconfig filtered_keys")
-    print("     Impact: Some workspace files may be empty {}")
-    print("     Fix: Workspace generation should ignore filtered_keys from .komposconfig")
+    assert (TFE_CONFIG_DEV.parent / "cluster.yaml").exists(), "Dev cluster.yaml should exist"
+    assert (TFE_CONFIG_PROD.parent / "cluster.yaml").exists(), "Prod cluster.yaml should exist"
+    # Run generation for both clusters
+    for config_path in [TFE_CONFIG_DEV, TFE_CONFIG_PROD]:
+        result = run_kompos(
+            [str(config_path), "tfe", "generate", "--tfvars-only"],
+            cwd=str(TFE_EXAMPLE)
+        )
+        assert result.returncode == 0, f"tfe generate failed for {config_path.parent.name}:\n{result.stderr}"
+    tfvars_files = list((TFE_EXAMPLE / "generated").rglob("*.tfvars.yaml"))
+    assert len(tfvars_files) >= 2, "Should have tfvars for both clusters"
+    print(f"  ✓ Multi-cluster generation: {len(tfvars_files)} tfvars files generated")
 
 
 # =============================================================================
@@ -1228,9 +987,7 @@ def main():
             test_tfe_generates_tfvars,
             test_tfe_generates_versioned_compositions,
             test_tfe_generates_workspaces,
-            test_tfe_full_generation,
             test_tfe_multi_cluster,
-            test_tfe_known_bugs,
         ]),
         ("6. HELM VALUES GENERATION", [
             test_helm_help,

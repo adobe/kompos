@@ -2,22 +2,18 @@
 
 Learn Kompos through progressive, hands-on examples. Each example builds on concepts from the previous ones.
 
-## 📚 Learning Path
+## Learning Path
 
 ### 1. [Hierarchical Configuration](features/01-hierarchical-config/)
 
 **Learn:** How Kompos merges configuration files based on directory structure
 
-- 🎯 **Difficulty:** Beginner
-- ⏱️ **Time:** 5-10 minutes
-- 📖 **Topics:** Configuration hierarchy, merging, overrides
-
-**Key Concept:** Configuration files are layered and merged based on your path. Values at deeper levels override values
-from parent levels.
+- **Difficulty:** Beginner · **Time:** 5-10 min
+- **Topics:** Configuration hierarchy, merging, overrides
 
 ```bash
 cd examples/features/01-hierarchical-config
-kompos config/cloud=aws/env=dev/cluster=cluster1/... config
+kompos config/cloud=aws/env=dev/cluster=cluster1/composition=terraform/terraform=cluster config
 ```
 
 ---
@@ -26,12 +22,8 @@ kompos config/cloud=aws/env=dev/cluster=cluster1/... config
 
 **Learn:** How to pin Terraform module versions per environment
 
-- 🎯 **Difficulty:** Beginner
-- ⏱️ **Time:** 10-15 minutes
-- 📖 **Topics:** `.tf.versioned` files, template interpolation, version management
-
-**Key Concept:** Use `{{placeholders}}` in `.tf.versioned` files to inject module versions from hierarchical
-configuration.
+- **Difficulty:** Beginner · **Time:** 10-15 min
+- **Topics:** `.tf.versioned` files, `{{}}` interpolation, version management
 
 ```bash
 cd examples/features/02-module-version-pinning
@@ -42,171 +34,98 @@ kompos config/env=dev/... terraform plan --dry-run
 
 ### 3. [Configuration Exploration](features/03-config-exploration/)
 
-**Learn:** How to explore, trace, and compare hierarchical configurations
+**Learn:** Trace, compare, and visualize hierarchical configurations
 
-- 🎯 **Difficulty:** Intermediate
-- ⏱️ **Time:** 15-20 minutes
-- 📖 **Topics:** `explore` runner, tracing values, comparing configs, visualization
-
-**Key Concept:** Use the `explore` runner to understand where configuration values come from and how they differ across
-environments.
+- **Difficulty:** Intermediate · **Time:** 15-20 min
+- **Topics:** `explore` runner, tracing values, comparing configs
 
 ```bash
 cd examples/features/03-config-exploration
-kompos config/... explore trace vpc.cidr_block
-kompos config/... explore compare config/... --keys vpc.cidr_block
+kompos config/... explore trace --key vpc.cidr_block
+kompos config/... explore compare --keys vpc.cidr_block
 ```
 
 ---
 
-### 4. [TFE Multi-Cluster Management](features/04-tfe-multi-cluster/)
+### 4. [TFE Multi-Cluster](features/04-tfe-multi-cluster/)
 
-**Learn:** Complete workflow for managing multiple Terraform Enterprise (TFE) clusters
+**Learn:** Generate per-cluster TFE workspaces with different module versions
 
-- 🎯 **Difficulty:** Advanced
-- ⏱️ **Time:** 30-45 minutes
-- 📖 **Topics:** TFE integration, per-cluster compositions, multi-environment strategy, production workflows
-
-**Key Concept:** Generate per-cluster TFE workspaces with different module versions, provider configs, and
-infrastructure sizing based on environment (dev/prod).
+- **Difficulty:** Advanced · **Time:** 30-45 min
+- **Topics:** TFE integration, per-cluster compositions, multi-environment strategy
 
 ```bash
 cd examples/features/04-tfe-multi-cluster
-kompos data/cloud=aws/.../cluster=demo-cluster-01/... tfe generate
+
+# Generate tfvars + workspace for dev cluster
+kompos data/cloud=aws/project=demo/env=dev/region=us-west-2/cluster=demo-cluster-01/composition=terraform \
+    tfe generate
+
+# Generate for prod cluster (different versions from hierarchy)
+kompos data/cloud=aws/project=demo/env=prod/region=us-east-1/cluster=demo-cluster-02/composition=terraform \
+    tfe generate
 ```
 
 ---
 
-## 🎓 Recommended Learning Path
+### 5. [Helm Values Rendering](features/05-helm-values/)
 
-### For Complete Beginners
+**Learn:** Render cluster-specific Helm values from hierarchy data and TFE outputs
 
-1. Start with **01-hierarchical-config** to understand the basics
-2. Move to **02-module-version-pinning** to learn templating
-3. Try **03-config-exploration** to debug and understand your configs
-4. Tackle **04-tfe-multi-cluster** when ready for production patterns
+- **Difficulty:** Intermediate · **Time:** 15-20 min
+- **Topics:** `helm` runner, `{{}}` interpolation, TFE outputs, ArgoCD delivery
 
-### For Experienced Users
-
-- Jump to **04-tfe-multi-cluster** for a complete production example
-- Reference **03-config-exploration** for advanced debugging techniques
-
----
-
-## 📊 Example Comparison
-
-| Example                       | Focus             | Complexity | Production Ready | Time      |
-|-------------------------------|-------------------|------------|------------------|-----------|
-| **01-hierarchical-config**    | Config basics     | ⭐ Low      | Concept only     | 5-10 min  |
-| **02-module-version-pinning** | Versioning        | ⭐⭐ Medium  | Yes              | 10-15 min |
-| **03-config-exploration**     | Debugging         | ⭐⭐ Medium  | Tool demo        | 15-20 min |
-| **04-tfe-multi-cluster**      | Complete workflow | ⭐⭐⭐ High   | Yes              | 30-45 min |
-
----
-
-## 🔧 Prerequisites
-
-Before starting, ensure you have:
-
-- ✅ Kompos installed (`pip install kompos` or from source)
-- ✅ Terraform installed (for examples 2 and 4)
-- ✅ Basic understanding of:
-    - YAML syntax
-    - Terraform basics (for examples 2 and 4)
-    - Hierarchical configuration concepts (helpful but not required)
-
----
-
-## 💡 Tips
-
-### Running Examples
-
-Each example can be run independently:
+**Key Concept:** A `values.yaml` with `{{cluster.*}}` and `{{global.infra.*}}` placeholders is rendered
+per-cluster using kompos hierarchy data and Terraform outputs. The output feeds directly into ArgoCD
+via the `$clusterValues` ref source.
 
 ```bash
-# Navigate to the example directory
-cd examples/features/XX-example-name/
+cd examples/features/05-helm-values
 
-# Follow the README.md instructions
-cat README.md
+# List enabled charts for the demo cluster
+kompos data/cloud=aws/project=demo/env=dev/region=us-west-2/cluster=demo-cluster-01/composition=helm-values \
+    helm list
+
+# Dry-run: render all enabled charts, print to stdout
+kompos data/cloud=aws/project=demo/env=dev/region=us-west-2/cluster=demo-cluster-01/composition=helm-values \
+    helm generate --dry-run
+
+# Generate: write rendered values to generated/clusters/{cluster}/argoapps/
+kompos data/cloud=aws/project=demo/env=dev/region=us-west-2/cluster=demo-cluster-01/composition=helm-values \
+    helm generate
 ```
 
-### Experimentation
+---
 
-Feel free to:
+## Example Comparison
 
-- ✅ Modify configuration values
-- ✅ Add new hierarchy levels
-- ✅ Change module versions
-- ✅ Create new clusters/environments
-- ✅ Break things and fix them (best way to learn!)
-
-### Getting Help
-
-- 📖 **Documentation:** See `/docs/` directory
-    - `ARCHITECTURE.md` - Overall design
-    - `EXPLORE_RUNNER.md` - Exploration tools
-    - `TFE_RUNNER.md` - TFE/TFC workflows and workspace management
-
-- 💬 **Community:** [GitHub Issues](https://github.com/adobe/kompos/issues)
+| Example                       | Runner  | Focus                    | Difficulty | Time      |
+|-------------------------------|---------|--------------------------|------------|-----------|
+| **01-hierarchical-config**    | config  | Config basics            | ⭐ Low      | 5-10 min  |
+| **02-module-version-pinning** | tfe     | Versioning               | ⭐⭐ Medium  | 10-15 min |
+| **03-config-exploration**     | explore | Debugging                | ⭐⭐ Medium  | 15-20 min |
+| **04-tfe-multi-cluster**      | tfe     | Terraform / TFE workflow | ⭐⭐⭐ High   | 30-45 min |
+| **05-helm-values**            | helm    | Helm / ArgoCD delivery   | ⭐⭐ Medium  | 15-20 min |
 
 ---
 
-## 🎯 Next Steps
+## Prerequisites
 
-After completing these examples:
-
-1. **Adapt for your infrastructure**
-    - Replace example modules with your own
-    - Customize naming conventions
-    - Add your specific resources
-
-2. **Integrate with your workflow**
-    - Add to CI/CD pipelines
-    - Configure git workflows
-    - Set up team processes
-
-3. **Explore advanced features**
-    - Custom runners
-    - Plugin system
-    - Advanced himl features
+- Kompos installed (`pip install kompos` or from source)
+- For examples 2 and 4: Terraform installed
+- Basic YAML familiarity
 
 ---
 
-## 📁 Example File Structure
+## File Structure
 
 ```
 examples/
-├── README.md (this file)
+├── README.md
 └── features/
     ├── 01-hierarchical-config/
-    │   ├── README.md
-    │   └── config/
     ├── 02-module-version-pinning/
-    │   ├── README.md
-    │   ├── config/
-    │   └── compositions/
     ├── 03-config-exploration/
-    │   ├── README.md
-    │   └── config/
-    └── 04-tfe-multi-cluster/
-        ├── README.md
-        ├── QUICK_START.md
-        ├── data/
-        └── compositions/
+    ├── 04-tfe-multi-cluster/     ← TFE + Terraform workflow
+    └── 05-helm-values/           ← Helm values + ArgoCD delivery
 ```
-
----
-
-## 🤝 Contributing
-
-Found an issue or want to improve an example?
-
-1. Check existing [issues](https://github.com/adobe/kompos/issues)
-2. Submit a pull request with improvements
-3. Share your use cases and examples
-
----
-
-Happy learning! 🚀
-
