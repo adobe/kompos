@@ -43,6 +43,11 @@ TFE_EXAMPLE = PROJECT_ROOT / "examples" / "features" / "04-tfe-multi-cluster"
 TFE_CONFIG_DEV = TFE_EXAMPLE / "data" / "cloud=aws" / "project=demo" / "env=dev" / "region=us-west-2" / "cluster=demo-cluster-01" / "composition=terraform"
 TFE_CONFIG_PROD = TFE_EXAMPLE / "data" / "cloud=aws" / "project=demo" / "env=prod" / "region=us-east-1" / "cluster=demo-cluster-02" / "composition=terraform"
 
+# Helm values test fixture
+HELM_EXAMPLE = PROJECT_ROOT / "examples" / "features" / "05-helm-values"
+HELM_CONFIG   = HELM_EXAMPLE / "data" / "cloud=aws" / "project=demo" / "env=dev" / "region=us-west-2" / "cluster=demo-cluster-01" / "composition=helm-values"
+HELM_VALUES   = HELM_EXAMPLE / "values"
+
 
 def run_kompos(args, cwd=None):
     """Helper to run kompos command and return result"""
@@ -1093,6 +1098,94 @@ def test_cli_error_messages():
 # MAIN TEST RUNNER
 # =============================================================================
 
+# =============================================================================
+# 6. HELM VALUES GENERATION
+# =============================================================================
+
+def test_helm_help():
+    """Test helm runner help"""
+    print("6.1 Testing helm runner help...")
+    result = run_kompos([".", "helm", "--help"], cwd=str(HELM_EXAMPLE))
+    for flag in ["generate", "list", "--charts-dir", "--dry-run"]:
+        assert flag in result.stdout + result.stderr, f"Should show {flag}"
+    print("  ✓ helm help complete")
+
+
+def test_helm_list():
+    """Test helm list shows enabled charts from hierarchy"""
+    print("6.2 Testing helm list...")
+    if not HELM_CONFIG.exists():
+        print("  ⊘ Skipped (helm example not found)")
+        return
+    result = run_kompos([str(HELM_CONFIG), "helm", "list"], cwd=str(HELM_EXAMPLE))
+    assert result.returncode == 0, f"helm list failed:\n{result.stderr}"
+    assert "my-app"   in result.stdout and "2.1.0" in result.stdout, "my-app at cluster pin 2.1.0"
+    assert "my-ingress" in result.stdout and "1.2.0" in result.stdout, "my-ingress at 1.2.0"
+    print("  ✓ helm list shows enabled charts with versions")
+
+
+def test_helm_generate_dry_run():
+    """Test helm generate --dry-run: interpolation, discovery, no files written"""
+    print("6.3 Testing helm generate --dry-run...")
+    if not HELM_CONFIG.exists():
+        print("  ⊘ Skipped (helm example not found)")
+        return
+    result = run_kompos(
+        [str(HELM_CONFIG), "helm", "generate", "--dry-run"],
+        cwd=str(HELM_EXAMPLE)
+    )
+    assert result.returncode == 0, f"helm generate --dry-run failed:\n{result.stderr}"
+    out = result.stdout
+    # Charts rendered
+    assert "my-app" in out and "my-ingress" in out, "Both enabled charts should render"
+    # Hierarchy interpolation
+    assert "demo-dev-usw2-cluster-01" in out, "cluster.fullName should resolve"
+    assert "environment: dev"          in out, "env.name should resolve"
+    # TFE outputs interpolation
+    assert "arn:aws:iam::111122223333:role/demo-dev-usw2-cluster-01-my-app-pod-identity" in out, \
+        "pod identity ARN should resolve"
+    assert "sg-0pub111222333444" in out and "sg-0int555666777888" in out, "SG IDs should resolve"
+    # No unresolved placeholders
+    assert "{{" not in out, "No unresolved {{}} should remain in output"
+    # Disabled chart reported
+    assert "Disabled" in out and "my-worker" in out, "my-worker should appear as Disabled"
+    print("  ✓ Rendered correctly — all {{}} resolved, disabled charts reported")
+
+
+def test_helm_generate_writes_files():
+    """Test helm generate writes argoapps/ output files"""
+    print("6.4 Testing helm generate writes files...")
+    if not HELM_CONFIG.exists():
+        print("  ⊘ Skipped (helm example not found)")
+        return
+    argoapps = HELM_EXAMPLE / "generated" / "clusters" / "demo-dev-usw2-cluster-01" / "argoapps"
+    result = run_kompos([str(HELM_CONFIG), "helm", "generate"], cwd=str(HELM_EXAMPLE))
+    assert result.returncode == 0, f"helm generate failed:\n{result.stderr}"
+    assert (argoapps / "my-app.yaml").exists(),    "my-app.yaml should be written"
+    assert (argoapps / "my-ingress.yaml").exists(), "my-ingress.yaml should be written"
+    content = (argoapps / "my-app.yaml").read_text() + (argoapps / "my-ingress.yaml").read_text()
+    assert "{{" not in content,                     "No unresolved {{}} in output files"
+    assert "demo-dev-usw2-cluster-01" in content,   "cluster name should be resolved"
+    print("  ✓ argoapps/ files written with resolved values")
+
+
+def test_helm_generate_single_chart():
+    """Test --chart-dir renders only the specified chart"""
+    print("6.5 Testing --chart-dir single chart mode...")
+    if not HELM_CONFIG.exists():
+        print("  ⊘ Skipped (helm example not found)")
+        return
+    result = run_kompos(
+        [str(HELM_CONFIG), "helm", "generate",
+         "--chart-dir", str(HELM_VALUES / "my-app"), "--dry-run"],
+        cwd=str(HELM_EXAMPLE)
+    )
+    assert result.returncode == 0,                       f"--chart-dir failed:\n{result.stderr}"
+    assert "my-app"                   in result.stdout,  "my-app should render"
+    assert "demo-dev-usw2-cluster-01" in result.stdout,  "cluster name should resolve"
+    print("  ✓ --chart-dir renders single chart correctly")
+
+
 def main():
     """Run all tests in logical order"""
     print("=" * 70)
@@ -1139,7 +1232,14 @@ def main():
             test_tfe_multi_cluster,
             test_tfe_known_bugs,
         ]),
-        ("6. CLI", [
+        ("6. HELM VALUES GENERATION", [
+            test_helm_help,
+            test_helm_list,
+            test_helm_generate_dry_run,
+            test_helm_generate_writes_files,
+            test_helm_generate_single_chart,
+        ]),
+        ("7. CLI", [
             test_cli_help_completeness,
             test_cli_error_messages,
         ]),

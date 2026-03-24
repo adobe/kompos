@@ -380,37 +380,6 @@ class GenericTerraformRunner(GenericRunner):
         else:
             return os.path.join(base_dir, composition)
 
-    def ensure_directory(self, path, is_file_path=False, clean=False):
-        """
-        Ensure a directory exists, with optional cleaning.
-        
-        Args:
-            path: Directory path or file path
-            is_file_path: If True, extracts directory from file path
-            clean: If True, removes existing directory first (for fresh state)
-            
-        Returns:
-            The directory path that was ensured
-            
-        Examples:
-            # Ensure directory exists
-            >>> self.ensure_directory('/tmp/output')
-            
-            # Extract directory from file path
-            >>> self.ensure_directory('/tmp/output/file.txt', is_file_path=True)
-            
-            # Clean before creating (fresh state)
-            >>> self.ensure_directory('/tmp/runtime', clean=True)
-        """
-        dir_path = os.path.dirname(path) if is_file_path else path
-
-        if clean and os.path.exists(dir_path):
-            logger.debug(f'Cleaning directory: {dir_path}')
-            shutil.rmtree(dir_path)
-
-        os.makedirs(dir_path, exist_ok=True)
-        logger.debug(f'Ensured directory exists: {dir_path}')
-        return dir_path
 
     def generate_terraform_config(self, target_file, config_path, filtered_keys=None, excluded_keys=None,
                                   output_format="json", enclosing_key=None, print_data=False):

@@ -21,6 +21,7 @@ from .komposconfig import KomposConfig
 from .runner import GenericRunner
 from .runners.config import ConfigRenderParserConfig, ConfigRenderRunner
 from .runners.explore import ExploreParserConfig, ExploreRunner
+from .runners.helm import HelmParserConfig, HelmRunner
 from .runners.helmfile import HelmfileParser, HelmfileRunner
 from .runners.terraform import TerraformParser, TerraformRunner
 from .runners.tfe import TFEParserConfig, TFERunner
@@ -84,6 +85,7 @@ class AppContainer(Container):
         # Configure runners
         self.generic_runner = auto(GenericRunner)
         self.terraform_runner = auto(TerraformRunner)
+        self.helm_runner = auto(HelmRunner)
         self.helmfile_runner = auto(HelmfileRunner)
         self.config_runner = auto(ConfigRenderRunner)
         self.explore_runner = auto(ExploreRunner)
@@ -94,6 +96,7 @@ class AppContainer(Container):
         self.root_parser = auto(RootParser)
         parsers = ListInstanceProvider()
         parsers.add(auto(TerraformParser))
+        parsers.add(auto(HelmParserConfig))
         parsers.add(auto(HelmfileParser))
         parsers.add(auto(ConfigRenderParserConfig))
         parsers.add(auto(ExploreParserConfig))
@@ -157,7 +160,7 @@ class AppContainer(Container):
             if "is not defined" in str(e):
                 print_error(f"Unknown command: {self.console_args.command}")
                 print("", file=sys.stderr)
-                print("Available commands: tfe, terraform, helmfile, explore, validate, config", file=sys.stderr)
+                print("Available commands: tfe, terraform, helm, helmfile, explore, validate, config", file=sys.stderr)
                 print("", file=sys.stderr)
                 print("Run 'kompos --help' for more information.", file=sys.stderr)
                 sys.exit(1)

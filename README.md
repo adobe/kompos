@@ -1,24 +1,24 @@
 # kompos
 
-[![Build Status](https://www.travis-ci.com/adobe/kompos.svg?token=8uHqfhgsxdvJ93qWAxhn&branch=main)](https://www.travis-ci.com/adobe/kompos) [![Docker pull](https://img.shields.io/docker/pulls/adobe/kompos)](https://hub.docker.com/r/adobe/kompos) [![](https://images.microbadger.com/badges/version/adobe/kompos.svg)](https://microbadger.com/images/adobe/kompos "Get your own version badge on microbadger.com") [![License](https://img.shields.io/github/license/adobe/kompos)](https://github.com/adobe/kompos/blob/master/LICENSE) [![PyPI pyversions](https://img.shields.io/pypi/pyversions/kompos.svg)](https://pypi.python.org/pypi/kompos/)
+[![Tests](https://github.com/adobe/kompos/actions/workflows/test.yml/badge.svg)](https://github.com/adobe/kompos/actions/workflows/test.yml) [![Docker pull](https://img.shields.io/docker/pulls/adobe/kompos)](https://hub.docker.com/r/adobe/kompos) [![](https://images.microbadger.com/badges/version/adobe/kompos.svg)](https://microbadger.com/images/adobe/kompos "Get your own version badge on microbadger.com") [![License](https://img.shields.io/github/license/adobe/kompos)](https://github.com/adobe/kompos/blob/master/LICENSE) [![PyPI pyversions](https://img.shields.io/pypi/pyversions/kompos.svg)](https://pypi.python.org/pypi/kompos/)
 
 ![kompos](img/kompos.png)
 
 **Kompos** is a configuration source management tool for infrastructure platforms. It maintains a Git-based layered
-configuration structure that generates environment-specific configurations for Terraform and other infrastructure tools.
+configuration structure that generates environment-specific configurations for Terraform, Helm, and other tools.
 
 **Perfect for:** Multi-environment deployments, cell-based architectures, platform engineering teams managing 10s-100s
 of clusters.
 
-**Workflow:** Layered config source in Git → Kompos generates → Commit → Terraform/TFE consumes → Deploy
+**Workflow:** Layered config source in Git → Kompos generates → Commit → Terraform/TFE/ArgoCD consumes → Deploy
 
 ## Key Features
 
 - **Layered Configuration**: Organize configs by cloud/environment/region/cluster with automatic inheritance and merge
-- **Generate Configurations**: Produce tfvars, workspace configs, and composition files for Terraform/TFE
+- **Generate Configurations**: Produce tfvars, workspace configs, rendered Helm values, and composition files
 - **Value Interpolation**: Dynamic config resolution with `{{key.path}}` placeholders
 - **Configuration Analysis**: Trace value origins, visualize hierarchy, compare environments
-- **Extensible Runners**: Built-in Terraform and TFE runners, extensible architecture for custom destinations
+- **Extensible Runners**: Built-in Terraform, TFE, and Helm runners; extensible architecture for custom destinations
 
 ### Core Benefits
 
@@ -119,10 +119,10 @@ everything.
 
 This enables:
 
-- **Git-Based Workflow**: Config changes via PRs → Generate → Terraform/TFE consumes
+- **Git-Based Workflow**: Config changes via PRs → Generate → Terraform/TFE/ArgoCD consumes
 - **Config Inheritance**: Define once at base level, override only what differs
 - **Value Interpolation**: Reference values with `{{key.path}}` syntax
-- **Artifact Generation**: Produce tfvars, compositions, workspace configs for downstream tools
+- **Artifact Generation**: Produce tfvars, Helm values, compositions, workspace configs for downstream tools
 - **Config Analysis**: Trace origins, visualize hierarchy, compare environments
 - **Scale**: Manage 50+ clusters from a handful of config files
 
@@ -130,22 +130,27 @@ This enables:
 
 Comprehensive examples are available in [`examples/`](./examples/) with a progressive learning path:
 
-1. **[Layered Configuration](./examples/01-hierarchical-config/)** - Learn configuration inheritance and merge behavior
-2. **[Module Version Pinning](./examples/02-module-version-pinning/)** - Dynamic Terraform module versioning with
-   `.tf.versioned` files
-3. **[Config Exploration](./examples/03-config-exploration/)** - Analyze and visualize configuration hierarchies
-4. **[TFE Multi-Cluster](./examples/04-tfe-multi-cluster/)** - Terraform Enterprise workspace and composition generation
+1. **[Layered Configuration](./examples/features/01-hierarchical-config/)** - Configuration inheritance and merge behavior
+2. **[Module Version Pinning](./examples/features/02-module-version-pinning/)** - Dynamic Terraform module versioning with `.tf.versioned` files
+3. **[Config Exploration](./examples/features/03-config-exploration/)** - Analyze and visualize configuration hierarchies
+4. **[TFE Multi-Cluster](./examples/features/04-tfe-multi-cluster/)** - Terraform Enterprise workspace and composition generation
+5. **[Helm Values Rendering](./examples/features/05-helm-values/)** - Render cluster-specific Helm values from hierarchy + TFE outputs
 
 See the [Examples README](./examples/README.md) for a complete guide with difficulty levels, time estimates, and
 learning paths.
 
 ## Usage
 
-Generate configuration artifacts from layered config source for infrastructure tools:
+Generate configuration artifacts from layered config source for infrastructure and Kubernetes delivery tools:
 
 ```bash
-# TFE: Generate workspace configs, tfvars, and compositions (primary)
+# TFE: Generate workspace configs, tfvars, and compositions
 kompos <config_path> tfe generate
+
+# Helm: Render cluster-specific Helm values from hierarchy + TFE outputs
+kompos <config_path> helm generate
+kompos <config_path> helm generate --chart-dir /path/to/my-chart  # single chart (local dev)
+kompos <config_path> helm list                                      # show enabled charts
 
 # Terraform: Generate configs and run Terraform locally
 kompos <config_path> terraform <command>
@@ -157,9 +162,9 @@ kompos <config_path> explore <analyze|trace|visualize|compare>
 kompos <config_path> config --format yaml
 ```
 
-**Workflow:** Generate configs → Commit → Terraform/TFE consumes → Deploy
+**Workflow:** Generate configs → Commit → Terraform/TFE/ArgoCD consumes → Deploy
 
-**Note:** helmfile runner is deprecated. For Kubernetes, use GitOps tools (ArgoCD/Flux) or the planned helm runner.
+**Note:** helmfile runner is deprecated. Use the `helm` runner for Helm values rendering with ArgoCD/Flux delivery.
 
 ### Common Config Commands
 

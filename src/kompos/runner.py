@@ -12,10 +12,12 @@ import argparse
 import fcntl
 import logging
 import os
+import shutil
 from subprocess import Popen, PIPE
 
 from himl import ConfigRunner
 from himl.config_generator import ConfigProcessor
+from himl.interpolation import InterpolationResolver
 
 logger = logging.getLogger(__name__)
 
@@ -326,9 +328,10 @@ class GenericRunner:
             excluded_keys = self.kompos_config.excluded_config_keys(composition)
 
             # Add CLI-provided filters and excludes to config-based ones
-            if self.himl_args.filter:
+            # Use getattr: subcommands without HIML args (e.g. helm list) won't have these attrs
+            if getattr(self.himl_args, 'filter', None):
                 filtered_keys = filtered_keys + self.himl_args.filter
-            if self.himl_args.exclude:
+            if getattr(self.himl_args, 'exclude', None):
                 excluded_keys = excluded_keys + self.himl_args.exclude
 
             # Runner pre-configuration
@@ -408,6 +411,38 @@ class GenericRunner:
                 return default
 
         return value
+
+    def ensure_directory(self, path, is_file_path=False, clean=False):
+        """
+        Ensure a directory exists, with optional cleaning before creation.
+
+        Args:
+            path:         Directory path, or file path if is_file_path=True
+            is_file_path: If True, extracts the parent directory from path
+            clean:        If True, removes existing directory first (for fresh state)
+        Returns:
+            The directory path that was ensured
+        """
+        dir_path = os.path.dirname(path) if is_file_path else path
+        if clean and os.path.exists(dir_path):
+            shutil.rmtree(dir_path)
+        os.makedirs(dir_path, exist_ok=True)
+        return dir_path
+
+    @staticmethod
+    def resolve_interpolations(data):
+        """
+        Resolve {{key.path}} interpolations in an in-memory dict.
+
+        Runs two passes to handle nested interpolations ({{outer.{{inner}}}}).
+        Used when working with pre-loaded dicts rather than filesystem paths
+        (use generate_config() for filesystem-based resolution).
+
+        Args:
+            data: Dict to resolve in-place. Modified directly.
+        """
+        InterpolationResolver().resolve_interpolations(data)
+        InterpolationResolver().resolve_interpolations(data)
 
     @staticmethod
     def flatten_dict(d, parent_key='', sep='.'):
@@ -554,6 +589,11 @@ def get_himl_args(args):
     # Return full args object to include both TFE and HIML args
     if hasattr(args, 'command') and args.command == 'tfe':
         logger.debug("Using HIML arguments from tfe command")
+        return args
+
+    # For helm command, return full args (subcommand, values-dir, dry-run, HIML args)
+    if hasattr(args, 'command') and args.command == 'helm':
+        logger.debug("Using HIML arguments from helm command")
         return args
 
     # For explore command, return full args for exploration options
