@@ -1,0 +1,4 @@
+---
+cluster:
+  name: demo-cluster-01
+  fullName: demo-dev-usw2-cluster-01

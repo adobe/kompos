@@ -1,0 +1,9 @@
+---
+region:
+  name: us-west-2
+  location: us-west-2
+  short: usw2
+
+env:
+  name: dev
+  type: non-prod

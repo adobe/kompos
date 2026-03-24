@@ -1,0 +1,25 @@
+# my-ingress/values.yaml
+#
+# New stack: cluster-specific values are interpolated via kompos helm generate.
+# Static values pass through unchanged; {{}} references are resolved from context:
+#   {{cluster.*}}        — kompos hierarchy  (cluster name, env, region, ...)
+#   {{global.infra.*}}   — TFE outputs       (SG IDs, VPC IDs, endpoints, ...)
+
+my-ingress:
+  namespace: ingress
+
+  # Static — same on all clusters
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: node-role.kubernetes.io/system-node
+            operator: In
+            values: ["true"]
+
+  # Interpolated — resolved from TFE outputs per cluster
+  service:
+    annotations:
+      # Security group IDs from TFE state — allows public HTTPS and internal traffic
+      securityGroups: "{{global.infra.ingress_security_group_ids.public-https}},{{global.infra.ingress_security_group_ids.internal}},{{global.infra.node_security_group_ids.worker-nodes}}"

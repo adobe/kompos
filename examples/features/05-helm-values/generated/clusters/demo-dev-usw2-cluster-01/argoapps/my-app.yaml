@@ -1,0 +1,13 @@
+my-app:
+  namespace: my-app
+  replicaCount: 2
+  image:
+    repository: my-org/my-app
+    pullPolicy: IfNotPresent
+  global:
+    clusterName: demo-dev-usw2-cluster-01
+    environment: dev
+    region: us-west-2
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::111122223333:role/demo-dev-usw2-cluster-01-my-app-pod-identity

@@ -1,0 +1,23 @@
+---
+# Helm chart registry — top-level defaults for all clusters
+# Charts listed here are enabled by default.
+# Override per-cluster in composition=helm-values/helm.yaml:
+#   helm:
+#     charts:
+#       my-app:
+#         enabled: false      # disable for this cluster
+#         version: "x.y.z"   # pin version for this cluster
+
+helm:
+  charts:
+    my-ingress:
+      enabled: true
+      version: "1.2.0"
+
+    my-app:
+      enabled: true
+      version: "2.0.0"
+
+    my-worker:
+      enabled: false   # disabled by default, opt-in per cluster
+      version: "1.0.0"

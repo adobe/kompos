@@ -1,0 +1,12 @@
+# my-worker/values.yaml
+#
+# my-worker is disabled by default in defaults_helm.yaml (enabled: false).
+# Enable per-cluster by setting helm.charts.my-worker.enabled: true
+# in the cluster's composition=helm-values/helm.yaml.
+
+my-worker:
+  namespace: my-worker
+  replicaCount: 1
+  global:
+    clusterName: "{{cluster.fullName}}"
+    vpcId:       "{{global.infra.vpc_id}}"

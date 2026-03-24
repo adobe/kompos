@@ -1,0 +1,18 @@
+# Auto-generated from Terraform state. Do not edit by hand.
+# Cluster:     demo-dev-usw2-cluster-01
+# Workspace:   demo-dev-usw2-cluster-01
+# Exported at: 2026-01-01T00:00:00Z
+global:
+  infra:
+    cluster_name: demo-dev-usw2-cluster-01
+    cluster_endpoint: https://ABCDEF1234.gr7.us-west-2.eks.amazonaws.com
+    vpc_id: vpc-0abc123def456789
+    vpc_cidr_block: 10.100.0.0/16
+    node_security_group_id: sg-0node111222333
+    ingress_security_group_ids:
+      public-https: sg-0pub111222333444
+      internal:     sg-0int555666777888
+    node_security_group_ids:
+      worker-nodes: sg-0wrk999000111222
+    pod_identity_role_arns:
+      my-app: arn:aws:iam::111122223333:role/demo-dev-usw2-cluster-01-my-app-pod-identity

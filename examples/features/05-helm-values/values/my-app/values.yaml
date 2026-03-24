@@ -1,0 +1,23 @@
+# my-app/values.yaml
+#
+# Mix of static values and {{}} interpolation against kompos context.
+
+my-app:
+  namespace: my-app
+
+  # Static
+  replicaCount: 2
+  image:
+    repository: my-org/my-app
+    pullPolicy: IfNotPresent
+
+  # Interpolated from hierarchy
+  global:
+    clusterName: "{{cluster.fullName}}"
+    environment: "{{env.name}}"
+    region:      "{{region.location}}"
+
+  # Interpolated from TFE outputs
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: "{{global.infra.pod_identity_role_arns.my-app}}"

@@ -1,0 +1,5 @@
+---
+# Composition metadata
+composition:
+  type: cluster
+  instance: "{{cluster.fullName}}"

@@ -1,0 +1,15 @@
+---
+komposconfig:
+  # Required by schema (not used by the helm runner)
+  terraform: {}
+  compositions:
+    system_keys:
+      tfe: [workspace, composition, tfe, __helm_values__]
+
+  helm:
+    config:
+      enclosing_key:    "__helm_values__"
+      tfe_outputs_path: "outputs/tfe-outputs.yaml"
+      output_subdir:    "argoapps"
+      base_output_dir:  "./generated"
+      charts_dir:       "./values"

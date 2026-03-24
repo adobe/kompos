@@ -1,0 +1,12 @@
+---
+# Composition identity — used by kompos to name this composition instance
+composition:
+  type: helm-values
+  instance: "{{cluster.fullName}}"
+
+# Cluster-level chart overrides (enable/disable, version pins)
+# Inherits all charts from defaults_helm.yaml; only specify differences here
+helm:
+  charts:
+    my-app:
+      version: "2.1.0"   # cluster-specific pin, overrides env default
