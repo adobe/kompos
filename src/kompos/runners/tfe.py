@@ -110,6 +110,12 @@ class TFERunner(GenericTerraformRunner):
         # If set to a string like "generated", will use that instead
         self.tfvars_filename = tfvars_config.get('filename', None)
 
+        # Optional subdir nested inside the composition instance dir.
+        # e.g. nested_subdir: "tfe" → generated/clusters/{instance}/tfe/
+        # Unset (None) = write directly into the composition instance dir (default, backward-compatible)
+        self.nested_subdir = self.kompos_config.get_kompos_setting(
+            f'{self.runner_type}.generation_config.nested_subdir', None)
+
     def run_configuration(self, args):
         self.validate_runner = False
         self.ordered_compositions = False
@@ -191,6 +197,8 @@ class TFERunner(GenericTerraformRunner):
             name=instance_dir,
             use_subdir=self.use_composition_subdir
         )
+        if self.nested_subdir:
+            target_dir = os.path.join(target_dir, self.nested_subdir)
 
         self.ensure_directory(target_dir)
 
@@ -227,12 +235,14 @@ class TFERunner(GenericTerraformRunner):
         # Build output path: base/composition_type/composition_instance/filename
         composition_output_dir = self.kompos_config.get_composition_output_dir(self.base_dir, composition)
         instance_dir = self.get_composition_output_dir(raw_config)
-        output_file = self.build_output_path(
+        instance_base = self.build_output_path(
             base_dir=composition_output_dir,
             name=instance_dir,
-            filename=tfvars_filename,
             use_subdir=self.use_composition_subdir
         )
+        if self.nested_subdir:
+            instance_base = os.path.join(instance_base, self.nested_subdir)
+        output_file = os.path.join(instance_base, tfvars_filename)
 
         # Ensure output directory exists
         self.ensure_directory(output_file, is_file_path=True)

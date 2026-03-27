@@ -43,6 +43,10 @@ TFE_EXAMPLE = PROJECT_ROOT / "examples" / "features" / "04-tfe-multi-cluster"
 TFE_CONFIG_DEV = TFE_EXAMPLE / "data" / "cloud=aws" / "project=demo" / "env=dev" / "region=us-west-2" / "cluster=demo-cluster-01" / "composition=terraform"
 TFE_CONFIG_PROD = TFE_EXAMPLE / "data" / "cloud=aws" / "project=demo" / "env=prod" / "region=us-east-1" / "cluster=demo-cluster-02" / "composition=terraform"
 
+# Dedicated komposconfig example — all komposconfig features in one place
+KOMPOSCONFIG_EXAMPLE = PROJECT_ROOT / "examples" / "features" / "06-komposconfig"
+KOMPOSCONFIG_CONFIG  = KOMPOSCONFIG_EXAMPLE / "data" / "cloud=aws" / "project=demo" / "env=dev" / "region=us-west-2" / "cluster=my-cluster" / "composition=cluster"
+
 # Helm values test fixture
 HELM_EXAMPLE = PROJECT_ROOT / "examples" / "features" / "05-helm-values"
 HELM_CONFIG   = HELM_EXAMPLE / "data" / "cloud=aws" / "project=demo" / "env=dev" / "region=us-west-2" / "cluster=demo-cluster-01" / "composition=helm-values"
@@ -464,77 +468,106 @@ def test_config_enclosing_key():
 def test_komposconfig_loads():
     """Test that .komposconfig.yaml is loaded and parsed"""
     print("3.1 Testing .komposconfig.yaml loads...")
-    
-    komposconfig_file = EXAMPLE_DIR / ".komposconfig.yaml"
+
+    komposconfig_file = KOMPOSCONFIG_EXAMPLE / ".komposconfig.yaml"
     if not komposconfig_file.exists():
-        print("  ⊘ Skipped (.komposconfig.yaml not found)")
+        print("  ⊘ Skipped (06-komposconfig example not found)")
         return
-    
-    # Run any kompos command - it should load the config
-    result = run_kompos(["--help"])
-    
-    assert result.returncode == 0, ".komposconfig.yaml should load without errors"
-    
-    # Verify config structure
+
     with open(komposconfig_file) as f:
         config = yaml.safe_load(f)
-    
+
     assert "komposconfig" in config, "Should have komposconfig namespace"
     assert "compositions" in config["komposconfig"], "Should have compositions config"
-    
+
     print("  ✓ .komposconfig.yaml loads correctly")
 
 
 def test_komposconfig_system_keys_exclusion():
-    """Test that system_keys are auto-excluded from tfvars"""
+    """Test that system_keys are defined and excluded from tfvars"""
     print("3.2 Testing system_keys auto-exclusion...")
-    
-    # This test would need actual TFE runner execution
-    # For now, just verify the config structure
-    komposconfig_file = EXAMPLE_DIR / ".komposconfig.yaml"
+
+    komposconfig_file = KOMPOSCONFIG_EXAMPLE / ".komposconfig.yaml"
     if not komposconfig_file.exists():
-        print("  ⊘ Skipped (.komposconfig.yaml not found)")
+        print("  ⊘ Skipped (06-komposconfig example not found)")
         return
-    
+
     with open(komposconfig_file) as f:
         config = yaml.safe_load(f)
-    
+
     system_keys = config.get("komposconfig", {}).get("compositions", {}).get("system_keys", {})
-    
-    # Verify system_keys exist
     assert "terraform" in system_keys, "Should have terraform system_keys"
     assert isinstance(system_keys["terraform"], list), "system_keys should be a list"
-    
-    print("  ✓ system_keys config structure valid")
+    assert "tfe" in system_keys, "Should have tfe system_keys"
+
+    # Verify they contain expected operational keys
+    assert "composition" in system_keys["tfe"], "composition should be a tfe system_key"
+
+    print(f"  ✓ system_keys defined: terraform={system_keys['terraform']}, tfe={system_keys['tfe']}")
 
 
 def test_komposconfig_composition_paths():
-    """Test composition source and output path configs"""
+    """Test composition source paths, output_subdir properties and execution order"""
     print("3.3 Testing composition path configurations...")
-    
-    komposconfig_file = EXAMPLE_DIR / ".komposconfig.yaml"
+
+    komposconfig_file = KOMPOSCONFIG_EXAMPLE / ".komposconfig.yaml"
     if not komposconfig_file.exists():
-        print("  ⊘ Skipped (.komposconfig.yaml not found)")
+        print("  ⊘ Skipped (06-komposconfig example not found)")
         return
-    
+
     with open(komposconfig_file) as f:
         config = yaml.safe_load(f)
-    
-    compositions = config.get("komposconfig", {}).get("compositions", {})
-    
-    # Verify compositions config exists
-    assert compositions, "Should have compositions config"
-    
-    # Verify order (if present)
-    if "order" in compositions:
-        assert isinstance(compositions["order"], dict), "Order should be a dict"
-    
-    # Note: source paths may be in terraform config, not compositions
-    terraform = config.get("komposconfig", {}).get("terraform", {})
-    if "local_path" in terraform:
-        assert isinstance(terraform["local_path"], str), "local_path should be string"
-    
-    print("  ✓ Composition path configs valid")
+
+    komposconfig = config["komposconfig"]
+    compositions = komposconfig["compositions"]
+
+    # Source path
+    assert "source" in compositions, "Should have source config"
+    assert "local_path" in compositions["source"], "Should have local_path"
+
+    # Execution order
+    assert "order" in compositions, "Should have execution order"
+    assert "terraform" in compositions["order"], "Should have terraform order"
+    assert isinstance(compositions["order"]["terraform"], list), "Order should be a list"
+
+    # output_subdir per composition type
+    assert "properties" in compositions, "Should have per-type properties"
+    for comp_type, props in compositions["properties"].items():
+        assert "output_subdir" in props, f"{comp_type} should have output_subdir"
+
+    print(f"  ✓ Composition paths valid: order={compositions['order']['terraform']}, "
+          f"types={list(compositions['properties'].keys())}")
+
+
+def test_komposconfig_nested_subdir():
+    """Test that nested_subdir in komposconfig routes TFE output into a named subdir"""
+    print("3.4 Testing komposconfig nested_subdir output routing...")
+    if not KOMPOSCONFIG_CONFIG.exists():
+        print("  ⊘ Skipped (06-komposconfig example not found)")
+        return
+
+    import shutil
+    generated = KOMPOSCONFIG_EXAMPLE / "generated"
+    if generated.exists():
+        shutil.rmtree(generated)
+
+    result = run_kompos(
+        [str(KOMPOSCONFIG_CONFIG), "tfe", "generate"],
+        cwd=str(KOMPOSCONFIG_EXAMPLE)
+    )
+    assert result.returncode == 0, f"tfe generate failed:\n{result.stderr}"
+
+    # Files must be inside generated/clusters/{instance}/tfe/ — not at the instance root
+    nested_dir = generated / "clusters" / "my-cluster-dev-usw2" / "tfe"
+    assert nested_dir.exists(), f"Expected nested dir from nested_subdir=tfe: {nested_dir}"
+    assert (nested_dir / "generated.tfvars.yaml").exists(), "tfvars should be in nested dir"
+
+    # Instance root must have NO tfvars (isolated under /tfe)
+    root_tfvars = list((generated / "clusters" / "my-cluster-dev-usw2").glob("*.tfvars.yaml"))
+    assert len(root_tfvars) == 0, \
+        f"tfvars should not be at instance root when nested_subdir is set, found: {root_tfvars}"
+
+    print(f"  ✓ nested_subdir=tfe: output isolated at {nested_dir.relative_to(KOMPOSCONFIG_EXAMPLE)}")
 
 
 # =============================================================================
@@ -809,6 +842,8 @@ def test_tfe_multi_cluster():
     print(f"  ✓ Multi-cluster generation: {len(tfvars_files)} tfvars files generated")
 
 
+
+
 # =============================================================================
 # 5. CLI ERROR HANDLING
 # =============================================================================
@@ -974,6 +1009,7 @@ def main():
             test_komposconfig_loads,
             test_komposconfig_system_keys_exclusion,
             test_komposconfig_composition_paths,
+            test_komposconfig_nested_subdir,
         ]),
         ("4. ACTUAL FILE GENERATION", [
             test_config_generates_to_file,

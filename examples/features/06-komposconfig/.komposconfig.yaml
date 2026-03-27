@@ -1,0 +1,54 @@
+---
+komposconfig:
+  # ── Composition source & ordering ────────────────────────────────────────────
+  compositions:
+    source:
+      local_path: "./compositions/terraform"
+      root_path: ""
+
+    # Execution order — dependencies resolved left to right
+    order:
+      terraform:
+        - account
+        - cluster
+
+    # Per-composition type properties — output_subdir controls where generated
+    # files land under the base output directory.
+    properties:
+      account:
+        output_subdir: "accounts"
+      cluster:
+        output_subdir: "clusters"
+
+    # System/metadata keys — excluded from generated tfvars output.
+    # These are kompos operational keys, not infrastructure config.
+    system_keys:
+      terraform: [provider, terraform]
+      tfe:       [workspace, composition, tfe]
+
+  # ── Terraform runner ──────────────────────────────────────────────────────────
+  terraform:
+    version: "v1.12.2"
+    versioned_module_sources: true
+    versioned_extension: ".tf.versioned"
+
+  # ── TFE runner ────────────────────────────────────────────────────────────────
+  tfe:
+    generation_config:
+      generate_compositions: true
+      base_output_dir:        "./generated"
+      use_composition_output_dir: true
+      versioned_extension:    ".tf.versioned"
+      # nested_subdir — nest all TFE files one level deeper inside the instance dir.
+      # Result:   generated/clusters/{instance}/tfe/
+      # Without:  generated/clusters/{instance}/
+      # The TFE workspace working_directory must match this path.
+      nested_subdir: "tfe"
+    workspaces_config:
+      generate:            true
+      config_key:          "workspace"
+      workspaces_sub_dir:  "workspaces"
+      workspace_extension: ".workspace.yaml"
+    tfvars_config:
+      extension: ".tfvars.yaml"
+      filename:  "generated"

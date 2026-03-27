@@ -1,0 +1,12 @@
+---
+composition:
+  type: cluster
+  instance: "{{cluster.fullName}}"
+
+workspace:
+  name: "{{cluster.fullName}}"
+  # working_directory must match: generated/clusters/{instance}/tfe/
+  # This is controlled by nested_subdir in .komposconfig.yaml
+  working_directory: "generated/clusters/{{cluster.fullName}}/tfe"
+  terraform_version: "1.5.7"
+  auto_apply: false

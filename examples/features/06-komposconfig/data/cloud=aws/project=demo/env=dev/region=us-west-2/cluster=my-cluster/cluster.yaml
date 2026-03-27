@@ -1,0 +1,7 @@
+---
+cluster:
+  name: my-cluster
+  fullName: my-cluster-dev-usw2
+
+vpc:
+  cidr_block: "10.0.0.0/16"
