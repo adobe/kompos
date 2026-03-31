@@ -21,6 +21,7 @@ from .komposconfig import KomposConfig
 from .runner import GenericRunner
 from .runners.config import ConfigRenderParserConfig, ConfigRenderRunner
 from .runners.explore import ExploreParserConfig, ExploreRunner
+from .runners.compile import CompileParserConfig, CompileRunner
 from .runners.helm import HelmParserConfig, HelmRunner
 from .runners.helmfile import HelmfileParser, HelmfileRunner
 from .runners.terraform import TerraformParser, TerraformRunner
@@ -84,6 +85,7 @@ class AppContainer(Container):
         super(AppContainer, self).__init__()
         # Configure runners
         self.generic_runner = auto(GenericRunner)
+        self.compile_runner = auto(CompileRunner)
         self.terraform_runner = auto(TerraformRunner)
         self.helm_runner = auto(HelmRunner)
         self.helmfile_runner = auto(HelmfileRunner)
@@ -96,6 +98,7 @@ class AppContainer(Container):
         self.root_parser = auto(RootParser)
         parsers = ListInstanceProvider()
         parsers.add(auto(TerraformParser))
+        parsers.add(auto(CompileParserConfig))
         parsers.add(auto(HelmParserConfig))
         parsers.add(auto(HelmfileParser))
         parsers.add(auto(ConfigRenderParserConfig))

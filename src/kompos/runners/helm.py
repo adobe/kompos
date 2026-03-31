@@ -355,8 +355,9 @@ class HelmRunner(GenericRunner):
 
         context[self.enclosing_key] = template
 
+        skip_validation = getattr(self.himl_args, 'skip_interpolation_validation', False)
         try:
-            self.resolve_interpolations(context)
+            self.resolve_interpolations(context, validate=not skip_validation)
         except Exception as e:
             logger.error(f"Interpolation failed for '{app_name}': {e}")
             context.pop(self.enclosing_key, None)

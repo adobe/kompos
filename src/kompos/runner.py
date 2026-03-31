@@ -315,6 +315,14 @@ class GenericRunner:
             # Set current path
             config_path = paths[composition]
 
+            # Auto-dispatch compositions that belong to a different runner.
+            # e.g. when running 'tfe generate' on a cluster path that also has
+            # composition=helm-values, dispatch it to the helm runner automatically.
+            owned = self.kompos_config.composition_order(self.runner_type, default=None)
+            if owned and composition not in owned:
+                self._dispatch_composition(composition, config_path)
+                continue
+
             # Raw config generation
             raw_config = self.get_raw_config(config_path, composition)
 
@@ -351,6 +359,59 @@ class GenericRunner:
             self.execution_post_action()
 
         return 0
+
+    def _dispatch_composition(self, composition, comp_path):
+        """
+        Auto-dispatch a composition to the runner that owns it.
+
+        Called when auto-discovery finds a composition not in the current runner's
+        order list. Looks up the owning runner from komposconfig.compositions.order.*
+        and runs it with default generate args.
+        """
+        import argparse
+
+        # Find which runner owns this composition type
+        target_runner_type = None
+        for runner_type in ['tfe', 'helm', 'terraform']:
+            if runner_type == self.runner_type:
+                continue
+            valid_types = self.kompos_config.composition_order(runner_type, default=None)
+            if valid_types and composition in valid_types:
+                target_runner_type = runner_type
+                break
+
+        if not target_runner_type:
+            logger.warning(f"No runner configured for composition '{composition}' in order.* — skipping")
+            return
+
+        # Lazy import to avoid circular imports at module level
+        runner_class = _get_runner_class(target_runner_type)
+        if not runner_class:
+            logger.warning(f"No runner class registered for '{target_runner_type}' — skipping '{composition}'")
+            return
+
+        dispatch_args = _build_default_dispatch_args(target_runner_type)
+        if dispatch_args is None:
+            logger.warning(f"Cannot build default args for '{target_runner_type}' runner — skipping '{composition}'")
+            return
+
+        # Fill in any missing himl defaults (skip_interpolation_resolving, etc.)
+        from kompos.parser import SubParserConfig as _SubParserConfig
+        _himl_parser = argparse.ArgumentParser()
+        _SubParserConfig.add_himl_arguments(None, _himl_parser)
+        _himl_defaults = _himl_parser.parse_args([])
+        for _k, _v in vars(_himl_defaults).items():
+            if not hasattr(dispatch_args, _k):
+                setattr(dispatch_args, _k, _v)
+
+        logger.info(f"Auto-dispatching '{composition}' → {target_runner_type} runner")
+        runner = runner_class(self.kompos_config, comp_path, self.execute)
+        # Use get_compositions + _run_compositions_internal directly to bypass the
+        # process lock (we're already inside a locked context from the calling runner).
+        runner.run_configuration(dispatch_args)
+        runner.himl_args = dispatch_args
+        dispatch_compositions, dispatch_paths = runner.get_compositions()
+        runner._run_compositions_internal(dispatch_args, [], dispatch_compositions, dispatch_paths)
 
     def execution_configuration(self, composition, config_path, default_output_path, raw_config,
                                 filtered_keys, excluded_keys):
@@ -473,6 +534,58 @@ class GenericRunner:
             else:
                 items.append((new_key, v))
         return dict(items)
+
+
+def _get_runner_class(runner_type):
+    """Lazy import runner class by type to avoid circular imports."""
+    if runner_type == 'helm':
+        from kompos.runners.helm import HelmRunner
+        return HelmRunner
+    if runner_type == 'tfe':
+        from kompos.runners.tfe import TFERunner
+        return TFERunner
+    if runner_type == 'terraform':
+        from kompos.runners.terraform import TerraformRunner
+        return TerraformRunner
+    return None
+
+
+def _build_default_dispatch_args(runner_type):
+    """
+    Build a minimal args Namespace for auto-dispatching to a runner.
+    Returns None if the runner type doesn't support default dispatch.
+    """
+    import argparse
+    if runner_type == 'helm':
+        return argparse.Namespace(
+            command='helm',
+            subcommand='generate',
+            charts_dir=None,
+            chart_dir=None,
+            dry_run=False,
+            list_format='table',
+            filter=None,
+            exclude=None,
+            himl_args=None,
+        )
+    if runner_type == 'tfe':
+        return argparse.Namespace(
+            command='tfe',
+            subcommand='generate',
+            workspace_only=False,
+            tfvars_only=False,
+            filter=None,
+            exclude=None,
+            himl_args=None,
+        )
+    if runner_type == 'terraform':
+        return argparse.Namespace(
+            command='terraform',
+            filter=None,
+            exclude=None,
+            himl_args=None,
+        )
+    return None
 
 
 def discover_compositions(config_path, kompos_config=None, runner_type=None):

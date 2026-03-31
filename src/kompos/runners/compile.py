@@ -1,0 +1,278 @@
+# Copyright 2026 Adobe. All rights reserved.
+# This file is licensed to you under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License. You may obtain a copy
+# of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software distributed under
+# the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+# OF ANY KIND, either express or implied. See the License for the specific language
+# governing permissions and limitations under the License.
+
+import argparse
+import logging
+import os
+import shutil
+
+from kompos.parser import SubParserConfig
+from kompos.runner import GenericRunner, COMPOSITION_KEY, split_path, _get_runner_class, _build_default_dispatch_args
+from kompos.helpers import console
+
+logger = logging.getLogger(__name__)
+
+RUNNER_TYPE = "compile"
+
+# Subcommands — the action to perform on each discovered composition
+ACTIONS = ['build', 'destroy']
+
+
+class CompileParserConfig(SubParserConfig):
+    def get_name(self):
+        return RUNNER_TYPE
+
+    def get_help(self):
+        return 'Graph-walk a config subtree and compile all compositions (build, destroy)'
+
+    def configure(self, parser):
+        parser.add_argument(
+            'action',
+            metavar='ACTION',
+            choices=ACTIONS,
+            nargs='?',
+            default='build',
+            help=f'Action to perform: {" | ".join(ACTIONS)} (default: build)'
+        )
+        parser.add_argument(
+            '--prune',
+            action='store_true',
+            help='Remove generated artifacts for compositions no longer in configs/'
+        )
+        parser.add_argument(
+            '--dry-run',
+            action='store_true',
+            dest='dry_run',
+            help='Show what would be built/pruned without making changes'
+        )
+        self.add_himl_arguments(parser)
+        return parser
+
+    def get_epilog(self):
+        return '''
+Examples:
+  # Build everything under a cluster (tfe + helm values, auto-detected)
+  kompos configs/.../cluster=sloth compile build
+
+  # Build everything under an entire region
+  kompos configs/cloud=aws/project=aip-training/env=dev/region=or2 compile
+
+  # Build everything + remove stale artifacts
+  kompos configs/cloud=aws/project=aip-training compile build --prune
+
+  # Show what would be built/pruned
+  kompos configs/cloud=aws/project=aip-training compile build --dry-run --prune
+
+  # (future) Destroy all compositions under a cluster
+  kompos configs/.../cluster=sloth compile destroy
+
+Routing is controlled by komposconfig.compositions.order.*:
+  order:
+    tfe:  [account, cell, cluster]
+    helm: [helm-values]
+'''
+
+
+class CompileRunner(GenericRunner):
+    """
+    Meta-runner: graph-walks a config subtree, discovers ALL compositions at any depth,
+    and routes each to its configured runner via komposconfig.compositions.order.*.
+
+    Actions:
+      build    — generate all artifacts (default)
+      destroy  — (future) destroy all generated artifacts
+
+    Options:
+      --prune    remove stale generated artifacts for compositions no longer in configs/
+      --dry-run  print what would be built/pruned without making changes
+    """
+
+    def __init__(self, kompos_config, config_path, execute):
+        super(CompileRunner, self).__init__(kompos_config, config_path, execute, RUNNER_TYPE)
+
+    def run_configuration(self, args):
+        self.validate_runner = False
+        self.ordered_compositions = False
+        self.reverse = False
+        self.generate_output = False
+
+    def run(self, args, extra_args):
+        self.run_configuration(args)
+
+        # Seed himl_args with defaults for dispatch
+        _himl_parser = argparse.ArgumentParser()
+        SubParserConfig.add_himl_arguments(None, _himl_parser)
+        self.himl_args = _himl_parser.parse_args([])
+
+        action  = getattr(args, 'action',  'build')
+        dry_run = getattr(args, 'dry_run', False)
+        prune   = getattr(args, 'prune',   False)
+
+        routing   = self._build_routing_map()
+        all_comps = self._walk_compositions(self.config_path)
+
+        if not all_comps:
+            console.print_warning("No compositions found under the given path.")
+            return 0
+
+        print(f"\n  Found {len(all_comps)} composition(s):\n")
+        for comp_type, comp_path in all_comps:
+            owner = routing.get(comp_type, '?')
+            rel   = os.path.relpath(comp_path)
+            suffix = '  (dry-run)' if dry_run else ''
+            print(f"    [{owner}] {rel}{suffix}")
+        print()
+
+        if action == 'build' and not dry_run:
+            rc = self._build(all_comps, routing, args)
+            if prune:
+                self._prune_stale(all_comps, routing, dry_run=False)
+            return rc
+
+        if action == 'build' and dry_run and prune:
+            self._prune_stale(all_comps, routing, dry_run=True)
+
+        if action == 'destroy':
+            console.print_warning("'destroy' is not yet implemented.")
+
+        return 0
+
+    # ── graph walk ────────────────────────────────────────────────────────────
+
+    def _walk_compositions(self, root):
+        """
+        Recursively walk root, returning (comp_type, comp_path) for every
+        composition=* directory found at any depth.
+        Does NOT recurse inside composition directories.
+        """
+        results = []
+        try:
+            entries = sorted(os.listdir(root))
+        except PermissionError:
+            return results
+
+        for entry in entries:
+            full = os.path.join(root, entry)
+            if not os.path.isdir(full):
+                continue
+            if COMPOSITION_KEY + "=" in entry:
+                comp_type = split_path(entry)[1]
+                results.append((comp_type, full))
+            else:
+                results.extend(self._walk_compositions(full))
+
+        return results
+
+    # ── build ─────────────────────────────────────────────────────────────────
+
+    def _build(self, all_comps, routing, args):
+        failed = []
+        for comp_type, comp_path in all_comps:
+            target_runner = routing.get(comp_type)
+            if not target_runner:
+                console.print_warning(
+                    f"No runner for '{comp_type}' — skipping {os.path.relpath(comp_path)}\n"
+                    f"  Add it to komposconfig.compositions.order.<runner>."
+                )
+                continue
+
+            runner_class  = _get_runner_class(target_runner)
+            dispatch_args = _build_default_dispatch_args(target_runner)
+            if not runner_class or dispatch_args is None:
+                logger.warning(f"Cannot dispatch '{comp_type}' to '{target_runner}' — skipping")
+                continue
+
+            # Fill in himl defaults
+            _himl_parser = argparse.ArgumentParser()
+            SubParserConfig.add_himl_arguments(None, _himl_parser)
+            for k, v in vars(_himl_parser.parse_args([])).items():
+                if not hasattr(dispatch_args, k):
+                    setattr(dispatch_args, k, v)
+
+            logger.info(f"[{target_runner}] {os.path.relpath(comp_path)}")
+            try:
+                runner = runner_class(self.kompos_config, comp_path, self.execute)
+                runner.run_configuration(dispatch_args)
+                runner.himl_args = dispatch_args
+                comps, paths = runner.get_compositions()
+                rc = runner._run_compositions_internal(dispatch_args, [], comps, paths)
+                if rc != 0:
+                    failed.append(comp_path)
+            except Exception as e:
+                logger.error(f"Failed: {comp_path}: {e}")
+                failed.append(comp_path)
+
+        if failed:
+            print(f"\n  ✗ {len(failed)} composition(s) failed:")
+            for p in failed:
+                print(f"    - {os.path.relpath(p)}")
+            return 1
+        return 0
+
+    # ── prune ─────────────────────────────────────────────────────────────────
+
+    def _prune_stale(self, live_comps, routing, dry_run=False):
+        """Remove generated artifact dirs for compositions no longer in configs/."""
+        live_instances = {}
+        for comp_type, comp_path in live_comps:
+            runner_type = routing.get(comp_type)
+            if not runner_type:
+                continue
+            try:
+                raw = self.generate_config(
+                    config_path=comp_path, filters=[], exclude_keys=[],
+                    skip_interpolation_resolving=True, skip_interpolation_validation=True,
+                    skip_secrets=True, silent=True)
+                inst = raw.get('composition', {}).get('instance', '')
+                if not inst or '{{' in str(inst):
+                    inst = raw.get('cluster', {}).get('fullName', '')
+            except Exception:
+                inst = ''
+            if inst:
+                live_instances.setdefault(runner_type, set()).add(inst)
+
+        base = self.kompos_config.get_kompos_setting('defaults.base_output_dir', './generated')
+        pruned = []
+
+        for runner_type, live in live_instances.items():
+            for comp_type in self.kompos_config.composition_order(runner_type, default=[]):
+                subdir = self.kompos_config.get_kompos_setting(
+                    f'compositions.properties.{comp_type}.output_subdir', comp_type)
+                target_dir = os.path.join(base, subdir)
+                if not os.path.isdir(target_dir):
+                    continue
+                for entry in sorted(os.listdir(target_dir)):
+                    if entry not in live:
+                        stale = os.path.join(target_dir, entry)
+                        if os.path.isdir(stale):
+                            rel = os.path.relpath(stale)
+                            if dry_run:
+                                print(f"  (prune) {rel}")
+                            else:
+                                shutil.rmtree(stale)
+                                console.print_warning(f"Pruned stale: {rel}")
+                            pruned.append(stale)
+
+        if not pruned:
+            print("  No stale artifacts to prune.")
+
+    # ── routing ───────────────────────────────────────────────────────────────
+
+    def _build_routing_map(self):
+        routing = {}
+        for runner_type in ['tfe', 'helm', 'terraform']:
+            for comp_type in self.kompos_config.composition_order(runner_type, default=[]):
+                if comp_type not in routing:
+                    routing[comp_type] = runner_type
+        return routing
+
+    @staticmethod
+    def execution(args, extra_args, default_output_path, composition, raw_config):
+        return dict(command="")
