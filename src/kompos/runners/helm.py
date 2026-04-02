@@ -36,6 +36,13 @@ _MERGER = Merger(
     ["override"]
 )
 
+# Helm override merger: dicts deep-merge, lists replace (matches Helm --values behavior)
+_HELM_OVERRIDE_MERGER = Merger(
+    [(dict, ["merge"]), (list, ["override"])],
+    ["override"],
+    ["override"]
+)
+
 
 class HelmParserConfig(SubParserConfig):
     def get_name(self):
@@ -114,6 +121,7 @@ class HelmRunner(GenericRunner):
 
     def __init__(self, kompos_config, config_path, execute):
         super(HelmRunner, self).__init__(kompos_config, config_path, execute, RUNNER_TYPE)
+        self._helm_overrides = {}
 
         helm_config = self.kompos_config.get_runtime_setting(
             self.runner_type, 'config', {})
@@ -259,6 +267,9 @@ class HelmRunner(GenericRunner):
 
         raw_config  → top-level keys from the kompos tree walk
         tfe_outputs → global.infra.* overlaid on top
+
+        Per-app overrides from the layered config's enclosing_key (e.g. __helm_values__)
+        are extracted and stored in self._helm_overrides for deep-merge during render_values().
         """
         context = dict(raw_config)
 
@@ -277,7 +288,9 @@ class HelmRunner(GenericRunner):
         context = _MERGER.merge(context, tfe_outputs)
         logger.info(f"Loaded TFE outputs: {tfe_path}")
 
-        context.pop(self.enclosing_key, None)
+        self._helm_overrides = context.pop(self.enclosing_key, None) or {}
+        if self._helm_overrides:
+            logger.info(f"Found layered helm overrides for charts: {list(self._helm_overrides.keys())}")
         return context
 
     # ── chart discovery ───────────────────────────────────────────────────────
@@ -332,7 +345,11 @@ class HelmRunner(GenericRunner):
         """
         Render a single values.yaml template against the interpolation context.
 
-        Inject values under enclosing_key → resolve {{}} → pop and return clean values.
+        1. Load chart-values/{app}/values.yaml as the base template.
+        2. Deep-merge any per-app overrides from the layered config's enclosing_key
+           (e.g. __helm_values__.{app_name} from env.yaml / cluster.yaml).
+        3. Inject under enclosing_key → resolve {{}} → pop and return clean values.
+
         Context is modified in-place but restored (enclosing_key is always popped).
         """
         if not os.path.exists(values_path):
@@ -352,6 +369,11 @@ class HelmRunner(GenericRunner):
                 f"(got {type(template).__name__})"
             )
             return None
+
+        app_overrides = self._helm_overrides.get(app_name, {})
+        if app_overrides and isinstance(app_overrides, dict):
+            template = _HELM_OVERRIDE_MERGER.merge(template, {app_name: app_overrides})
+            logger.info(f"Applied layered overrides for '{app_name}'")
 
         context[self.enclosing_key] = template
 
