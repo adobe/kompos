@@ -27,7 +27,7 @@ RUNNER_TYPE = "helm"
 
 # Key injected into context during interpolation, stripped from output.
 # Isolates chart values from kompos context keys — never appears in output files.
-DEFAULT_ENCLOSING_KEY = "__helm_values__"
+DEFAULT_ENCLOSING_KEY = "helm-values"
 
 # Deepmerge strategy: dicts merge, lists append, conflicts override
 _MERGER = Merger(
