@@ -321,7 +321,7 @@ class GenericRunner:
             # Use 'compile build' to run all compositions under a path.
             owned = self.kompos_config.composition_order(self.runner_type, default=None)
             if owned and composition not in owned:
-                print(f"  {console.Colors.YELLOW}↳{console.Colors.RESET} skipping '{composition}' {console.Colors.DIM}(use 'compile build' to run all){console.Colors.RESET}")
+                console.print_status(f"  {console.Colors.YELLOW}↳{console.Colors.RESET} skipping '{composition}' {console.Colors.DIM}(use 'compile build' to run all){console.Colors.RESET}")
                 continue
 
             # Raw config generation
@@ -555,7 +555,7 @@ def discover_compositions(config_path, kompos_config=None, runner_type=None):
 
     # No composition specified - discover from filesystem or config
     # This happens when path ends at cluster level (e.g., cluster=demo-cluster-01)
-    print(f"\n  {console.Colors.DIM}Discovering compositions in {config_path}...{console.Colors.RESET}")
+    console.print_status(f"\n  {console.Colors.DIM}Discovering compositions in {config_path}...{console.Colors.RESET}")
 
     # Try to discover composition paths from filesystem
     paths = {}

@@ -8,18 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.11.0] - 2026-05-01
 
 ### Added
-- **Helm overrides merge** — per-chart `overrides/{default,env,cluster}.yaml` merged on top
-  of the bridge template. Merge order: bridge < default < env < cluster (wins).
-  New config: `overrides_merge`, `overrides_subdir`, `bridge_filename`, `symlink_generated`.
-- **Managed README** — `GenericRunner.write_managed_readme` reusable by all runners;
-  helm runner writes pipeline diagrams from `data/templates/` markdown templates.
-- **GenericRunner utilities** — `load_yaml_file`, `merge_configs` (delegates to himl).
+- **Helm overrides merge** — optional per-chart `overrides/` directory with `default.yaml`,
+  `{env}.yaml`, and `{cluster}.yaml` files merged on top of the bridge template output.
+  Merge order: bridge (interpolated) < default < env < cluster (wins).
+  Enabled via `helm.config.overrides_merge: true` in `.komposconfig.yaml`.
+- **Bridge template rename** — configurable bridge filename via `helm.config.bridge_filename`
+  (default: `bridge.yaml`). Replaces `values.yaml` to clearly distinguish bridge templates
+  from Helm chart defaults.
+- **Symlink generation** — optional `helm.config.symlink_generated: true` creates symlinks
+  in `charts/{chart}/generated/` pointing to the source of truth in `generated/clusters/`.
+- **Managed README generation** — `write_managed_readme` on `GenericRunner`, reusable by
+  all runners. Helm runner writes pipeline diagrams from markdown templates in
+  `data/templates/helm-readme.md` and `data/templates/helm-chart-readme.md`.
+- **`GenericRunner.load_yaml_file`** — shared YAML loading utility for all runners.
+- **`GenericRunner.merge_configs`** — single entry point for all config merging, delegates
+  to himl's `ConfigGenerator.merge_value` for consistent merge behavior.
 
 ### Changed
-- **Dispatch moved to CompileRunner** — `GenericRunner` skips foreign compositions instead
-  of auto-dispatching. Use `compile build` to run all.
-- **Helm output** — compact chart list with `[bridge]`/`[overrides]` tags, structured sections.
-- **`find_charts`** — discovers dirs with `bridge.yaml` or `overrides/` (was `values.yaml`).
+- **Dispatch removed from GenericRunner** — auto-dispatch of foreign compositions moved
+  exclusively to `CompileRunner`. Individual runners now skip compositions they don't own
+  with a log message suggesting `compile build`.
+- **Helm console output** — compact chart list with `[bridge]`/`[overrides]` tags, structured
+  Context/Output/Charts sections, override files shown as indented children.
+- **`find_charts`** — discovers chart dirs with `bridge.yaml` or `overrides/` directory
+  (previously required `values.yaml`).
+
+### Fixed
+- Removed bogus `validate=` kwarg passed to `resolve_interpolations` static method in helm runner.
 
 ## [0.10.1] - 2026-03-27
 

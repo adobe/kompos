@@ -45,6 +45,11 @@ def print_info(message, indent=0):
     print(f"{prefix}{message}")
 
 
+def print_status(message):
+    """Print a status message to stderr so it doesn't interfere with stdout data output."""
+    print(message, file=sys.stderr)
+
+
 def print_warning(message):
     """Print a warning message in yellow."""
     print(f"{Colors.YELLOW}⚠{Colors.RESET}  {message}")

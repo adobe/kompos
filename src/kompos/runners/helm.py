@@ -39,8 +39,8 @@ class HelmParserConfig(SubParserConfig):
     def configure(self, parser):
         parser.add_argument('subcommand',
                             metavar='SUBCOMMAND',
-                            choices=['generate', 'list'],
-                            help='Action to perform: generate | list')
+                            choices=['generate', 'list', 'delete'],
+                            help='Action to perform: generate | list | delete')
 
         # generate options
         parser.add_argument('--charts-dir',
@@ -83,6 +83,9 @@ Examples:
 
   # List enabled charts
   kompos configs/.../composition=helm-values helm list
+
+  # Delete generated artifacts for a cluster
+  kompos configs/.../composition=helm-values helm delete
         '''
 
 
@@ -146,9 +149,75 @@ class HelmRunner(GenericRunner):
             self.run_generate(args, raw_config, charts_dir, config_path)
             return
 
+        if args.subcommand == 'delete':
+            self.run_delete(raw_config)
+            return
+
     @staticmethod
     def execution(args, extra_args, default_output_path, composition, raw_config):
         return dict(command="")
+
+    # ── delete ────────────────────────────────────────────────────────────────
+
+    def run_delete(self, raw_config):
+        """Delete all generated helm values for a cluster."""
+        import shutil
+
+        cluster_name = self.get_composition_name(raw_config)
+        if not cluster_name:
+            console.print_error("Could not determine cluster name.")
+            sys.exit(1)
+
+        argoapps_dir, chart_symlinks = self._output_paths(cluster_name)
+
+        console.print_section_header(f"Helm Delete: {cluster_name}")
+        removed = 0
+
+        if os.path.isdir(argoapps_dir):
+            shutil.rmtree(argoapps_dir)
+            print(f"  {console.Colors.YELLOW}✗{console.Colors.RESET} {argoapps_dir}/")
+            removed += 1
+
+        for symlink_path, gen_dir in chart_symlinks:
+            if os.path.islink(symlink_path) or os.path.isfile(symlink_path):
+                os.remove(symlink_path)
+                print(f"  {console.Colors.YELLOW}✗{console.Colors.RESET} {symlink_path}")
+                removed += 1
+            if os.path.isdir(gen_dir):
+                remaining = [f for f in os.listdir(gen_dir) if f != 'README.md']
+                if not remaining:
+                    readme = os.path.join(gen_dir, 'README.md')
+                    if os.path.isfile(readme):
+                        os.remove(readme)
+                    os.rmdir(gen_dir)
+
+        if removed:
+            print(f"\n  {console.Colors.GREEN}✓{console.Colors.RESET} Deleted {removed} artifact(s) for {cluster_name}")
+        else:
+            print(f"\n  No artifacts found for {cluster_name}")
+
+    # ── output paths ─────────────────────────────────────────────────────────
+
+    def _output_paths(self, cluster_name):
+        """
+        Return the output paths that generate/delete operate on.
+
+        Returns:
+            argoapps_dir: generated/clusters/{cluster}/helm-values/
+            chart_symlinks: list of (symlink_path, parent_generated_dir) tuples
+        """
+        argoapps_dir = os.path.join(
+            self.base_output_dir, 'clusters', cluster_name, self.argoapps_subdir)
+
+        chart_symlinks = []
+        charts_dir = self.default_charts_dir
+        if charts_dir and os.path.isdir(charts_dir):
+            for chart_name in os.listdir(charts_dir):
+                gen_dir = os.path.join(charts_dir, chart_name, 'generated')
+                symlink_path = os.path.join(gen_dir, f"{cluster_name}.yaml")
+                chart_symlinks.append((symlink_path, gen_dir))
+
+        return argoapps_dir, chart_symlinks
 
     # ── list ──────────────────────────────────────────────────────────────────
 
@@ -195,16 +264,12 @@ class HelmRunner(GenericRunner):
 
         console.print_section_header(f"Helm Values Render: {cluster_name}")
 
-        context = self.build_context(raw_config, cluster_name, config_path)
-
-        # --chart-dir: single chart mode — path comes directly from the arg
+        # Discover charts before loading TFE outputs — bail early if nothing enabled
         if args.chart_dir:
             chart_dir_abs = os.path.abspath(args.chart_dir)
             app_name      = os.path.basename(chart_dir_abs)
             chart_files   = {app_name: os.path.join(chart_dir_abs, self.bridge_filename)}
             disabled, untracked = set(), set()
-
-        # --charts-dir / komposconfig default: scan filesystem, filter to enabled
         else:
             charts_dir    = os.path.abspath(charts_dir)
             charts_on_fs  = self.find_charts(charts_dir)
@@ -212,6 +277,7 @@ class HelmRunner(GenericRunner):
 
             if not enabled:
                 console.print_warning("No enabled charts found in helm.charts.*")
+                self.report_chart_status(disabled, untracked)
                 return
 
             chart_files = {
@@ -219,8 +285,9 @@ class HelmRunner(GenericRunner):
                 for app_name in enabled
             }
 
-        argoapps_dir = os.path.join(
-            self.base_output_dir, 'clusters', cluster_name, self.argoapps_subdir)
+        context = self.build_context(raw_config, cluster_name, config_path)
+
+        argoapps_dir, _ = self._output_paths(cluster_name)
 
         dry_run = getattr(args, 'dry_run', False)
         rendered_count = 0
@@ -541,14 +608,14 @@ class HelmRunner(GenericRunner):
         untracked = sorted(untracked)
 
         if disabled:
-            print(f"\n  Disabled:")
+            print(f"\n  {console.Colors.BOLD}{console.Colors.WHITE}Disabled:{console.Colors.RESET}\n")
             for name in disabled:
-                print(f"    {name}")
+                print(f"    {console.Colors.DIM}–{console.Colors.RESET} {name}")
 
         if untracked:
-            print(f"\n  Untracked:")
+            print(f"\n  {console.Colors.BOLD}{console.Colors.WHITE}Untracked:{console.Colors.RESET}\n")
             for name in untracked:
-                print(f"    {name}")
+                print(f"    {console.Colors.DIM}?{console.Colors.RESET} {name}")
 
         if disabled or untracked:
             print()
