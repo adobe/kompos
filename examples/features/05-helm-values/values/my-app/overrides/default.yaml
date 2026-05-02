@@ -1,0 +1,11 @@
+my-app:
+  # Cross-env defaults: shared by dev, stage, prod, etc.
+  # `logLevel` and `ephemeral-storage` are not overridden anywhere -> flow through.
+  # `replicaCount` is overridden by dev.yaml (env beats default).
+  # `cpu` is overridden by cluster file (cluster beats env beats default).
+  logLevel: info
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "10m"
+      ephemeral-storage: "1Gi"

@@ -941,9 +941,20 @@ def test_helm_generate_dry_run():
     assert "sg-0pub111222333444" in out and "sg-0int555666777888" in out, "SG IDs should resolve"
     # No unresolved placeholders
     assert "{{" not in out, "No unresolved {{}} should remain in output"
+    # Overrides merge (overrides_merge: true in komposconfig)
+    # Layered: default.yaml < env.yaml < cluster.yaml (last wins)
+    assert "logLevel: info" in out, \
+        "default.yaml logLevel should flow through (no override at env/cluster)"
+    assert "ephemeral-storage: 1Gi" in out or "ephemeral-storage: '1Gi'" in out \
+           or 'ephemeral-storage: "1Gi"' in out, \
+        "default.yaml resource sub-key should deep-merge through"
+    assert "replicaCount: 5" in out, \
+        "env override replicaCount should beat default (env > default)"
+    assert "cpu: '2000m'" in out or 'cpu: "2000m"' in out or "cpu: 2000m" in out, \
+        "cluster override cpu should win (cluster > env > default)"
     # Disabled chart reported
     assert "Disabled" in out and "my-worker" in out, "my-worker should appear as Disabled"
-    print("  ✓ Rendered correctly — all {{}} resolved, disabled charts reported")
+    print("  ✓ Rendered correctly — all {{}} resolved, overrides merged (default<env<cluster), disabled charts reported")
 
 
 def test_helm_generate_writes_files():

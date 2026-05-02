@@ -37,11 +37,23 @@ jobs:
         pip install wheel
         python setup.py sdist bdist_wheel
 
+    - name: Extract changelog for this version
+      if: startsWith(github.ref, 'refs/tags')
+      id: changelog
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/}
+        # Extract the block between "## [VERSION]" and the next "## [" heading
+        awk "/^## \[$VERSION\]/{ found=1; next } found && /^## \[/{ exit } found{ print }" \
+          CHANGELOG.md > /tmp/release_notes.md
+        echo "Extracted release notes for $VERSION:"
+        cat /tmp/release_notes.md
+
     - name: Create GitHub Release
       if: startsWith(github.ref, 'refs/tags')
       uses: softprops/action-gh-release@v1
       with:
-        generate_release_notes: true
+        name: "Release ${{ github.ref_name }}"
+        body_path: /tmp/release_notes.md
         files: dist/*
 
     - name: Publish distribution to PyPI

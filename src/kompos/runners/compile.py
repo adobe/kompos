@@ -14,10 +14,61 @@ import os
 import shutil
 
 from kompos.parser import SubParserConfig
-from kompos.runner import GenericRunner, COMPOSITION_KEY, split_path, _get_runner_class, _build_default_dispatch_args
+from kompos.runner import GenericRunner, COMPOSITION_KEY, split_path
 from kompos.helpers import console
 
 logger = logging.getLogger(__name__)
+
+
+def _get_runner_class(runner_type):
+    """Lazy import runner class by type to avoid circular imports."""
+    if runner_type == 'helm':
+        from kompos.runners.helm import HelmRunner
+        return HelmRunner
+    if runner_type == 'tfe':
+        from kompos.runners.tfe import TFERunner
+        return TFERunner
+    if runner_type == 'terraform':
+        from kompos.runners.terraform import TerraformRunner
+        return TerraformRunner
+    return None
+
+
+def _build_default_dispatch_args(runner_type):
+    """
+    Build a minimal args Namespace for dispatching to a runner.
+    Returns None if the runner type doesn't support default dispatch.
+    """
+    if runner_type == 'helm':
+        return argparse.Namespace(
+            command='helm',
+            subcommand='generate',
+            charts_dir=None,
+            chart_dir=None,
+            dry_run=False,
+            list_format='table',
+            filter=None,
+            exclude=None,
+            himl_args=None,
+        )
+    if runner_type == 'tfe':
+        return argparse.Namespace(
+            command='tfe',
+            subcommand='generate',
+            workspace_only=False,
+            tfvars_only=False,
+            filter=None,
+            exclude=None,
+            himl_args=None,
+        )
+    if runner_type == 'terraform':
+        return argparse.Namespace(
+            command='terraform',
+            filter=None,
+            exclude=None,
+            himl_args=None,
+        )
+    return None
 
 RUNNER_TYPE = "compile"
 

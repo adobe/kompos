@@ -15,7 +15,6 @@ import sys
 import time
 
 import yaml
-from deepmerge import Merger
 
 from kompos.parser import SubParserConfig
 from kompos.runner import GenericRunner
@@ -28,13 +27,6 @@ RUNNER_TYPE = "helm"
 # Key injected into context during interpolation, stripped from output.
 # Isolates chart values from kompos context keys — never appears in output files.
 DEFAULT_ENCLOSING_KEY = "__helm_values__"
-
-# Deepmerge strategy: dicts merge, lists append, conflicts override
-_MERGER = Merger(
-    [(dict, ["merge"]), (list, ["append"])],
-    ["override"],
-    ["override"]
-)
 
 
 class HelmParserConfig(SubParserConfig):
@@ -123,6 +115,10 @@ class HelmRunner(GenericRunner):
         self.argoapps_subdir    = helm_config.get('output_subdir',    'argoapps')
         self.base_output_dir    = helm_config.get('base_output_dir',  './generated')
         self.default_charts_dir = helm_config.get('charts_dir',       None)
+        self.overrides_merge    = helm_config.get('overrides_merge',   False)
+        self.overrides_subdir   = helm_config.get('overrides_subdir',  'overrides')
+        self.bridge_filename    = helm_config.get('bridge_filename',   'bridge.yaml')
+        self.symlink_generated  = helm_config.get('symlink_generated', False)
 
     def run_configuration(self, args):
         self.validate_runner = False
@@ -147,7 +143,7 @@ class HelmRunner(GenericRunner):
                     "or set helm.config.charts_dir in .komposconfig.yaml"
                 )
                 sys.exit(1)
-            self.run_generate(args, raw_config, charts_dir)
+            self.run_generate(args, raw_config, charts_dir, config_path)
             return
 
     @staticmethod
@@ -184,7 +180,7 @@ class HelmRunner(GenericRunner):
 
     # ── generate ──────────────────────────────────────────────────────────────
 
-    def run_generate(self, args, raw_config, charts_dir):
+    def run_generate(self, args, raw_config, charts_dir, config_path=None):
         start = time.time()
         cluster_name = self.get_composition_name(raw_config)
 
@@ -195,15 +191,17 @@ class HelmRunner(GenericRunner):
             )
             sys.exit(1)
 
+        env_name = self.get_nested_value(raw_config, 'env.name')
+
         console.print_section_header(f"Helm Values Render: {cluster_name}")
 
-        context = self.build_context(raw_config, cluster_name)
+        context = self.build_context(raw_config, cluster_name, config_path)
 
         # --chart-dir: single chart mode — path comes directly from the arg
         if args.chart_dir:
             chart_dir_abs = os.path.abspath(args.chart_dir)
             app_name      = os.path.basename(chart_dir_abs)
-            chart_files   = {app_name: os.path.join(chart_dir_abs, 'values.yaml')}
+            chart_files   = {app_name: os.path.join(chart_dir_abs, self.bridge_filename)}
             disabled, untracked = set(), set()
 
         # --charts-dir / komposconfig default: scan filesystem, filter to enabled
@@ -217,7 +215,7 @@ class HelmRunner(GenericRunner):
                 return
 
             chart_files = {
-                app_name: os.path.join(charts_dir, app_name, 'values.yaml')
+                app_name: os.path.join(charts_dir, app_name, self.bridge_filename)
                 for app_name in enabled
             }
 
@@ -227,8 +225,12 @@ class HelmRunner(GenericRunner):
         dry_run = getattr(args, 'dry_run', False)
         rendered_count = 0
 
+        print(f"\n  {console.Colors.DIM}Output:{console.Colors.RESET} {console.Colors.WHITE}{argoapps_dir}/{console.Colors.RESET}")
+        print(f"\n  {console.Colors.BOLD}{console.Colors.WHITE}Charts:{console.Colors.RESET}\n")
+
         for app_name, values_path in sorted(chart_files.items()):
-            rendered = self.render_values(app_name, values_path, context)
+            rendered = self.render_values(app_name, values_path, context,
+                                          cluster_name, env_name)
             if rendered is None:
                 continue
 
@@ -236,24 +238,51 @@ class HelmRunner(GenericRunner):
                 print(f"\n# ── {app_name} ──────────────────────────────────────")
                 print(yaml.dump(rendered, default_flow_style=False))
             else:
+                # Source of truth: generated/clusters/{cluster}/helm-values/{chart}.yaml
                 output_file = os.path.join(argoapps_dir, f"{app_name}.yaml")
                 self.ensure_directory(output_file, is_file_path=True)
                 with open(output_file, 'w') as f:
                     yaml.dump(rendered, f, default_flow_style=False, sort_keys=False)
-                console.print_success(f"Rendered {app_name}")
-                console.print_file_generation("argoapps", output_file)
+
+                # Symlink: charts/{chart}/generated/{cluster}.yaml → source of truth
+                if self.symlink_generated:
+                    chart_dir = os.path.dirname(values_path)
+                    per_chart_dir = os.path.join(chart_dir, 'generated')
+                    per_chart_file = os.path.join(per_chart_dir, f"{cluster_name}.yaml")
+                    self.ensure_directory(per_chart_file, is_file_path=True)
+                    rel_target = os.path.relpath(output_file, per_chart_dir)
+                    if os.path.islink(per_chart_file) or os.path.exists(per_chart_file):
+                        os.remove(per_chart_file)
+                    os.symlink(rel_target, per_chart_file)
+
+                logger.debug(f"Wrote {output_file}")
+                if self.symlink_generated:
+                    logger.debug(f"Symlink {per_chart_file} -> {output_file}")
+                has_bridge = os.path.isfile(values_path)
+                overrides_info = getattr(self, '_last_loaded_overrides', [])
+                tags = []
+                if has_bridge:
+                    tags.append(f'{console.Colors.CYAN}bridge{console.Colors.RESET}')
+                if overrides_info:
+                    tags.append(f'{console.Colors.MAGENTA}overrides{console.Colors.RESET}')
+                tag_str = f" {console.Colors.DIM}[{console.Colors.RESET}{', '.join(tags)}{console.Colors.DIM}]{console.Colors.RESET}" if tags else ""
+                print(f"    {console.Colors.GREEN}✓{console.Colors.RESET} {app_name:<40}{tag_str}")
+                for override_file in overrides_info:
+                    print(f"      {console.Colors.DIM}+{console.Colors.RESET} {console.Colors.MAGENTA}{override_file}{console.Colors.RESET}")
+                self._last_loaded_overrides = []
 
             rendered_count += 1
 
         if not dry_run:
             self.prune_argoapps(argoapps_dir, rendered=set(chart_files.keys()))
+            self._write_generated_readmes(argoapps_dir, cluster_name, env_name, chart_files)
 
         self.report_chart_status(disabled, untracked)
         console.print_summary(total_files=rendered_count, elapsed_time=time.time() - start)
 
     # ── context ───────────────────────────────────────────────────────────────
 
-    def build_context(self, raw_config, cluster_name):
+    def build_context(self, raw_config, cluster_name, config_path=None):
         """
         Merge kompos hierarchy + TFE outputs into the interpolation context.
 
@@ -265,17 +294,19 @@ class HelmRunner(GenericRunner):
         tfe_path = os.path.join(
             self.base_output_dir, 'clusters', cluster_name, self.tfe_outputs_path)
 
-        if not os.path.exists(tfe_path):
+        tfe_outputs = self.load_yaml_file(tfe_path)
+        if tfe_outputs is None:
             console.print_error(
                 f"TFE outputs not found: {tfe_path}",
                 "Ensure terraform has been applied and outputs exported before rendering helm values."
             )
             sys.exit(1)
 
-        with open(tfe_path) as f:
-            tfe_outputs = yaml.safe_load(f) or {}
-        context = _MERGER.merge(context, tfe_outputs)
-        logger.info(f"Loaded TFE outputs: {tfe_path}")
+        context = self.merge_configs(context, tfe_outputs)
+        hierarchy_path = config_path or self.config_path
+        print(f"\n  {console.Colors.BOLD}{console.Colors.WHITE}Context:{console.Colors.RESET}")
+        print(f"    {console.Colors.DIM}Hierarchy:{console.Colors.RESET} {console.Colors.BLUE}{hierarchy_path}{console.Colors.RESET}")
+        print(f"    {console.Colors.DIM}TFE:{console.Colors.RESET}       {console.Colors.CYAN}{tfe_path}{console.Colors.RESET}")
 
         context.pop(self.enclosing_key, None)
         return context
@@ -283,13 +314,26 @@ class HelmRunner(GenericRunner):
     # ── chart discovery ───────────────────────────────────────────────────────
 
     def find_charts(self, charts_dir):
-        """Scan filesystem: return names of all chart dirs in charts_dir that contain values.yaml."""
+        """
+        Scan filesystem for chart dirs that have a bridge template or overrides.
+
+        A chart dir qualifies if it contains bridge.yaml (bridge template)
+        or an overrides/ subdirectory (operational values only).
+        The chart registry (helm.charts.*) controls which are actually rendered —
+        this is just filesystem discovery.
+        """
         if not charts_dir or not os.path.isdir(charts_dir):
             return set()
-        return {
-            d for d in os.listdir(charts_dir)
-            if os.path.isfile(os.path.join(charts_dir, d, 'values.yaml'))
-        }
+        result = set()
+        for d in os.listdir(charts_dir):
+            chart_path = os.path.join(charts_dir, d)
+            if not os.path.isdir(chart_path):
+                continue
+            has_bridge = os.path.isfile(os.path.join(chart_path, self.bridge_filename))
+            has_overrides = os.path.isdir(os.path.join(chart_path, self.overrides_subdir))
+            if has_bridge or has_overrides:
+                result.add(d)
+        return result
 
     def charts_config(self, raw_config):
         """Return the raw helm.charts.* dict from the kompos hierarchy."""
@@ -328,42 +372,147 @@ class HelmRunner(GenericRunner):
 
     # ── rendering ─────────────────────────────────────────────────────────────
 
-    def render_values(self, app_name, values_path, context):
+    def render_values(self, app_name, values_path, context,
+                      cluster_name=None, env_name=None):
         """
-        Render a single values.yaml template against the interpolation context.
+        Render values for a chart with optional overrides merging.
 
-        Inject values under enclosing_key → resolve {{}} → pop and return clean values.
-        Context is modified in-place but restored (enclosing_key is always popped).
+        Four-step merge (when overrides_merge is enabled):
+          1. Bridge template (bridge.yaml) — {{ }} resolved against context
+          2. overrides/default.yaml — cross-env operational defaults (plain YAML)
+          3. overrides/{env}.yaml — env-level operational defaults (plain YAML)
+          4. overrides/{cluster}.yaml — per-cluster override (plain YAML, wins)
+
+        Each override file is optional. Merge priority (last wins):
+        bridge < default < env < cluster.
+
+        When overrides_merge is disabled, behaves as bridge-template only.
         """
-        if not os.path.exists(values_path):
-            console.print_warning(f"values.yaml not found for '{app_name}': {values_path}")
-            return None
+        chart_dir = os.path.dirname(values_path)
 
-        with open(values_path) as f:
-            template = yaml.safe_load(f)
+        # Step 1: bridge template interpolation
+        bridge_values = self._render_bridge(app_name, values_path, context)
 
+        # Step 2+3: overrides merge (optional, guarded by config flag)
+        if self.overrides_merge:
+            override_values = self._load_override_files(
+                chart_dir, env_name, cluster_name)
+            if override_values and bridge_values:
+                return self.merge_configs(bridge_values, override_values)
+            if override_values:
+                return override_values
+
+        return bridge_values
+
+    def _render_bridge(self, app_name, values_path, context):
+        """Render a bridge template against the interpolation context."""
+        template = self.load_yaml_file(values_path)
         if template is None:
-            console.print_warning(f"Empty values.yaml for '{app_name}': {values_path}")
-            return None
-
-        if not isinstance(template, dict):
-            console.print_warning(
-                f"values.yaml for '{app_name}' is not a YAML mapping — skipping "
-                f"(got {type(template).__name__})"
-            )
+            if not self.overrides_merge:
+                console.print_warning(f"{self.bridge_filename} not found for '{app_name}': {values_path}")
             return None
 
         context[self.enclosing_key] = template
 
-        skip_validation = getattr(self.himl_args, 'skip_interpolation_validation', False)
         try:
-            self.resolve_interpolations(context, validate=not skip_validation)
+            self.resolve_interpolations(context)
         except Exception as e:
             logger.error(f"Interpolation failed for '{app_name}': {e}")
             context.pop(self.enclosing_key, None)
             raise
 
         return context.pop(self.enclosing_key)
+
+    def _load_override_files(self, chart_dir, env_name, cluster_name):
+        """
+        Load overrides/{default,env,cluster}.yaml as plain YAML.
+
+        These are operational overrides (resources, replicas, flags) that live
+        outside the Kompos hierarchy. No {{ }} interpolation — just standard YAML.
+
+        Files (each optional):
+          default.yaml          — cross-env defaults shared by all clusters
+          {env_name}.yaml       — env-specific defaults (e.g. dev.yaml)
+          {cluster_name}.yaml   — per-cluster override
+
+        Merge order: default (base) ← env ← cluster (wins).
+        Returns None if no override files exist.
+        """
+        overrides_dir = os.path.join(chart_dir, self.overrides_subdir)
+        if not os.path.isdir(overrides_dir):
+            return None
+
+        result = {}
+        loaded = []
+
+        default_values = self.load_yaml_file(
+            os.path.join(overrides_dir, 'default.yaml'))
+        if default_values:
+            result = self.merge_configs(result, default_values)
+            loaded.append('default.yaml')
+
+        if env_name:
+            env_values = self.load_yaml_file(
+                os.path.join(overrides_dir, f'{env_name}.yaml'))
+            if env_values:
+                result = self.merge_configs(result, env_values)
+                loaded.append(f'{env_name}.yaml')
+
+        if cluster_name:
+            cluster_values = self.load_yaml_file(
+                os.path.join(overrides_dir, f'{cluster_name}.yaml'))
+            if cluster_values:
+                result = self.merge_configs(result, cluster_values)
+                loaded.append(f'{cluster_name}.yaml')
+
+        self._last_loaded_overrides = loaded
+        return result if result else None
+
+    # ── generated README ────────────────────────────────────────────────────
+
+    def _write_generated_readmes(self, argoapps_dir, cluster_name, env_name, chart_files):
+        """Write managed README.md in per-cluster and per-chart output directories."""
+        charts_list = '\n'.join(f'  - `{name}.yaml`' for name in sorted(chart_files.keys()))
+
+        template_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), 'data', 'templates', 'helm-readme.md')
+        with open(template_path) as f:
+            template = f.read()
+
+        content = template.format(
+            cluster_name=cluster_name,
+            env_name=env_name,
+            bridge_filename=self.bridge_filename,
+            overrides_subdir=self.overrides_subdir,
+            charts_list=charts_list,
+        )
+
+        # Per-cluster: generated/clusters/{cluster}/helm-values/README.md
+        readme_path = os.path.join(argoapps_dir, 'README.md')
+        self.ensure_directory(readme_path, is_file_path=True)
+        with open(readme_path, 'w') as f:
+            f.write(content)
+
+        # Per-chart: charts/{chart}/generated/README.md (only when symlinks enabled)
+        if self.symlink_generated:
+            chart_template_path = os.path.join(
+                os.path.dirname(os.path.dirname(__file__)), 'data', 'templates', 'helm-chart-readme.md')
+            with open(chart_template_path) as f:
+                chart_template = f.read()
+
+            for app_name, values_path in chart_files.items():
+                chart_dir = os.path.dirname(values_path)
+                per_chart_dir = os.path.join(chart_dir, 'generated')
+                if os.path.isdir(per_chart_dir):
+                    chart_content = chart_template.format(
+                        chart_name=app_name,
+                        env_name=env_name,
+                        bridge_filename=self.bridge_filename,
+                        overrides_subdir=self.overrides_subdir,
+                    )
+                    per_chart_readme = os.path.join(per_chart_dir, 'README.md')
+                    with open(per_chart_readme, 'w') as f:
+                        f.write(chart_content)
 
     # ── reporting ─────────────────────────────────────────────────────────────
 

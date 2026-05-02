@@ -124,6 +124,42 @@
           "type": "object",
           "description": "Configuration related to the TFE runner"
         },
+        "helm": {
+          "type": "object",
+          "description": "Configuration related to the helm runner",
+          "properties": {
+            "config": {
+              "type": "object",
+              "properties": {
+                "enclosing_key": { "type": "string" },
+                "tfe_outputs_path": { "type": "string" },
+                "output_subdir": { "type": "string" },
+                "base_output_dir": { "type": "string" },
+                "charts_dir": { "type": "string" },
+                "bridge_filename": {
+                  "type": "string",
+                  "description": "Filename of the bridge template within each chart dir",
+                  "default": "bridge.yaml"
+                },
+                "symlink_generated": {
+                  "type": "boolean",
+                  "description": "Create symlinks in charts/{chart}/generated/ pointing to the source of truth in generated/clusters/",
+                  "default": false
+                },
+                "overrides_merge": {
+                  "type": "boolean",
+                  "description": "Enable merging overrides/{env}.yaml and overrides/{cluster}.yaml on top of rendered bridge values",
+                  "default": false
+                },
+                "overrides_subdir": {
+                  "type": "string",
+                  "description": "Subdirectory name within each chart dir for override files",
+                  "default": "overrides"
+                }
+              }
+            }
+          }
+        },
         "helmfile": {
           "type": "object",
           "description": "Configuration related to the helmfile runner",

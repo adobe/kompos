@@ -13,3 +13,9 @@ komposconfig:
       output_subdir:    "argoapps"
       base_output_dir:  "./generated"
       charts_dir:       "./values"
+      # Bridge template filename within each chart dir (contains {{ }} placeholders)
+      bridge_filename:  "bridge.yaml"
+      # When true, after rendering the bridge template, also load and merge
+      # overrides/{env}.yaml and overrides/{cluster}.yaml on top (plain YAML, no {{ }}).
+      # Merge order: bridge (base) <- env override <- cluster override (wins).
+      overrides_merge:  true

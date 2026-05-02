@@ -1,8 +1,12 @@
 # Release
 
 1. Install: `pip install bump2version`
-2. Bump version: `bump2version minor`
-3. Push the release commit: `git push --follow-tags`
-4. Wait for Travis to build at https://www.travis-ci.com/adobe/kompos:
-  * This will publish a release to https://github.com/adobe/kompos/releases
-  * Publish a new docker image version to https://hub.docker.com/r/adobe/kompos
+2. Update `CHANGELOG.md` — add a `## [x.y.z] - YYYY-MM-DD` section with your changes
+3. Bump version and tag: `bump2version minor` (or `patch` / `major`)
+4. Push the release commit and tag: `git push --follow-tags`
+
+GitHub Actions will then:
+- Run tests
+- Build the wheel and source tarball
+- Create a GitHub Release using the `CHANGELOG.md` section for this version
+- Publish to PyPI
