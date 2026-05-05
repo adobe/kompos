@@ -991,6 +991,24 @@ def test_helm_generate_single_chart():
     print("  ✓ --chart-dir renders single chart correctly")
 
 
+def test_helm_generate_fails_on_unresolved():
+    """Test that unresolved {{ }} in bridge template causes exit code 1"""
+    print("6.6 Testing unresolved interpolation fails...")
+    if not HELM_CONFIG.exists():
+        print("  ⊘ Skipped (helm example not found)")
+        return
+    result = run_kompos(
+        [str(HELM_CONFIG), "helm", "generate",
+         "--chart-dir", str(HELM_VALUES / "my-bad-bridge"), "--dry-run"],
+        cwd=str(HELM_EXAMPLE)
+    )
+    assert result.returncode != 0, "Should fail with unresolved interpolation"
+    combined = result.stdout + result.stderr
+    assert "Unresolved" in combined or "could not be resolved" in combined, \
+        "Should mention unresolved interpolation"
+    print("  ✓ Unresolved interpolation correctly fails with exit 1")
+
+
 def main():
     """Run all tests in logical order"""
     print("=" * 70)
@@ -1042,6 +1060,7 @@ def main():
             test_helm_generate_dry_run,
             test_helm_generate_writes_files,
             test_helm_generate_single_chart,
+            test_helm_generate_fails_on_unresolved,
         ]),
         ("7. CLI", [
             test_cli_help_completeness,

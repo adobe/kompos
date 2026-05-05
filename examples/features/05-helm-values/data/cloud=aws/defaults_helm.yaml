@@ -21,3 +21,7 @@ helm:
     my-worker:
       enabled: false   # disabled by default, opt-in per cluster
       version: "1.0.0"
+
+    my-bad-bridge:
+      enabled: false   # only enabled in validation test
+      version: "1.0.0"

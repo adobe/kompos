@@ -16,6 +16,8 @@ import time
 
 import yaml
 
+from himl.interpolation import InterpolationValidator
+
 from kompos.parser import SubParserConfig
 from kompos.runner import GenericRunner
 from kompos.helpers import console
@@ -285,13 +287,22 @@ class HelmRunner(GenericRunner):
                 for app_name in enabled
             }
 
-        context = self.build_context(raw_config, cluster_name, config_path)
+        infra_outputs_path = os.path.join(
+            self.base_output_dir, 'clusters', cluster_name, self.tfe_outputs_path)
+
+        # Build context once — hierarchy + infra outputs, reused for all charts
+        context = self._build_context(config_path, infra_outputs_path)
 
         argoapps_dir, _ = self._output_paths(cluster_name)
 
         dry_run = getattr(args, 'dry_run', False)
         rendered_count = 0
+        validation_errors = []
 
+        hierarchy_path = config_path or self.config_path
+        print(f"\n  {console.Colors.BOLD}{console.Colors.WHITE}Context:{console.Colors.RESET}")
+        print(f"    {console.Colors.DIM}Hierarchy:{console.Colors.RESET} {console.Colors.BLUE}{hierarchy_path}{console.Colors.RESET}")
+        print(f"    {console.Colors.DIM}Infra:{console.Colors.RESET}     {console.Colors.CYAN}{infra_outputs_path}{console.Colors.RESET}")
         print(f"\n  {console.Colors.DIM}Output:{console.Colors.RESET} {console.Colors.WHITE}{argoapps_dir}/{console.Colors.RESET}")
         print(f"\n  {console.Colors.BOLD}{console.Colors.WHITE}Charts:{console.Colors.RESET}\n")
 
@@ -327,6 +338,7 @@ class HelmRunner(GenericRunner):
                     logger.debug(f"Symlink {per_chart_file} -> {output_file}")
                 has_bridge = os.path.isfile(values_path)
                 overrides_info = getattr(self, '_last_loaded_overrides', [])
+                validation_warning = getattr(self, '_last_validation_warning', None)
                 tags = []
                 if has_bridge:
                     tags.append(f'{console.Colors.CYAN}bridge{console.Colors.RESET}')
@@ -334,9 +346,13 @@ class HelmRunner(GenericRunner):
                     tags.append(f'{console.Colors.MAGENTA}overrides{console.Colors.RESET}')
                 tag_str = f" {console.Colors.DIM}[{console.Colors.RESET}{', '.join(tags)}{console.Colors.DIM}]{console.Colors.RESET}" if tags else ""
                 print(f"    {console.Colors.GREEN}✓{console.Colors.RESET} {app_name:<40}{tag_str}")
+                if validation_warning:
+                    print(f"      {console.Colors.YELLOW}⚠ {validation_warning}{console.Colors.RESET}")
+                    validation_errors.append(app_name)
                 for override_file in overrides_info:
                     print(f"      {console.Colors.DIM}+{console.Colors.RESET} {console.Colors.MAGENTA}{override_file}{console.Colors.RESET}")
                 self._last_loaded_overrides = []
+                self._last_validation_warning = None
 
             rendered_count += 1
 
@@ -347,34 +363,30 @@ class HelmRunner(GenericRunner):
         self.report_chart_status(disabled, untracked)
         console.print_summary(total_files=rendered_count, elapsed_time=time.time() - start)
 
+        if validation_errors:
+            console.print_error(
+                f"Unresolved interpolations in {len(validation_errors)} chart(s): {', '.join(validation_errors)}")
+            sys.exit(1)
+
     # ── context ───────────────────────────────────────────────────────────────
 
-    def build_context(self, raw_config, cluster_name, config_path=None):
+    def _build_context(self, config_path, infra_outputs_path):
         """
-        Merge kompos hierarchy + TFE outputs into the interpolation context.
-
-        raw_config  → top-level keys from the kompos tree walk
-        tfe_outputs → global.infra.* overlaid on top
+        Build interpolation context once — hierarchy walk + infra outputs merge.
+        Reused for all charts to avoid repeated hierarchy walks.
         """
+        raw_config = self.get_raw_config(config_path or self.config_path, None)
         context = dict(raw_config)
 
-        tfe_path = os.path.join(
-            self.base_output_dir, 'clusters', cluster_name, self.tfe_outputs_path)
-
-        tfe_outputs = self.load_yaml_file(tfe_path)
-        if tfe_outputs is None:
+        infra_outputs = self.load_yaml_file(infra_outputs_path)
+        if infra_outputs is None:
             console.print_error(
-                f"TFE outputs not found: {tfe_path}",
+                f"Infra outputs not found: {infra_outputs_path}",
                 "Ensure terraform has been applied and outputs exported before rendering helm values."
             )
             sys.exit(1)
 
-        context = self.merge_configs(context, tfe_outputs)
-        hierarchy_path = config_path or self.config_path
-        print(f"\n  {console.Colors.BOLD}{console.Colors.WHITE}Context:{console.Colors.RESET}")
-        print(f"    {console.Colors.DIM}Hierarchy:{console.Colors.RESET} {console.Colors.BLUE}{hierarchy_path}{console.Colors.RESET}")
-        print(f"    {console.Colors.DIM}TFE:{console.Colors.RESET}       {console.Colors.CYAN}{tfe_path}{console.Colors.RESET}")
-
+        context = self.merge_configs(context, infra_outputs)
         context.pop(self.enclosing_key, None)
         return context
 
@@ -442,98 +454,52 @@ class HelmRunner(GenericRunner):
     def render_values(self, app_name, values_path, context,
                       cluster_name=None, env_name=None):
         """
-        Render values for a chart with optional overrides merging.
+        Render values for a chart against the cached context.
 
-        Four-step merge (when overrides_merge is enabled):
-          1. Bridge template (bridge.yaml) — {{ }} resolved against context
-          2. overrides/default.yaml — cross-env operational defaults (plain YAML)
-          3. overrides/{env}.yaml — env-level operational defaults (plain YAML)
-          4. overrides/{cluster}.yaml — per-cluster override (plain YAML, wins)
-
-        Each override file is optional. Merge priority (last wins):
-        bridge < default < env < cluster.
-
-        When overrides_merge is disabled, behaves as bridge-template only.
+        Pipeline:
+          1. Inject bridge template under enclosing key into context
+          2. Resolve {{ }} interpolations (himl InterpolationResolver)
+          3. Extract rendered values (pop enclosing key)
+          4. Validate no {{ }} remain (himl InterpolationValidator)
+          5. Merge overrides on top (default < env < cluster, wins)
         """
         chart_dir = os.path.dirname(values_path)
+        has_bridge = os.path.isfile(values_path)
 
-        # Step 1: bridge template interpolation
-        bridge_values = self._render_bridge(app_name, values_path, context)
+        # Step 1-4: bridge interpolation + validation
+        bridge_values = None
+        if has_bridge:
+            template = self.load_yaml_file(values_path)
+            if template:
+                context[self.enclosing_key] = template
+                try:
+                    self.resolve_interpolations(context)
+                except Exception as e:
+                    logger.error(f"Interpolation failed for '{app_name}': {e}")
+                    context.pop(self.enclosing_key, None)
+                    raise
+                bridge_values = context.pop(self.enclosing_key)
+                try:
+                    InterpolationValidator().check_all_interpolations_resolved(bridge_values)
+                except Exception as e:
+                    self._last_validation_warning = str(e)
 
-        # Step 2+3: overrides merge (optional, guarded by config flag)
+        # Step 5: overrides merge
+        loaded = []
         if self.overrides_merge:
-            override_values = self._load_override_files(
-                chart_dir, env_name, cluster_name)
-            if override_values and bridge_values:
-                return self.merge_configs(bridge_values, override_values)
-            if override_values:
-                return override_values
+            overrides_dir = os.path.join(chart_dir, self.overrides_subdir)
+            for name in ['default.yaml', f'{env_name}.yaml', f'{cluster_name}.yaml']:
+                path = os.path.join(overrides_dir, name)
+                override = self.load_yaml_file(path)
+                if override:
+                    if bridge_values:
+                        bridge_values = self.merge_configs(bridge_values, override)
+                    else:
+                        bridge_values = override
+                    loaded.append(name)
+        self._last_loaded_overrides = loaded
 
         return bridge_values
-
-    def _render_bridge(self, app_name, values_path, context):
-        """Render a bridge template against the interpolation context."""
-        template = self.load_yaml_file(values_path)
-        if template is None:
-            if not self.overrides_merge:
-                console.print_warning(f"{self.bridge_filename} not found for '{app_name}': {values_path}")
-            return None
-
-        context[self.enclosing_key] = template
-
-        try:
-            self.resolve_interpolations(context)
-        except Exception as e:
-            logger.error(f"Interpolation failed for '{app_name}': {e}")
-            context.pop(self.enclosing_key, None)
-            raise
-
-        return context.pop(self.enclosing_key)
-
-    def _load_override_files(self, chart_dir, env_name, cluster_name):
-        """
-        Load overrides/{default,env,cluster}.yaml as plain YAML.
-
-        These are operational overrides (resources, replicas, flags) that live
-        outside the Kompos hierarchy. No {{ }} interpolation — just standard YAML.
-
-        Files (each optional):
-          default.yaml          — cross-env defaults shared by all clusters
-          {env_name}.yaml       — env-specific defaults (e.g. dev.yaml)
-          {cluster_name}.yaml   — per-cluster override
-
-        Merge order: default (base) ← env ← cluster (wins).
-        Returns None if no override files exist.
-        """
-        overrides_dir = os.path.join(chart_dir, self.overrides_subdir)
-        if not os.path.isdir(overrides_dir):
-            return None
-
-        result = {}
-        loaded = []
-
-        default_values = self.load_yaml_file(
-            os.path.join(overrides_dir, 'default.yaml'))
-        if default_values:
-            result = self.merge_configs(result, default_values)
-            loaded.append('default.yaml')
-
-        if env_name:
-            env_values = self.load_yaml_file(
-                os.path.join(overrides_dir, f'{env_name}.yaml'))
-            if env_values:
-                result = self.merge_configs(result, env_values)
-                loaded.append(f'{env_name}.yaml')
-
-        if cluster_name:
-            cluster_values = self.load_yaml_file(
-                os.path.join(overrides_dir, f'{cluster_name}.yaml'))
-            if cluster_values:
-                result = self.merge_configs(result, cluster_values)
-                loaded.append(f'{cluster_name}.yaml')
-
-        self._last_loaded_overrides = loaded
-        return result if result else None
 
     # ── generated README ────────────────────────────────────────────────────
 
