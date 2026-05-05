@@ -1,0 +1,3 @@
+my-bad-bridge:
+  validKey: "{{cluster.fullName}}"
+  brokenKey: "{{cluster.doesNotExist}}"

@@ -312,9 +312,17 @@ class HelmRunner(GenericRunner):
             if rendered is None:
                 continue
 
+            # Track validation warnings regardless of dry-run
+            validation_warning = getattr(self, '_last_validation_warning', None)
+            if validation_warning:
+                validation_errors.append(app_name)
+
             if dry_run:
                 print(f"\n# ── {app_name} ──────────────────────────────────────")
+                if validation_warning:
+                    print(f"# ⚠ {validation_warning}")
                 print(yaml.dump(rendered, default_flow_style=False))
+                self._last_validation_warning = None
             else:
                 # Source of truth: generated/clusters/{cluster}/helm-values/{chart}.yaml
                 output_file = os.path.join(argoapps_dir, f"{app_name}.yaml")
@@ -338,7 +346,6 @@ class HelmRunner(GenericRunner):
                     logger.debug(f"Symlink {per_chart_file} -> {output_file}")
                 has_bridge = os.path.isfile(values_path)
                 overrides_info = getattr(self, '_last_loaded_overrides', [])
-                validation_warning = getattr(self, '_last_validation_warning', None)
                 tags = []
                 if has_bridge:
                     tags.append(f'{console.Colors.CYAN}bridge{console.Colors.RESET}')
@@ -348,7 +355,6 @@ class HelmRunner(GenericRunner):
                 print(f"    {console.Colors.GREEN}✓{console.Colors.RESET} {app_name:<40}{tag_str}")
                 if validation_warning:
                     print(f"      {console.Colors.YELLOW}⚠ {validation_warning}{console.Colors.RESET}")
-                    validation_errors.append(app_name)
                 for override_file in overrides_info:
                     print(f"      {console.Colors.DIM}+{console.Colors.RESET} {console.Colors.MAGENTA}{override_file}{console.Colors.RESET}")
                 self._last_loaded_overrides = []
