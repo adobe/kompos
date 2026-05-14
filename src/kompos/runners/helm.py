@@ -520,7 +520,6 @@ class HelmRunner(GenericRunner):
 
         content = template.format(
             cluster_name=cluster_name,
-            env_name=env_name,
             bridge_filename=self.bridge_filename,
             overrides_subdir=self.overrides_subdir,
             charts_list=charts_list,
@@ -545,7 +544,6 @@ class HelmRunner(GenericRunner):
                 if os.path.isdir(per_chart_dir):
                     chart_content = chart_template.format(
                         chart_name=app_name,
-                        env_name=env_name,
                         bridge_filename=self.bridge_filename,
                         overrides_subdir=self.overrides_subdir,
                     )
