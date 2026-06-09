@@ -62,8 +62,12 @@ def _build_default_dispatch_args(runner_type):
             himl_args=None,
         )
     if runner_type == 'terraform':
+        # compile 'build' generates artifacts only (like tfe/helm); dry_run keeps
+        # execution() a no-op so we never run terraform against live infra.
         return argparse.Namespace(
             command='terraform',
+            subcommand='plan',
+            dry_run=True,
             filter=None,
             exclude=None,
             himl_args=None,
@@ -173,22 +177,28 @@ class CompileRunner(GenericRunner):
             console.print_warning("No compositions found under the given path.")
             return 0
 
+        enabled_comps, disabled_comps = self._partition_enabled_compositions(all_comps)
+
         print(f"\n  Found {len(all_comps)} composition(s):\n")
-        for comp_type, comp_path in all_comps:
+        for comp_type, comp_path in enabled_comps:
             owner = routing.get(comp_type, '?')
             rel   = os.path.relpath(comp_path)
             suffix = '  (dry-run)' if dry_run else ''
             print(f"    [{owner}] {rel}{suffix}")
+        for comp_type, comp_path in disabled_comps:
+            owner = routing.get(comp_type, '?')
+            rel   = os.path.relpath(comp_path)
+            print(f"    [{owner}] {rel}  {console.Colors.DIM}(composition.enabled: false){console.Colors.RESET}")
         print()
 
         if action == 'build' and not dry_run:
-            rc = self._build(all_comps, routing, args)
+            rc = self._build(enabled_comps, routing, args)
             if prune:
-                self._prune_stale(all_comps, routing, dry_run=False)
+                self._prune_stale(enabled_comps, routing, dry_run=False)
             return rc
 
         if action == 'build' and dry_run and prune:
-            self._prune_stale(all_comps, routing, dry_run=True)
+            self._prune_stale(enabled_comps, routing, dry_run=True)
 
         if action == 'destroy':
             console.print_warning("'destroy' is not yet implemented.")
@@ -220,6 +230,18 @@ class CompileRunner(GenericRunner):
                 results.extend(self._walk_compositions(full))
 
         return results
+
+    def _partition_enabled_compositions(self, all_comps):
+        """Load raw config once per composition; split enabled vs disabled."""
+        enabled = []
+        disabled = []
+        for comp_type, comp_path in all_comps:
+            raw_config = self.get_raw_config(comp_path, comp_type)
+            if self.is_composition_enabled(raw_config):
+                enabled.append((comp_type, comp_path))
+            else:
+                disabled.append((comp_type, comp_path))
+        return enabled, disabled
 
     # ── build ─────────────────────────────────────────────────────────────────
 
@@ -277,10 +299,7 @@ class CompileRunner(GenericRunner):
             if not runner_type:
                 continue
             try:
-                raw = self.generate_config(
-                    config_path=comp_path, filters=[], exclude_keys=[],
-                    skip_interpolation_resolving=True, skip_interpolation_validation=True,
-                    skip_secrets=True, silent=True)
+                raw = self.get_raw_config(comp_path, comp_type)
                 inst = raw.get('composition', {}).get('instance', '')
                 if not inst or '{{' in str(inst):
                     inst = raw.get('cluster', {}).get('fullName', '')

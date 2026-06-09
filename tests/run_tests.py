@@ -842,6 +842,174 @@ def test_tfe_multi_cluster():
     print(f"  ✓ Multi-cluster generation: {len(tfvars_files)} tfvars files generated")
 
 
+# =============================================================================
+# 5b. COMPOSITION ENABLED TOGGLE (composition.enabled: false skips generation)
+# =============================================================================
+
+import contextlib
+
+
+@contextlib.contextmanager
+def _composition_enabled_override(composition_yaml, enabled):
+    """Temporarily set composition.enabled in a composition.yaml, then restore it.
+
+    Inserts `enabled` as the first key under the top-level `composition:` block so it
+    works regardless of whether other top-level blocks (e.g. `workspace:`) follow.
+    """
+    original = composition_yaml.read_text()
+    lines = original.splitlines()
+    out = []
+    inserted = False
+    for line in lines:
+        out.append(line)
+        if not inserted and line.rstrip() == "composition:":
+            out.append(f"  enabled: {enabled}")
+            inserted = True
+    assert inserted, f"No top-level 'composition:' block in {composition_yaml}"
+    try:
+        composition_yaml.write_text("\n".join(out) + "\n")
+        yield
+    finally:
+        composition_yaml.write_text(original)
+
+
+@contextlib.contextmanager
+def _composition_yaml_override(composition_yaml, content):
+    """Temporarily replace a composition.yaml with given content, then restore it."""
+    original = composition_yaml.read_text()
+    try:
+        composition_yaml.write_text(content)
+        yield
+    finally:
+        composition_yaml.write_text(original)
+
+
+def test_composition_enabled_false_skips_generation():
+    """composition.enabled: false -> composition is skipped, no files generated, exit 0"""
+    print("5.6 Testing composition.enabled: false skips generation...")
+    if not TFE_CONFIG_PROD.exists():
+        print("  ⊘ Skipped (TFE example not found)")
+        return
+
+    import shutil
+    composition_yaml = TFE_CONFIG_PROD / "composition.yaml"
+    instance_dir = TFE_EXAMPLE / "generated" / "terraform" / "demo-prod-use1-cluster-02"
+    if instance_dir.exists():
+        shutil.rmtree(instance_dir)
+
+    with _composition_enabled_override(composition_yaml, "false"):
+        result = run_kompos([str(TFE_CONFIG_PROD), "tfe", "generate"], cwd=str(TFE_EXAMPLE))
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, f"Disabled composition should exit 0:\n{output}"
+    assert "skipping" in output.lower() and "composition.enabled" in output, \
+        f"Should report skip reason 'composition.enabled':\n{output}"
+    assert not instance_dir.exists(), \
+        f"No files should be generated for a disabled composition, found: {instance_dir}"
+    print("  ✓ composition.enabled: false skips generation (no files, exit 0)")
+
+
+def test_composition_enabled_true_generates():
+    """composition.enabled: true (explicit) -> still generates as normal"""
+    print("5.7 Testing explicit composition.enabled: true generates...")
+    if not TFE_CONFIG_DEV.exists():
+        print("  ⊘ Skipped (TFE example not found)")
+        return
+
+    import shutil
+    composition_yaml = TFE_CONFIG_DEV / "composition.yaml"
+    instance_dir = TFE_EXAMPLE / "generated" / "terraform" / "demo-dev-usw2-cluster-01"
+    if instance_dir.exists():
+        shutil.rmtree(instance_dir)
+
+    with _composition_enabled_override(composition_yaml, "true"):
+        result = run_kompos(
+            [str(TFE_CONFIG_DEV), "tfe", "generate", "--tfvars-only"],
+            cwd=str(TFE_EXAMPLE)
+        )
+
+    assert result.returncode == 0, f"Enabled composition should generate:\n{result.stderr}"
+    tfvars = list(instance_dir.glob("*.tfvars.yaml")) if instance_dir.exists() else []
+    assert tfvars, f"composition.enabled: true should still produce tfvars in {instance_dir}"
+    print("  ✓ explicit composition.enabled: true generates normally")
+
+
+def test_composition_enabled_false_skips_in_compile():
+    """compile build lists a disabled composition as disabled and does not build it"""
+    print("5.8 Testing composition.enabled: false skipped by 'compile build'...")
+    if not KOMPOSCONFIG_CONFIG.exists():
+        print("  ⊘ Skipped (06-komposconfig example not found)")
+        return
+
+    import shutil
+    composition_yaml = KOMPOSCONFIG_CONFIG / "composition.yaml"
+    cluster_root = KOMPOSCONFIG_CONFIG.parent  # parent dir contains composition=cluster/
+    instance_dir = KOMPOSCONFIG_EXAMPLE / "generated" / "clusters" / "my-cluster-dev-usw2"
+    generated = KOMPOSCONFIG_EXAMPLE / "generated"
+    if generated.exists():
+        shutil.rmtree(generated)
+
+    with _composition_enabled_override(composition_yaml, "false"):
+        result = run_kompos([str(cluster_root), "compile", "build"], cwd=str(KOMPOSCONFIG_EXAMPLE))
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, f"compile build should exit 0 with a disabled composition:\n{output}"
+    assert "composition.enabled: false" in output, \
+        f"compile should list the composition as disabled:\n{output}"
+    assert not instance_dir.exists(), \
+        f"Disabled composition must not be built, found: {instance_dir}"
+    print("  ✓ compile build lists disabled composition and skips building it")
+
+
+def test_tfe_unresolved_instance_fails():
+    """Unresolvable composition.instance -> one actionable error and exit code 1"""
+    print("5.9 Testing unresolved composition.instance fails with exit 1...")
+    if not TFE_CONFIG_DEV.exists():
+        print("  ⊘ Skipped (TFE example not found)")
+        return
+
+    composition_yaml = TFE_CONFIG_DEV / "composition.yaml"
+    bad_content = (
+        "---\n"
+        "composition:\n"
+        "  type: cluster\n"
+        '  instance: "{{cluster.does_not_exist}}"\n'
+    )
+    with _composition_yaml_override(composition_yaml, bad_content):
+        result = run_kompos(
+            [str(TFE_CONFIG_DEV), "tfe", "generate", "--tfvars-only"],
+            cwd=str(TFE_EXAMPLE)
+        )
+
+    output = result.stdout + result.stderr
+    assert result.returncode != 0, f"Unresolvable instance should exit non-zero:\n{output}"
+    assert "Cannot resolve composition instance" in output, \
+        f"Should print one actionable error:\n{output}"
+    print("  ✓ unresolved composition.instance fails with exit 1 + actionable error")
+
+
+def test_compile_build_dispatches_without_crash():
+    """compile build dispatches a routed composition (terraform) without crashing (regression)."""
+    print("5.10 Testing compile build dispatches without crash...")
+    if not KOMPOSCONFIG_CONFIG.exists():
+        print("  ⊘ Skipped (06-komposconfig example not found)")
+        return
+
+    import shutil
+    cluster_root = KOMPOSCONFIG_CONFIG.parent
+    runtime = KOMPOSCONFIG_EXAMPLE / ".kompos-runtime" / "terraform"
+    if runtime.exists():
+        shutil.rmtree(runtime)
+
+    result = run_kompos([str(cluster_root), "compile", "build"], cwd=str(KOMPOSCONFIG_EXAMPLE))
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, f"compile build should succeed:\n{output}"
+    assert "has no attribute" not in output, f"dispatch must not raise AttributeError:\n{output}"
+    assert "composition(s) failed" not in output, f"no composition should fail:\n{output}"
+    tfvars = list(runtime.rglob("variables.tfvars.json")) if runtime.exists() else []
+    assert tfvars, "compile build should generate terraform tfvars artifacts (generate-only)"
+    print("  ✓ compile build dispatches composition (generates artifacts, no execution)")
 
 
 # =============================================================================
@@ -1053,6 +1221,11 @@ def main():
             test_tfe_generates_versioned_compositions,
             test_tfe_generates_workspaces,
             test_tfe_multi_cluster,
+            test_composition_enabled_false_skips_generation,
+            test_composition_enabled_true_generates,
+            test_composition_enabled_false_skips_in_compile,
+            test_tfe_unresolved_instance_fails,
+            test_compile_build_dispatches_without_crash,
         ]),
         ("6. HELM VALUES GENERATION", [
             test_helm_help,

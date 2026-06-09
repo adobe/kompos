@@ -125,9 +125,14 @@ class TFERunner(GenericTerraformRunner):
     def execution_configuration(self, composition, config_path, default_output_path, raw_config,
                                 filtered_keys, excluded_keys):
         args = self.himl_args
-        
+
         # Start timing
         start_time = time.time()
+
+        instance = self.require_composition_instance(raw_config)
+        if not instance:
+            return 1
+
         composition_files = 0
         config_files = 0
 
@@ -138,7 +143,7 @@ class TFERunner(GenericTerraformRunner):
 
         # Generate per-cluster composition (working_directory for TFE)
         if generate_composition:
-            file_count = self.generate_composition(composition, raw_config)
+            file_count = self.generate_composition(composition, raw_config, instance_name=instance)
             composition_files = file_count if file_count else 0
             # Add separator after composition files if we're generating config files
             if generate_tfvars or generate_workspace:
@@ -146,20 +151,24 @@ class TFERunner(GenericTerraformRunner):
 
         # Generate tfvars file
         if generate_tfvars:
-            self.generate_tfvars(composition, config_path, raw_config, filtered_keys, excluded_keys)
+            self.generate_tfvars(
+                composition, config_path, raw_config, filtered_keys, excluded_keys,
+                instance_name=instance,
+            )
             config_files += 1
 
         # Generate workspace config file
         if generate_workspace:
-            self.generate_workspace_config(config_path, raw_config)
+            self.generate_workspace_config(config_path, raw_config, instance_name=instance)
             config_files += 1
-        
+
         # Print summary with metrics
         total_files = composition_files + config_files
         elapsed_time = time.time() - start_time
         console.print_summary(total_files=total_files, elapsed_time=elapsed_time)
+        return 0
 
-    def generate_composition(self, composition, raw_config):
+    def generate_composition(self, composition, raw_config, instance_name=None):
         """
         Generate per-cluster TFE working_directory with modules.
         
@@ -169,11 +178,12 @@ class TFERunner(GenericTerraformRunner):
         Args:
             composition: Name of the composition (e.g., 'cluster')
             raw_config: Configuration dictionary from hiera
+            instance_name: Pre-resolved composition.instance (optional)
             
         Returns:
             int: Total number of files processed
         """
-        cluster_name = self.get_composition_name(raw_config)
+        cluster_name = instance_name or self.get_composition_name(raw_config)
         if not cluster_name:
             return 0
 
@@ -222,9 +232,10 @@ class TFERunner(GenericTerraformRunner):
         
         return file_count
 
-    def generate_tfvars(self, composition, config_path, raw_config, filtered_keys, excluded_keys):
+    def generate_tfvars(self, composition, config_path, raw_config, filtered_keys, excluded_keys,
+                        instance_name=None):
         """Generate the tfvars file for TFE (per-composition)"""
-        workspace_name = self.get_composition_name(raw_config)
+        workspace_name = instance_name or self.get_composition_name(raw_config)
         if not workspace_name:
             return
 
@@ -261,9 +272,9 @@ class TFERunner(GenericTerraformRunner):
         console.print_success("Configuration generated")
         console.print_file_generation("tfvars", output_file)
 
-    def generate_workspace_config(self, config_path, raw_config):
+    def generate_workspace_config(self, config_path, raw_config, instance_name=None):
         """Generate the workspace configuration file for TFE workspace creation"""
-        workspace_name = self.get_composition_name(raw_config)
+        workspace_name = instance_name or self.get_composition_name(raw_config)
         if not workspace_name:
             return
 

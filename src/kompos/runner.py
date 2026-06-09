@@ -48,6 +48,7 @@ class GenericRunner:
 
         self.kompos_config = kompos_config
         self.config_path = config_path
+        self._raw_config_cache = {}
         self.himl_args = None
         self.reverse = False
         self.ordered_compositions = False
@@ -223,14 +224,21 @@ class GenericRunner:
         All keys must be available for interpolation (exclusions break references).
         
         Exclusions/filters are applied separately when generating final output files.
+
+        Memoized per (config_path, composition): the same raw config is read
+        multiple times in a single run (enabled check, ownership, generation),
+        and generate_config re-runs the full himl merge each call.
         """
-        return self.generate_config(
-            config_path=config_path,
-            exclude_keys=[],  # No exclusions - all keys available for interpolation
-            filters=[],  # No filters - generate complete config
-            skip_interpolation_validation=True,
-            skip_secrets=True
-        )
+        cache_key = (config_path, composition)
+        if cache_key not in self._raw_config_cache:
+            self._raw_config_cache[cache_key] = self.generate_config(
+                config_path=config_path,
+                exclude_keys=[],  # No exclusions - all keys available for interpolation
+                filters=[],  # No filters - generate complete config
+                skip_interpolation_validation=True,
+                skip_secrets=True
+            )
+        return self._raw_config_cache[cache_key]
 
     def get_composition_name(self, raw_config):
         """
@@ -254,6 +262,39 @@ class GenericRunner:
             raw_config=raw_config,
             get_nested_value_fn=self.get_nested_value
         )
+
+    def is_composition_enabled(self, raw_config):
+        """
+        Return False when composition.enabled is explicitly false in layered config.
+        Default: True (generate as today).
+        """
+        enabled = self.get_nested_value(raw_config, 'composition.enabled')
+        if enabled is None:
+            return True
+        if isinstance(enabled, str):
+            return enabled.strip().lower() not in ('false', '0', 'no')
+        return bool(enabled)
+
+    def require_composition_instance(self, raw_config):
+        name = self.get_composition_name(raw_config)
+        if name:
+            return name
+
+        instance_expr = self.get_nested_value(raw_config, 'composition.instance')
+        details = []
+        if instance_expr:
+            details.append(f"  composition.instance: {instance_expr!r} (unresolved)")
+        else:
+            details.append("  composition.instance: not set in layered config")
+        if 'cluster.' in str(instance_expr or ''):
+            details.append(
+                "  Add cluster.yaml beside composition=cluster/ with cluster.name."
+            )
+        elif 'account.' in str(instance_expr or ''):
+            details.append("  Add account identity config defining account.name.")
+        details.append(f"  Config path: {self.config_path}")
+        console.print_error("Cannot resolve composition instance", details=details)
+        return None
 
     def get_composition_output_dir(self, raw_config):
         """
@@ -324,8 +365,11 @@ class GenericRunner:
                 console.print_status(f"  {console.Colors.YELLOW}↳{console.Colors.RESET} skipping '{composition}' {console.Colors.DIM}(use 'compile build' to run all){console.Colors.RESET}")
                 continue
 
-            # Raw config generation
+            # Raw config generation (only for owned compositions)
             raw_config = self.get_raw_config(config_path, composition)
+            if not self.is_composition_enabled(raw_config):
+                console.print_status(f"  {console.Colors.YELLOW}↳{console.Colors.RESET} skipping '{composition}' {console.Colors.DIM}(composition.enabled: false){console.Colors.RESET}")
+                continue
 
             # Generate output paths for configs
             default_output_path = None
@@ -343,9 +387,13 @@ class GenericRunner:
             if getattr(self.himl_args, 'exclude', None):
                 excluded_keys = excluded_keys + self.himl_args.exclude
 
-            # Runner pre-configuration
-            self.execution_configuration(composition, config_path, default_output_path, raw_config,
-                                         filtered_keys, excluded_keys)
+            # Runner pre-configuration (non-zero return = abort remaining compositions)
+            pre_rc = self.execution_configuration(
+                composition, config_path, default_output_path, raw_config,
+                filtered_keys, excluded_keys,
+            )
+            if pre_rc:
+                return pre_rc
 
             # Execute runner
             return_code = self.execute(self.execution(args, extra_args, default_output_path, composition, raw_config))
@@ -363,7 +411,8 @@ class GenericRunner:
 
     def execution_configuration(self, composition, config_path, default_output_path, raw_config,
                                 filtered_keys, excluded_keys):
-        return
+        """Hook for pre-execute file generation. Return non-zero to abort."""
+        return 0
 
     @staticmethod
     def execution(args, extra_args, default_output_path, composition, raw_config):

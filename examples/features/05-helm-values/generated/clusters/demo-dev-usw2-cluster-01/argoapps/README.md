@@ -24,7 +24,7 @@ Do not edit these files — they are overwritten on every generation run.
                                                         |
                                             +-----------+-----------+
                                             | 5. Env override       |
-                                            |    overrides/dev.yaml
+                                            |    overrides/{env}.yaml
                                             +-----------+-----------+
                                                         |
                                             +-----------+-----------+

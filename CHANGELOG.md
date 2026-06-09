@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.4] - 2026-06-03
+
+### Added
+- **`composition.enabled`** — when `false` in layered config, `compile build` and individual
+  runners skip generation for that composition root. Disabled compositions are omitted from
+  `--prune` live set so stale `generated/` artifacts are removed.
+
+### Changed
+- **TFE unresolved instance** — when `composition.instance` cannot be resolved, the runner
+  now prints one actionable error (instead of a repeated low-level warning) and exits with
+  code 1 instead of silently succeeding with 0 files generated. `composition.enabled: false`
+  is reported with a single skip line.
+
+### Fixed
+- **Redundant config reads** — `get_raw_config` is memoized per `(config_path, composition)`,
+  so the enabled check, ownership check, and generation no longer re-run the full himl merge.
+
 ## [0.11.0] - 2026-05-01
 
 ### Added

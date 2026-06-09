@@ -318,6 +318,6 @@ class KomposConfig:
             logger.debug(f"Using composition instance from layered config: '{name}'")
             return name
 
-        # Fallback if not defined or unresolved
-        logger.warning("No resolved composition.instance in layered config")
+        # Fallback if not defined or unresolved (caller prints one user-facing error)
+        logger.debug("No resolved composition.instance in layered config")
         return None
