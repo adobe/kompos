@@ -1109,6 +1109,62 @@ def test_compile_prune_keeps_helm_only_cluster():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_manual_composition_writes_declared_files():
+    """A manual composition materializes composition.files (from_key + inline content)."""
+    print("5.13 Testing manual composition writes declared files...")
+
+    import shutil
+    import tempfile
+    import yaml as _yaml
+    from kompos.runners.manual import ManualRunner
+
+    class _StubKomposConfig:
+        def __init__(self, base):
+            self._base = base
+
+        def get_kompos_setting(self, key, default=None):
+            return self._base if key == 'defaults.base_output_dir' else default
+
+        def get_composition_name(self, raw_config, get_nested_value_fn):
+            return get_nested_value_fn(raw_config, 'composition.instance')
+
+    tmp = tempfile.mkdtemp(prefix="kompos-manual-")
+    try:
+        runner = ManualRunner.__new__(ManualRunner)
+        runner.kompos_config = _StubKomposConfig(tmp)
+        runner.config_path = "<test>"
+
+        raw = {
+            'composition': {
+                'type': 'manual',
+                'instance': 'colligo-laser01-dev-uw2',
+                'files': [
+                    {'path': 'terraform-outputs/tfe-outputs.yaml', 'from_key': 'tf_generated'},
+                    {'path': 'notes/info.yaml', 'content': {'hello': 'world'}},
+                ],
+            },
+            'tf_generated': {'infra': {'vault_approle_secret_name': 'secret-x'}},
+        }
+
+        rc = runner.execution_configuration('manual', '<test>', None, raw, [], [])
+        assert rc == 0, "manual composition should succeed"
+
+        inst = os.path.join(tmp, 'clusters', 'colligo-laser01-dev-uw2')
+        out_from_key = os.path.join(inst, 'terraform-outputs', 'tfe-outputs.yaml')
+        out_inline = os.path.join(inst, 'notes', 'info.yaml')
+        assert os.path.isfile(out_from_key), f"from_key file not written: {out_from_key}"
+        assert os.path.isfile(out_inline), f"inline file not written: {out_inline}"
+
+        with open(out_from_key) as f:
+            assert _yaml.safe_load(f)['tf_generated']['infra']['vault_approle_secret_name'] == 'secret-x', \
+                "from_key body should snapshot the subtree under its leaf key (tf_generated)"
+        with open(out_inline) as f:
+            assert _yaml.safe_load(f)['hello'] == 'world', "inline content should be written verbatim"
+        print("  ✓ manual composition wrote from_key subtree + inline content under instance dir")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 # =============================================================================
 # 5. CLI ERROR HANDLING
 # =============================================================================
@@ -1325,6 +1381,7 @@ def main():
             test_compile_build_dispatches_without_crash,
             test_compile_prune_keeps_disabled_composition,
             test_compile_prune_keeps_helm_only_cluster,
+            test_manual_composition_writes_declared_files,
         ]),
         ("6. HELM VALUES GENERATION", [
             test_helm_help,

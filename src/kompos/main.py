@@ -24,6 +24,7 @@ from .runners.explore import ExploreParserConfig, ExploreRunner
 from .runners.compile import CompileParserConfig, CompileRunner
 from .runners.helm import HelmParserConfig, HelmRunner
 from .runners.helmfile import HelmfileParser, HelmfileRunner
+from .runners.manual import ManualParserConfig, ManualRunner
 from .runners.terraform import TerraformParser, TerraformRunner
 from .runners.tfe import TFEParserConfig, TFERunner
 from .runners.validate import ValidateParserConfig, ValidateRunner
@@ -89,6 +90,7 @@ class AppContainer(Container):
         self.terraform_runner = auto(TerraformRunner)
         self.helm_runner = auto(HelmRunner)
         self.helmfile_runner = auto(HelmfileRunner)
+        self.manual_runner = auto(ManualRunner)
         self.config_runner = auto(ConfigRenderRunner)
         self.explore_runner = auto(ExploreRunner)
         self.tfe_runner = auto(TFERunner)
@@ -101,6 +103,7 @@ class AppContainer(Container):
         parsers.add(auto(CompileParserConfig))
         parsers.add(auto(HelmParserConfig))
         parsers.add(auto(HelmfileParser))
+        parsers.add(auto(ManualParserConfig))
         parsers.add(auto(ConfigRenderParserConfig))
         parsers.add(auto(ExploreParserConfig))
         parsers.add(auto(TFEParserConfig))

@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runners skip generation for that composition root. Disabled compositions are still in
   configs/, so they stay in the `--prune` live set: their existing `generated/` artifacts are
   frozen (skip ≠ delete). `--prune` only removes artifacts for compositions removed from configs/.
+- **`manual` composition / runner** — materializes hand-declared artifacts that have no
+  upstream generator (e.g. a mock terraform-outputs file for a cluster whose infra is managed
+  elsewhere). Declared under `composition.files: [{path, from_key|content}]`; the runner writes
+  each to `<base>/<output_subdir>/<instance>/<path>` (`output_subdir` defaults to `clusters`).
+  This makes such files config-as-code and prune-aware instead of stray hand-edited files in
+  the generated tree.
 
 ### Changed
 - **TFE unresolved instance** — when `composition.instance` cannot be resolved, the runner
