@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **`composition.enabled`** — when `false` in layered config, `compile build` and individual
-  runners skip generation for that composition root. Disabled compositions are omitted from
-  `--prune` live set so stale `generated/` artifacts are removed.
+  runners skip generation for that composition root. Disabled compositions are still in
+  configs/, so they stay in the `--prune` live set: their existing `generated/` artifacts are
+  frozen (skip ≠ delete). `--prune` only removes artifacts for compositions removed from configs/.
 
 ### Changed
 - **TFE unresolved instance** — when `composition.instance` cannot be resolved, the runner

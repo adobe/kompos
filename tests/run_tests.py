@@ -1012,6 +1012,45 @@ def test_compile_build_dispatches_without_crash():
     print("  ✓ compile build dispatches composition (generates artifacts, no execution)")
 
 
+def test_compile_prune_keeps_disabled_composition():
+    """compile --prune freezes a disabled (but in-configs) composition; prunes only removed ones."""
+    print("5.11 Testing compile --prune keeps disabled composition...")
+    if not KOMPOSCONFIG_CONFIG.exists():
+        print("  ⊘ Skipped (06-komposconfig example not found)")
+        return
+
+    import shutil
+    composition_yaml = KOMPOSCONFIG_CONFIG / "composition.yaml"
+    cluster_root = KOMPOSCONFIG_CONFIG.parent
+    generated = KOMPOSCONFIG_EXAMPLE / "generated"
+    clusters_dir = generated / "clusters"
+    # Still present in configs/ (just disabled) — must be frozen, not pruned.
+    disabled_instance = clusters_dir / "my-cluster-dev-usw2"
+    # No longer in configs/ — must be pruned.
+    ghost_instance = clusters_dir / "ghost-cluster-dev-usw2"
+
+    if generated.exists():
+        shutil.rmtree(generated)
+    disabled_instance.mkdir(parents=True)
+    (disabled_instance / "main.tf").write_text("# frozen artifact\n")
+    ghost_instance.mkdir(parents=True)
+    (ghost_instance / "main.tf").write_text("# stale artifact\n")
+
+    with _composition_enabled_override(composition_yaml, "false"):
+        result = run_kompos(
+            [str(cluster_root), "compile", "build", "--prune"],
+            cwd=str(KOMPOSCONFIG_EXAMPLE),
+        )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, f"compile build --prune should exit 0:\n{output}"
+    assert disabled_instance.exists(), \
+        f"Disabled-but-in-configs composition must NOT be pruned: {disabled_instance}\n{output}"
+    assert not ghost_instance.exists(), \
+        f"Composition removed from configs/ should be pruned: {ghost_instance}\n{output}"
+    print("  ✓ compile --prune freezes disabled composition, prunes only removed ones")
+
+
 # =============================================================================
 # 5. CLI ERROR HANDLING
 # =============================================================================
@@ -1226,6 +1265,7 @@ def main():
             test_composition_enabled_false_skips_in_compile,
             test_tfe_unresolved_instance_fails,
             test_compile_build_dispatches_without_crash,
+            test_compile_prune_keeps_disabled_composition,
         ]),
         ("6. HELM VALUES GENERATION", [
             test_helm_help,

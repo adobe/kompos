@@ -194,11 +194,14 @@ class CompileRunner(GenericRunner):
         if action == 'build' and not dry_run:
             rc = self._build(enabled_comps, routing, args)
             if prune:
-                self._prune_stale(enabled_comps, routing, dry_run=False)
+                # Prune diffs against every composition still in configs/ (enabled
+                # OR disabled). Disabled is skipped, not deleted — only compositions
+                # removed from configs/ are stale.
+                self._prune_stale(all_comps, routing, dry_run=False)
             return rc
 
         if action == 'build' and dry_run and prune:
-            self._prune_stale(enabled_comps, routing, dry_run=True)
+            self._prune_stale(all_comps, routing, dry_run=True)
 
         if action == 'destroy':
             console.print_warning("'destroy' is not yet implemented.")
@@ -292,7 +295,13 @@ class CompileRunner(GenericRunner):
     # ── prune ─────────────────────────────────────────────────────────────────
 
     def _prune_stale(self, live_comps, routing, dry_run=False):
-        """Remove generated artifact dirs for compositions no longer in configs/."""
+        """Remove generated artifact dirs for compositions no longer in configs/.
+
+        ``live_comps`` must be every composition still present in configs/ —
+        enabled AND disabled. Disabling a composition skips its generation but
+        keeps it in the live set, so its artifacts are frozen, not pruned. Only
+        compositions removed from configs/ entirely are treated as stale.
+        """
         live_instances = {}
         for comp_type, comp_path in live_comps:
             runner_type = routing.get(comp_type)
