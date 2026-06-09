@@ -38,9 +38,6 @@
             },
             "order": {
               "type": "object",
-              "required": [
-                "terraform"
-              ],
               "properties": {
                 "terraform": {
                   "type": "array",

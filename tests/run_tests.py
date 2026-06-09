@@ -884,9 +884,9 @@ def _composition_yaml_override(composition_yaml, content):
         composition_yaml.write_text(original)
 
 
-def test_composition_enabled_false_skips_generation():
-    """composition.enabled: false -> composition is skipped, no files generated, exit 0"""
-    print("5.6 Testing composition.enabled: false skips generation...")
+def test_composition_enabled_false_pauses_workspace():
+    """composition.enabled: false -> TFE emits a paused workspace only; tfvars+modules frozen, exit 0"""
+    print("5.6 Testing composition.enabled: false emits paused workspace only...")
     if not TFE_CONFIG_PROD.exists():
         print("  ⊘ Skipped (TFE example not found)")
         return
@@ -894,19 +894,27 @@ def test_composition_enabled_false_skips_generation():
     import shutil
     composition_yaml = TFE_CONFIG_PROD / "composition.yaml"
     instance_dir = TFE_EXAMPLE / "generated" / "terraform" / "demo-prod-use1-cluster-02"
+    workspace_file = TFE_EXAMPLE / "generated" / "workspaces" / "demo-prod-use1-cluster-02.workspace.yaml"
     if instance_dir.exists():
         shutil.rmtree(instance_dir)
+    if workspace_file.exists():
+        workspace_file.unlink()
 
     with _composition_enabled_override(composition_yaml, "false"):
         result = run_kompos([str(TFE_CONFIG_PROD), "tfe", "generate"], cwd=str(TFE_EXAMPLE))
 
     output = result.stdout + result.stderr
     assert result.returncode == 0, f"Disabled composition should exit 0:\n{output}"
-    assert "skipping" in output.lower() and "composition.enabled" in output, \
-        f"Should report skip reason 'composition.enabled':\n{output}"
+    assert "composition.enabled: false" in output, \
+        f"Should report paused reason 'composition.enabled: false':\n{output}"
+    # Paused: the workspace definition IS (re)generated so TFE can pause the workspace
+    # (terraform_automation_enabled follows composition.enabled)...
+    assert workspace_file.exists(), \
+        f"Disabled composition should still emit its (paused) workspace: {workspace_file}\n{output}"
+    # ...but tfvars + terraform module stay frozen (not regenerated).
     assert not instance_dir.exists(), \
-        f"No files should be generated for a disabled composition, found: {instance_dir}"
-    print("  ✓ composition.enabled: false skips generation (no files, exit 0)")
+        f"Disabled composition must not regenerate tfvars/modules, found: {instance_dir}"
+    print("  ✓ composition.enabled: false emits paused workspace only (tfvars/modules frozen, exit 0)")
 
 
 def test_composition_enabled_true_generates():
@@ -934,9 +942,14 @@ def test_composition_enabled_true_generates():
     print("  ✓ explicit composition.enabled: true generates normally")
 
 
-def test_composition_enabled_false_skips_in_compile():
-    """compile build lists a disabled composition as disabled and does not build it"""
-    print("5.8 Testing composition.enabled: false skipped by 'compile build'...")
+def test_composition_enabled_false_skips_non_tfe_in_compile():
+    """compile build: a disabled non-TFE composition (terraform runner) is fully skipped.
+
+    The paused-workspace behavior is TFE-specific (generate_disabled is only overridden
+    there); terraform/helm/manual runners keep the default full skip. This example routes
+    composition=cluster to the terraform runner, so nothing is generated.
+    """
+    print("5.8 Testing composition.enabled: false skipped (non-TFE runner) by 'compile build'...")
     if not KOMPOSCONFIG_CONFIG.exists():
         print("  ⊘ Skipped (06-komposconfig example not found)")
         return
@@ -957,8 +970,8 @@ def test_composition_enabled_false_skips_in_compile():
     assert "composition.enabled: false" in output, \
         f"compile should list the composition as disabled:\n{output}"
     assert not instance_dir.exists(), \
-        f"Disabled composition must not be built, found: {instance_dir}"
-    print("  ✓ compile build lists disabled composition and skips building it")
+        f"Disabled non-TFE composition must not be built, found: {instance_dir}"
+    print("  ✓ compile build skips disabled non-TFE composition")
 
 
 def test_tfe_unresolved_instance_fails():
@@ -1374,9 +1387,9 @@ def main():
             test_tfe_generates_versioned_compositions,
             test_tfe_generates_workspaces,
             test_tfe_multi_cluster,
-            test_composition_enabled_false_skips_generation,
+            test_composition_enabled_false_pauses_workspace,
             test_composition_enabled_true_generates,
-            test_composition_enabled_false_skips_in_compile,
+            test_composition_enabled_false_skips_non_tfe_in_compile,
             test_tfe_unresolved_instance_fails,
             test_compile_build_dispatches_without_crash,
             test_compile_prune_keeps_disabled_composition,

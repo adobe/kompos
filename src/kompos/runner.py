@@ -368,7 +368,12 @@ class GenericRunner:
             # Raw config generation (only for owned compositions)
             raw_config = self.get_raw_config(config_path, composition)
             if not self.is_composition_enabled(raw_config):
-                console.print_status(f"  {console.Colors.YELLOW}↳{console.Colors.RESET} skipping '{composition}' {console.Colors.DIM}(composition.enabled: false){console.Colors.RESET}")
+                # Disabled: let the runner decide what (if anything) to still emit.
+                # Default is a full skip; the TFE runner overrides this to emit a frozen,
+                # paused workspace definition. Generation only — execution() is not run.
+                rc = self.generate_disabled(composition, config_path, raw_config)
+                if rc:
+                    return rc
                 continue
 
             # Generate output paths for configs
@@ -412,6 +417,20 @@ class GenericRunner:
     def execution_configuration(self, composition, config_path, default_output_path, raw_config,
                                 filtered_keys, excluded_keys):
         """Hook for pre-execute file generation. Return non-zero to abort."""
+        return 0
+
+    def generate_disabled(self, composition, config_path, raw_config):
+        """Hook: what to (still) generate when composition.enabled is false.
+
+        Default: generate nothing — the composition is fully skipped. Runners may
+        override to emit a frozen artifact; e.g. the TFE runner still writes the
+        workspace definition (which carries terraform_automation_enabled from
+        composition.enabled, pausing the workspace) while skipping tfvars + modules
+        so the infra config stays frozen. Return non-zero to abort the run.
+        """
+        console.print_status(
+            f"  {console.Colors.YELLOW}↳{console.Colors.RESET} skipping '{composition}' "
+            f"{console.Colors.DIM}(composition.enabled: false){console.Colors.RESET}")
         return 0
 
     @staticmethod

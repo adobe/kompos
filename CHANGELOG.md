@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.8] - 2026-06-09
+
+### Changed
+- **`composition.enabled: false` now pauses TFE workspaces instead of fully skipping them.**
+  Previously a disabled composition was skipped entirely, so a workspace that already existed
+  was left frozen at its last-generated definition — and a workspace template that derives
+  `terraform_automation_enabled` from `composition.enabled` never got the chance to write the
+  paused value. The TFE runner now still (re)generates the **workspace definition** for a
+  disabled composition (via a new `generate_disabled()` hook) while skipping its tfvars +
+  terraform module, so the workspace carries `terraform_automation_enabled: false` and TFE
+  actually pauses it, with the infra config left frozen. Non-TFE runners (terraform, helm,
+  manual) keep the default full skip. `compile build` now dispatches disabled compositions too
+  so they reach this hook.
+
+### Fixed
+- **`compositions.order.terraform` is now optional** — the config schema previously required a
+  non-empty `terraform` entry under `compositions.order`, forcing tfe-only repos to declare a
+  dummy terraform order just to pass validation. The `required: ["terraform"]` constraint on
+  `order` is dropped; if `terraform` is present it must still be a non-empty array of strings.
+  `composition_order()` already returns `[]` for a missing runner, so routing is unaffected.
+
 ## [0.11.6] - 2026-06-03
 
 ### Added

@@ -168,6 +168,37 @@ class TFERunner(GenericTerraformRunner):
         console.print_summary(total_files=total_files, elapsed_time=elapsed_time)
         return 0
 
+    def generate_disabled(self, composition, config_path, raw_config):
+        """Paused composition (composition.enabled: false).
+
+        Still (re)generate the workspace definition: terraform_automation_enabled
+        interpolates composition.enabled, so the emitted workspace carries
+        terraform_automation_enabled: false and TFE pauses it (no VCS-triggered runs,
+        no PR speculative plans). The tfvars + terraform module are intentionally
+        skipped so the infra config stays frozen while paused.
+        """
+        # Best-effort: a disabled composition may be incomplete (e.g. a parked cluster
+        # with no cluster.yaml yet). Don't fail the build over a paused workspace —
+        # if the instance can't be resolved, just skip emitting it.
+        instance = self.get_composition_name(raw_config)
+        if not instance:
+            console.print_warning(
+                f"'{composition}' is disabled and composition.instance is unresolved — "
+                f"skipping paused workspace generation (nothing to freeze).")
+            return 0
+
+        if not self.generate_workspaces:
+            console.print_status(
+                f"  {console.Colors.YELLOW}↳{console.Colors.RESET} skipping '{composition}' "
+                f"{console.Colors.DIM}(composition.enabled: false){console.Colors.RESET}")
+            return 0
+
+        console.print_status(
+            f"  {console.Colors.YELLOW}↳{console.Colors.RESET} '{composition}' "
+            f"{console.Colors.DIM}paused (composition.enabled: false): workspace only, infra frozen{console.Colors.RESET}")
+        self.generate_workspace_config(config_path, raw_config, instance_name=instance)
+        return 0
+
     def generate_composition(self, composition, raw_config, instance_name=None):
         """
         Generate per-cluster TFE working_directory with modules.

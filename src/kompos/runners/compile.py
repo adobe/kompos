@@ -204,7 +204,10 @@ class CompileRunner(GenericRunner):
         print()
 
         if action == 'build' and not dry_run:
-            rc = self._build(enabled_comps, routing, args)
+            # Dispatch every composition (enabled AND disabled). Each runner decides
+            # what a disabled composition still emits via generate_disabled(): the TFE
+            # runner writes a frozen, paused workspace; others skip entirely.
+            rc = self._build(all_comps, routing, args)
             if prune:
                 # Prune diffs against every composition still in configs/ (enabled
                 # OR disabled). Disabled is skipped, not deleted — only compositions
