@@ -320,15 +320,28 @@ class CompileRunner(GenericRunner):
         base = self.kompos_config.get_kompos_setting('defaults.base_output_dir', './generated')
         pruned = []
 
+        # A single instance dir under generated/<subdir>/ can be claimed by more than
+        # one runner: generated/clusters/<name> holds both the tfe `cluster` output
+        # (tfe/) and the `helm-values` output (helm-values/). A helm-only cluster has a
+        # helm-values composition but no tfe cluster composition, so it lives only in
+        # the helm live set. Prune against the UNION of every runner's live instances —
+        # otherwise the tfe cluster pass would delete helm-only cluster dirs (and vice
+        # versa). Only instances absent from configs/ entirely are stale.
+        all_live = set()
+        for instances in live_instances.values():
+            all_live |= instances
+
+        scanned_dirs = set()
         for runner_type, live in live_instances.items():
             for comp_type in self.kompos_config.composition_order(runner_type, default=[]):
                 subdir = self.kompos_config.get_kompos_setting(
                     f'compositions.properties.{comp_type}.output_subdir', comp_type)
                 target_dir = os.path.join(base, subdir)
-                if not os.path.isdir(target_dir):
+                if target_dir in scanned_dirs or not os.path.isdir(target_dir):
                     continue
+                scanned_dirs.add(target_dir)
                 for entry in sorted(os.listdir(target_dir)):
-                    if entry not in live:
+                    if entry not in all_live:
                         stale = os.path.join(target_dir, entry)
                         if os.path.isdir(stale):
                             rel = os.path.relpath(stale)

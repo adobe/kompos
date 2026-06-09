@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.11.4] - 2026-06-03
+## [0.11.6] - 2026-06-03
 
 ### Added
 - **`composition.enabled`** — when `false` in layered config, `compile build` and individual
@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Redundant config reads** — `get_raw_config` is memoized per `(config_path, composition)`,
   so the enabled check, ownership check, and generation no longer re-run the full himl merge.
+- **`--prune` deleting helm-only clusters** — `generated/clusters/<name>` is shared by the tfe
+  `cluster` output (`tfe/`) and the `helm-values` output (`helm-values/`). Prune scanned that
+  directory per-runner, so the tfe cluster pass deleted any dir absent from the tfe live set —
+  wiping helm-only clusters (helm-values composition, no tfe cluster). Prune now tests entries
+  against the **union** of all runners' live instances, so a dir is kept if any composition
+  still claims it; only instances removed from configs/ entirely are pruned.
 
 ## [0.11.0] - 2026-05-01
 

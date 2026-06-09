@@ -1051,6 +1051,64 @@ def test_compile_prune_keeps_disabled_composition():
     print("  ✓ compile --prune freezes disabled composition, prunes only removed ones")
 
 
+def test_compile_prune_keeps_helm_only_cluster():
+    """compile --prune must not delete a helm-only cluster dir during the tfe cluster pass.
+
+    generated/clusters/<name> is shared: tfe writes tfe/, helm writes helm-values/.
+    A helm-only cluster (helm-values composition, no tfe cluster composition) lives only
+    in the helm live set. Prune must test against the UNION of all runners' live
+    instances, else the tfe cluster pass deletes helm-only cluster dirs ("bot wipes helm").
+    """
+    print("5.12 Testing compile --prune keeps helm-only cluster dir...")
+
+    import shutil
+    import tempfile
+    from kompos.runners.compile import CompileRunner
+
+    class _StubKomposConfig:
+        def __init__(self, base, order, subdirs):
+            self._base, self._order, self._subdirs = base, order, subdirs
+
+        def get_kompos_setting(self, key, default=None):
+            if key == 'defaults.base_output_dir':
+                return self._base
+            parts = key.split('.')
+            if (len(parts) == 4 and parts[0] == 'compositions'
+                    and parts[1] == 'properties' and parts[3] == 'output_subdir'):
+                return self._subdirs.get(parts[2], default)
+            return default
+
+        def composition_order(self, runner_type, default=None):
+            return self._order.get(runner_type, default if default is not None else [])
+
+    tmp = tempfile.mkdtemp(prefix="kompos-prune-")
+    try:
+        clusters = os.path.join(tmp, "clusters")
+        os.makedirs(os.path.join(clusters, "alpha", "tfe"))          # tfe cluster (live)
+        os.makedirs(os.path.join(clusters, "beta", "helm-values"))   # helm-only (live)
+        os.makedirs(os.path.join(clusters, "ghost", "tfe"))          # removed from configs
+
+        order = {"tfe": ["account", "cluster"], "helm": ["helm-values"]}
+        subdirs = {"account": "accounts", "cluster": "clusters"}  # helm-values → fallback
+        runner = CompileRunner.__new__(CompileRunner)
+        runner.kompos_config = _StubKomposConfig(tmp, order, subdirs)
+        # comp_path doubles as the resolved instance name for this stub.
+        runner.get_raw_config = lambda path, comp: {"composition": {"instance": path}}
+
+        live_comps = [("cluster", "alpha"), ("helm-values", "beta")]
+        routing = {"cluster": "tfe", "helm-values": "helm"}
+        runner._prune_stale(live_comps, routing, dry_run=False)
+
+        assert os.path.isdir(os.path.join(clusters, "alpha")), "tfe cluster must be kept"
+        assert os.path.isdir(os.path.join(clusters, "beta")), \
+            "helm-only cluster must NOT be pruned by the tfe cluster pass"
+        assert not os.path.isdir(os.path.join(clusters, "ghost")), \
+            "cluster removed from configs/ should be pruned"
+        print("  ✓ compile --prune keeps helm-only cluster, prunes only removed ones")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 # =============================================================================
 # 5. CLI ERROR HANDLING
 # =============================================================================
@@ -1266,6 +1324,7 @@ def main():
             test_tfe_unresolved_instance_fails,
             test_compile_build_dispatches_without_crash,
             test_compile_prune_keeps_disabled_composition,
+            test_compile_prune_keeps_helm_only_cluster,
         ]),
         ("6. HELM VALUES GENERATION", [
             test_helm_help,
