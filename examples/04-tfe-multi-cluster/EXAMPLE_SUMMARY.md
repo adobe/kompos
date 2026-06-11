@@ -8,7 +8,7 @@ configurations and module versions managed through hierarchical configuration.
 ## Example Structure
 
 ```
-examples/features/tfe-per-cluster/
+examples/04-tfe-multi-cluster/
 ├── README.md                           ← Comprehensive guide (11 sections)
 ├── QUICK_START.md                      ← Quick reference for experienced users
 ├── .komposconfig.yaml                  ← Kompos configuration

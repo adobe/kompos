@@ -8,7 +8,7 @@ Generate per-cluster Terraform working directories with provider configs and mod
 
 ```bash
 # 1. Navigate to example
-cd examples/features/tfe-per-cluster
+cd examples/04-tfe-multi-cluster
 
 # 2. Generate dev cluster
 kompos data/cloud=aws/project=demo/env=dev/region=us-west-2/cluster=demo-cluster-01/composition=terraform tfe generate

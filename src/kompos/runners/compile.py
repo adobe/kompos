@@ -34,6 +34,9 @@ def _get_runner_class(runner_type):
     if runner_type == 'manual':
         from kompos.runners.manual import ManualRunner
         return ManualRunner
+    if runner_type == 'external':
+        from kompos.runners.external import ExternalRunner
+        return ExternalRunner
     return None
 
 
@@ -67,6 +70,15 @@ def _build_default_dispatch_args(runner_type):
     if runner_type == 'manual':
         return argparse.Namespace(
             command='manual',
+            subcommand='generate',
+            dry_run=False,
+            filter=None,
+            exclude=None,
+            himl_args=None,
+        )
+    if runner_type == 'external':
+        return argparse.Namespace(
+            command='external',
             subcommand='generate',
             dry_run=False,
             filter=None,
@@ -374,7 +386,7 @@ class CompileRunner(GenericRunner):
 
     def _build_routing_map(self):
         routing = {}
-        for runner_type in ['tfe', 'helm', 'terraform', 'manual']:
+        for runner_type in ['tfe', 'helm', 'terraform', 'manual', 'external']:
             for comp_type in self.kompos_config.composition_order(runner_type, default=[]):
                 if comp_type not in routing:
                     routing[comp_type] = runner_type

@@ -119,7 +119,7 @@ Run tests to verify all interpolation patterns:
 
 ```bash
 cd /Users/danielcoman/git/kompos
-kompos examples/features/02-himl-interpolation/config/cloud=aws/env=prod config --format yaml
+kompos examples/02-himl-interpolation/config/cloud=aws/env=prod config --format yaml
 ```
 
 Expected results:

@@ -31,24 +31,24 @@ else:
     KOMPOS_CMD = None  # Will use 'kompos' from PATH
 
 # Test fixture paths
-EXAMPLE_DIR = PROJECT_ROOT / "examples" / "features" / "01-hierarchical-config"
+EXAMPLE_DIR = PROJECT_ROOT / "examples" / "01-hierarchical-config"
 CONFIG_PATH = EXAMPLE_DIR / "config" / "cloud=aws" / "env=dev" / "cluster=cluster1" / "composition=terraform" / "terraform=cluster"
 
 # Interpolation test fixture
-INTERPOLATION_EXAMPLE = PROJECT_ROOT / "examples" / "features" / "02-himl-interpolation"
+INTERPOLATION_EXAMPLE = PROJECT_ROOT / "examples" / "02-himl-interpolation"
 INTERPOLATION_CONFIG = INTERPOLATION_EXAMPLE / "config" / "cloud=aws" / "env=prod"
 
 # TFE test fixture (has versioned compositions, workspaces, multi-cluster)
-TFE_EXAMPLE = PROJECT_ROOT / "examples" / "features" / "04-tfe-multi-cluster"
+TFE_EXAMPLE = PROJECT_ROOT / "examples" / "04-tfe-multi-cluster"
 TFE_CONFIG_DEV = TFE_EXAMPLE / "data" / "cloud=aws" / "project=demo" / "env=dev" / "region=us-west-2" / "cluster=demo-cluster-01" / "composition=terraform"
 TFE_CONFIG_PROD = TFE_EXAMPLE / "data" / "cloud=aws" / "project=demo" / "env=prod" / "region=us-east-1" / "cluster=demo-cluster-02" / "composition=terraform"
 
 # Dedicated komposconfig example — all komposconfig features in one place
-KOMPOSCONFIG_EXAMPLE = PROJECT_ROOT / "examples" / "features" / "06-komposconfig"
+KOMPOSCONFIG_EXAMPLE = PROJECT_ROOT / "examples" / "06-komposconfig"
 KOMPOSCONFIG_CONFIG  = KOMPOSCONFIG_EXAMPLE / "data" / "cloud=aws" / "project=demo" / "env=dev" / "region=us-west-2" / "cluster=my-cluster" / "composition=cluster"
 
 # Helm values test fixture
-HELM_EXAMPLE = PROJECT_ROOT / "examples" / "features" / "05-helm-values"
+HELM_EXAMPLE = PROJECT_ROOT / "examples" / "05-helm-values"
 HELM_CONFIG   = HELM_EXAMPLE / "data" / "cloud=aws" / "project=demo" / "env=dev" / "region=us-west-2" / "cluster=demo-cluster-01" / "composition=helm-values"
 HELM_VALUES   = HELM_EXAMPLE / "values"
 
@@ -1178,6 +1178,206 @@ def test_manual_composition_writes_declared_files():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _make_external_runner(base_dir):
+    """Build an ExternalRunner with a stub kompos_config for unit testing."""
+    from kompos.runners.external import ExternalRunner
+
+    class _StubKomposConfig:
+        def __init__(self, base):
+            self._base = base
+
+        def get_kompos_setting(self, key, default=None):
+            return self._base if key == 'defaults.base_output_dir' else default
+
+        def get_composition_name(self, raw_config, get_nested_value_fn):
+            return get_nested_value_fn(raw_config, 'composition.instance')
+
+    runner = ExternalRunner.__new__(ExternalRunner)
+    runner.kompos_config = _StubKomposConfig(base_dir)
+    runner.config_path = "<test>"
+    return runner
+
+
+def test_external_entrypoint_plugin_writes_outputs():
+    """An external composition runs a Python entrypoint and Kompos writes its result.
+
+    Verifies the plugin receives ONLY the declared inputs (flat dotted keys) and that
+    Kompos resolves result_key per output and writes the body under the instance dir.
+    """
+    print("5.14 Testing external runner (Python entrypoint) writes plugin outputs...")
+
+    import shutil
+    import tempfile
+    import textwrap
+    import yaml as _yaml
+
+    tmp = tempfile.mkdtemp(prefix="kompos-external-entry-")
+    plugin_dir = os.path.join(tmp, "plugins")
+    os.makedirs(plugin_dir)
+    # A repo-local plugin: pure transform, no file IO, asks for declared keys only.
+    # 'settings.scale' exercises that a nested (dotted) input is extracted and passed.
+    with open(os.path.join(plugin_dir, "demo_plugin.py"), "w") as f:
+        f.write(textwrap.dedent('''
+            def transform(inputs, context):
+                # Only the declared inputs are present, keyed by their dotted path.
+                assert set(inputs) == {"settings", "settings.scale"}, list(inputs)
+                assert context["instance"] == "demo-instance-01"
+                return {"result": {"instance": context["instance"],
+                                   "scale": inputs["settings.scale"]}}
+        '''))
+
+    cwd = os.getcwd()
+    sys.path.insert(0, plugin_dir)
+    try:
+        os.chdir(tmp)  # entrypoint import adds cwd to sys.path
+        runner = _make_external_runner(os.path.join(tmp, "generated"))
+        raw = {
+            'composition': {
+                'type': 'external',
+                'instance': 'demo-instance-01',
+                'external': {
+                    'entrypoint': 'demo_plugin:transform',
+                    'pythonpath': ['plugins'],
+                    'output_subdir': 'widgets',
+                    'inputs': ['settings', 'settings.scale'],
+                    'outputs': [
+                        {'path': 'result.yaml', 'result_key': 'result', 'format': 'yaml'},
+                    ],
+                },
+            },
+            'settings': {'scale': 4, 'name': 'demo'},
+        }
+
+        rc = runner.execution_configuration('external', '<test>', None, raw, [], [])
+        assert rc == 0, "external entrypoint composition should succeed"
+
+        out = os.path.join(tmp, 'generated', 'widgets', 'demo-instance-01', 'result.yaml')
+        assert os.path.isfile(out), f"plugin output not written: {out}"
+        with open(out) as fh:
+            body = _yaml.safe_load(fh)
+        assert body == {'instance': 'demo-instance-01', 'scale': 4}, f"unexpected body: {body}"
+        print("  ✓ external entrypoint received declared inputs and wrote result_key output")
+    finally:
+        os.chdir(cwd)
+        try:
+            sys.path.remove(plugin_dir)
+        except ValueError:
+            pass
+        for mod in ('demo_plugin',):
+            sys.modules.pop(mod, None)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_external_command_plugin_writes_outputs():
+    """An external composition runs a subprocess plugin (JSON stdin/stdout) and writes it."""
+    print("5.15 Testing external runner (subprocess command) writes plugin outputs...")
+
+    import shutil
+    import tempfile
+    import textwrap
+    import yaml as _yaml
+
+    tmp = tempfile.mkdtemp(prefix="kompos-external-cmd-")
+    script = os.path.join(tmp, "plugin.py")
+    with open(script, "w") as f:
+        f.write(textwrap.dedent('''
+            import json, sys
+            payload = json.loads(sys.stdin.read())
+            inputs = payload["inputs"]
+            ctx = payload["context"]
+            body = {"name": ctx["instance"], "value": inputs["params"]["value"]}
+            print(json.dumps({"outputs": {"result.yaml": body}}))
+        '''))
+
+    try:
+        runner = _make_external_runner(os.path.join(tmp, "generated"))
+        raw = {
+            'composition': {
+                'type': 'external',
+                'instance': 'demo-instance-02',
+                'external': {
+                    'command': [sys.executable, script],
+                    'inputs': ['params'],
+                    'outputs': [{'path': 'result.yaml'}],
+                },
+            },
+            'params': {'value': 42},
+        }
+
+        rc = runner.execution_configuration('external', '<test>', None, raw, [], [])
+        assert rc == 0, "external command composition should succeed"
+
+        out = os.path.join(tmp, 'generated', 'clusters', 'demo-instance-02', 'result.yaml')
+        assert os.path.isfile(out), f"subprocess plugin output not written: {out}"
+        with open(out) as fh:
+            body = _yaml.safe_load(fh)
+        assert body == {'name': 'demo-instance-02', 'value': 42}, f"unexpected body: {body}"
+        print("  ✓ external subprocess plugin round-tripped JSON and wrote keyed output")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_external_header_key_writes_comment_header():
+    """header_key writes the plugin's lines as `# ...` comments above the YAML body."""
+    print("5.16 Testing external runner writes header_key as comment lines...")
+
+    import shutil
+    import tempfile
+    import textwrap
+    import yaml as _yaml
+
+    tmp = tempfile.mkdtemp(prefix="kompos-external-hdr-")
+    plugin_dir = os.path.join(tmp, "plugins")
+    os.makedirs(plugin_dir)
+    with open(os.path.join(plugin_dir, "hdr_plugin.py"), "w") as f:
+        f.write(textwrap.dedent('''
+            def build(inputs, context):
+                return {"ledger": {"value": 1},
+                        "report": ["GENERATED, DO NOT EDIT", "", "line two"]}
+        '''))
+
+    cwd = os.getcwd()
+    sys.path.insert(0, plugin_dir)
+    try:
+        os.chdir(tmp)
+        runner = _make_external_runner(os.path.join(tmp, "generated"))
+        raw = {
+            'composition': {
+                'type': 'external',
+                'instance': 'demo-instance-03',
+                'external': {
+                    'entrypoint': 'hdr_plugin:build',
+                    'pythonpath': ['plugins'],
+                    'inputs': [],
+                    'outputs': [
+                        {'path': 'out.yaml', 'result_key': 'ledger',
+                         'header_key': 'report', 'format': 'yaml'},
+                    ],
+                },
+            },
+        }
+        rc = runner.execution_configuration('external', '<test>', None, raw, [], [])
+        assert rc == 0, "external header composition should succeed"
+
+        out = os.path.join(tmp, 'generated', 'clusters', 'demo-instance-03', 'out.yaml')
+        with open(out) as fh:
+            text = fh.read()
+        # header lines are written as comments before the body; blank line -> "#"
+        assert text.startswith("# GENERATED, DO NOT EDIT\n#\n# line two\n"), \
+            f"header not written as comment lines:\n{text}"
+        # the body is still valid YAML once comments are parsed away
+        assert _yaml.safe_load(text) == {'value': 1}, "body should parse as the ledger"
+        print("  ✓ header_key writes comment lines above a still-valid YAML body")
+    finally:
+        os.chdir(cwd)
+        try:
+            sys.path.remove(plugin_dir)
+        except ValueError:
+            pass
+        sys.modules.pop('hdr_plugin', None)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 # =============================================================================
 # 5. CLI ERROR HANDLING
 # =============================================================================
@@ -1192,7 +1392,7 @@ def test_cli_help_completeness():
     
     help_text = result.stdout
     
-    expected_runners = ["config", "tfe", "terraform", "explore", "validate"]
+    expected_runners = ["config", "tfe", "terraform", "explore", "validate", "manual", "external"]
     missing = [r for r in expected_runners if r not in help_text]
     
     assert len(missing) == 0, f"Missing runners in help: {missing}"
@@ -1395,6 +1595,9 @@ def main():
             test_compile_prune_keeps_disabled_composition,
             test_compile_prune_keeps_helm_only_cluster,
             test_manual_composition_writes_declared_files,
+            test_external_entrypoint_plugin_writes_outputs,
+            test_external_command_plugin_writes_outputs,
+            test_external_header_key_writes_comment_header,
         ]),
         ("6. HELM VALUES GENERATION", [
             test_helm_help,

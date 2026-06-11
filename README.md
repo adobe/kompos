@@ -125,11 +125,11 @@ This enables:
 
 Comprehensive examples are available in [`examples/`](./examples/) with a progressive learning path:
 
-1. **[Layered Configuration](./examples/features/01-hierarchical-config/)** - Configuration inheritance and merge behavior
-2. **[Module Version Pinning](./examples/features/02-module-version-pinning/)** - Dynamic Terraform module versioning with `.tf.versioned` files
-3. **[Config Exploration](./examples/features/03-config-exploration/)** - Analyze and visualize configuration hierarchies
-4. **[TFE Multi-Cluster](./examples/features/04-tfe-multi-cluster/)** - Terraform Enterprise workspace and composition generation per cluster
-5. **[Helm Values Rendering](./examples/features/05-helm-values/)** - Render cluster-specific Helm values from hierarchy + TFE outputs for ArgoCD
+1. **[Layered Configuration](./examples/01-hierarchical-config/)** - Configuration inheritance and merge behavior
+2. **[Module Version Pinning](./examples/02-module-version-pinning/)** - Dynamic Terraform module versioning with `.tf.versioned` files
+3. **[Config Exploration](./examples/03-config-exploration/)** - Analyze and visualize configuration hierarchies
+4. **[TFE Multi-Cluster](./examples/04-tfe-multi-cluster/)** - Terraform Enterprise workspace and composition generation per cluster
+5. **[Helm Values Rendering](./examples/05-helm-values/)** - Render cluster-specific Helm values from hierarchy + TFE outputs for ArgoCD
 
 See the [Examples README](./examples/README.md) for a complete guide with difficulty levels, time estimates, and
 learning paths.

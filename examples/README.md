@@ -4,7 +4,7 @@ Learn Kompos through progressive, hands-on examples. Each example builds on conc
 
 ## Learning Path
 
-### 1. [Hierarchical Configuration](features/01-hierarchical-config/)
+### 1. [Hierarchical Configuration](01-hierarchical-config/)
 
 **Learn:** How Kompos merges configuration files based on directory structure
 
@@ -12,13 +12,13 @@ Learn Kompos through progressive, hands-on examples. Each example builds on conc
 - **Topics:** Configuration hierarchy, merging, overrides
 
 ```bash
-cd examples/features/01-hierarchical-config
+cd examples/01-hierarchical-config
 kompos config/cloud=aws/env=dev/cluster=cluster1/composition=terraform/terraform=cluster config
 ```
 
 ---
 
-### 2. [Module Version Pinning](features/02-module-version-pinning/)
+### 2. [Module Version Pinning](02-module-version-pinning/)
 
 **Learn:** How to pin Terraform module versions per environment
 
@@ -26,13 +26,13 @@ kompos config/cloud=aws/env=dev/cluster=cluster1/composition=terraform/terraform
 - **Topics:** `.tf.versioned` files, `{{}}` interpolation, version management
 
 ```bash
-cd examples/features/02-module-version-pinning
+cd examples/02-module-version-pinning
 kompos config/env=dev/... terraform plan --dry-run
 ```
 
 ---
 
-### 3. [Configuration Exploration](features/03-config-exploration/)
+### 3. [Configuration Exploration](03-config-exploration/)
 
 **Learn:** Trace, compare, and visualize hierarchical configurations
 
@@ -40,14 +40,14 @@ kompos config/env=dev/... terraform plan --dry-run
 - **Topics:** `explore` runner, tracing values, comparing configs
 
 ```bash
-cd examples/features/03-config-exploration
+cd examples/03-config-exploration
 kompos config/... explore trace --key vpc.cidr_block
 kompos config/... explore compare --keys vpc.cidr_block
 ```
 
 ---
 
-### 4. [TFE Multi-Cluster](features/04-tfe-multi-cluster/)
+### 4. [TFE Multi-Cluster](04-tfe-multi-cluster/)
 
 **Learn:** Generate per-cluster TFE workspaces with different module versions
 
@@ -55,7 +55,7 @@ kompos config/... explore compare --keys vpc.cidr_block
 - **Topics:** TFE integration, per-cluster compositions, multi-environment strategy
 
 ```bash
-cd examples/features/04-tfe-multi-cluster
+cd examples/04-tfe-multi-cluster
 
 # Generate tfvars + workspace for dev cluster
 kompos data/cloud=aws/project=demo/env=dev/region=us-west-2/cluster=demo-cluster-01/composition=terraform \
@@ -68,7 +68,7 @@ kompos data/cloud=aws/project=demo/env=prod/region=us-east-1/cluster=demo-cluste
 
 ---
 
-### 5. [Helm Values Rendering](features/05-helm-values/)
+### 5. [Helm Values Rendering](05-helm-values/)
 
 **Learn:** Render cluster-specific Helm values from hierarchy data and TFE outputs
 
@@ -80,7 +80,7 @@ per-cluster using kompos hierarchy data and Terraform outputs. The output feeds 
 via the `$clusterValues` ref source.
 
 ```bash
-cd examples/features/05-helm-values
+cd examples/05-helm-values
 
 # List enabled charts for the demo cluster
 kompos data/cloud=aws/project=demo/env=dev/region=us-west-2/cluster=demo-cluster-01/composition=helm-values \
@@ -122,10 +122,9 @@ kompos data/cloud=aws/project=demo/env=dev/region=us-west-2/cluster=demo-cluster
 ```
 examples/
 ├── README.md
-└── features/
-    ├── 01-hierarchical-config/
-    ├── 02-module-version-pinning/
-    ├── 03-config-exploration/
-    ├── 04-tfe-multi-cluster/     ← TFE + Terraform workflow
-    └── 05-helm-values/           ← Helm values + ArgoCD delivery
+├── 01-hierarchical-config/
+├── 02-module-version-pinning/
+├── 03-config-exploration/
+├── 04-tfe-multi-cluster/     ← TFE + Terraform workflow
+└── 05-helm-values/           ← Helm values + ArgoCD delivery
 ```

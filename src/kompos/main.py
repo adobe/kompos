@@ -22,6 +22,7 @@ from .runner import GenericRunner
 from .runners.config import ConfigRenderParserConfig, ConfigRenderRunner
 from .runners.explore import ExploreParserConfig, ExploreRunner
 from .runners.compile import CompileParserConfig, CompileRunner
+from .runners.external import ExternalParserConfig, ExternalRunner
 from .runners.helm import HelmParserConfig, HelmRunner
 from .runners.helmfile import HelmfileParser, HelmfileRunner
 from .runners.manual import ManualParserConfig, ManualRunner
@@ -91,6 +92,7 @@ class AppContainer(Container):
         self.helm_runner = auto(HelmRunner)
         self.helmfile_runner = auto(HelmfileRunner)
         self.manual_runner = auto(ManualRunner)
+        self.external_runner = auto(ExternalRunner)
         self.config_runner = auto(ConfigRenderRunner)
         self.explore_runner = auto(ExploreRunner)
         self.tfe_runner = auto(TFERunner)
@@ -104,6 +106,7 @@ class AppContainer(Container):
         parsers.add(auto(HelmParserConfig))
         parsers.add(auto(HelmfileParser))
         parsers.add(auto(ManualParserConfig))
+        parsers.add(auto(ExternalParserConfig))
         parsers.add(auto(ConfigRenderParserConfig))
         parsers.add(auto(ExploreParserConfig))
         parsers.add(auto(TFEParserConfig))
@@ -146,7 +149,7 @@ class AppContainer(Container):
         if not self.console_args.command:
             print_error("No command specified")
             print("", file=sys.stderr)
-            print("Available commands: tfe, terraform, helmfile, explore, validate, config", file=sys.stderr)
+            print("Available commands: tfe, terraform, helmfile, manual, external, explore, validate, config", file=sys.stderr)
             print("", file=sys.stderr)
             print("Usage: kompos <config_path> <command> [options]", file=sys.stderr)
             print("", file=sys.stderr)
@@ -166,7 +169,7 @@ class AppContainer(Container):
             if "is not defined" in str(e):
                 print_error(f"Unknown command: {self.console_args.command}")
                 print("", file=sys.stderr)
-                print("Available commands: tfe, terraform, helm, helmfile, explore, validate, config", file=sys.stderr)
+                print("Available commands: tfe, terraform, helm, helmfile, manual, external, explore, validate, config", file=sys.stderr)
                 print("", file=sys.stderr)
                 print("Run 'kompos --help' for more information.", file=sys.stderr)
                 sys.exit(1)

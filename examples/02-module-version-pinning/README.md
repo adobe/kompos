@@ -15,7 +15,7 @@ This example demonstrates Terraform module version pinning per environment.
 
 ```bash
 # Dev cluster (uses v2.0.0-rc)
-cd examples/features/02-module-version-pinning
+cd examples/02-module-version-pinning
 kompos config/env=dev/cluster=cluster1/composition=terraform terraform plan --dry-run
 ```
 
@@ -47,7 +47,7 @@ module "vpc" {
 ## Files
 
 ```
-examples/features/02-module-version-pinning/
+examples/02-module-version-pinning/
 ├── config/                      # Hierarchical configuration
 │   ├── default.yaml
 │   └── env=dev/

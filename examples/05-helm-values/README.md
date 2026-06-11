@@ -81,7 +81,7 @@ The cluster at `composition=helm-values/helm.yaml` pins `my-app` to `2.1.0` and 
 ## Running the Example
 
 ```bash
-cd examples/features/05-helm-values
+cd examples/05-helm-values
 
 # List enabled charts for the demo cluster
 kompos data/cloud=aws/project=demo/env=dev/region=us-west-2/cluster=demo-cluster-01/composition=helm-values \
