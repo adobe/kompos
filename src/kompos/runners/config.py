@@ -48,6 +48,10 @@ class ConfigRenderRunner(GenericRunner):
         self.reverse = False
         self.generate_output = False
 
+    def honors_composition_enabled(self):
+        # Introspection — still render merged config when composition.enabled is false.
+        return False
+
     def execution_configuration(self, composition, config_path, default_output_path, raw_config,
                                 filtered_keys, excluded_keys):
         self.generate_config(

@@ -86,6 +86,9 @@ class ExploreRunner(GenericRunner):
         self.reverse = False
         self.generate_output = False
 
+    def honors_composition_enabled(self):
+        return False
+
     def execution_configuration(self, composition, config_path, default_output_path, raw_config,
                                 filtered_keys, excluded_keys):
         args = self.himl_args

@@ -14,6 +14,7 @@ import logging
 import os
 import subprocess
 import sys
+import time
 
 import yaml
 
@@ -112,6 +113,8 @@ class ExternalRunner(GenericRunner):
 
     def execution_configuration(self, composition, config_path, default_output_path, raw_config,
                                 filtered_keys, excluded_keys):
+        start_time = time.time()
+
         instance = self.require_composition_instance(raw_config)
         if not instance:
             return 1
@@ -159,6 +162,21 @@ class ExternalRunner(GenericRunner):
                 )
             inputs[key] = value
 
+        base = self.kompos_config.get_kompos_setting('defaults.base_output_dir', './generated')
+        subdir = (spec.get('output_subdir')
+                  or self.get_nested_value(raw_config, 'composition.output_subdir')
+                  or 'clusters')
+        instance_dir = os.path.join(base, subdir, instance)
+
+        console.print_section_header(f"External: {instance} ({composition})")
+        console.print_kvp("Config", console.format_config_path(config_path), indent=1)
+        if entrypoint:
+            console.print_kvp("Plugin", entrypoint, indent=1)
+        else:
+            console.print_kvp("Command", ' '.join(command if isinstance(command, list) else command.split()), indent=1)
+        console.print_kvp("Target", instance_dir, indent=1)
+        print()
+
         context = {
             'instance': instance,
             'composition': composition,
@@ -186,15 +204,12 @@ class ExternalRunner(GenericRunner):
             )
             return 1
 
-        base = self.kompos_config.get_kompos_setting('defaults.base_output_dir', './generated')
-        # output_subdir may live on the external block or (for parity with the manual
-        # runner) directly under composition; default matches the other runners.
-        subdir = (spec.get('output_subdir')
-                  or self.get_nested_value(raw_config, 'composition.output_subdir')
-                  or 'clusters')
-        instance_dir = os.path.join(base, subdir, instance)
+        rc, files_written = self._write_outputs(outputs, result, instance_dir, single=len(outputs) == 1)
+        if rc != 0:
+            return rc
 
-        return self._write_outputs(outputs, result, instance_dir, single=len(outputs) == 1)
+        console.print_summary(total_files=files_written, elapsed_time=time.time() - start_time)
+        return 0
 
     # ── plugin invocation ───────────────────────────────────────────────────────
 
@@ -218,7 +233,7 @@ class ExternalRunner(GenericRunner):
             func = getattr(module, func_name, None)
             if not callable(func):
                 raise AttributeError(f"{module_name!r} has no callable {func_name!r}")
-            logger.info(f"[external] entrypoint {entrypoint}")
+            logger.debug("[external] entrypoint %s", entrypoint)
             return func(inputs, context)
         finally:
             for p in added:
@@ -232,7 +247,7 @@ class ExternalRunner(GenericRunner):
         if isinstance(command, str):
             command = command.split()
         payload = json.dumps({'inputs': inputs, 'context': context})
-        logger.info(f"[external] command {' '.join(command)}")
+        logger.debug("[external] command %s", ' '.join(command))
         proc = subprocess.run(
             command,
             input=payload,
@@ -256,6 +271,7 @@ class ExternalRunner(GenericRunner):
     # ── output writing ──────────────────────────────────────────────────────────
 
     def _write_outputs(self, outputs, result, instance_dir, single):
+        files_written = 0
         for spec in outputs:
             rel_path = spec.get('path')
             if not rel_path:
@@ -283,7 +299,7 @@ class ExternalRunner(GenericRunner):
                         f"  or have the plugin key its result by the output path. Got keys: {list(result.keys())}",
                     ],
                 )
-                return 1
+                return 1, files_written
 
             # Optional comment header (yaml only): the plugin returns lines under
             # header_key; the runner writes them as `# ...` before the body so a
@@ -294,7 +310,7 @@ class ExternalRunner(GenericRunner):
                 header = result.get(header_key)
 
             fmt = (spec.get('format') or self.extract_format_from_extension(rel_path)).lower()
-            output_file = os.path.join(instance_dir, rel_path)
+            output_file = os.path.normpath(os.path.join(instance_dir, rel_path))
             self.ensure_directory(output_file, is_file_path=True)
             with open(output_file, 'w') as f:
                 if fmt == 'json':
@@ -310,9 +326,20 @@ class ExternalRunner(GenericRunner):
                         for line in lines:
                             f.write(f"# {line}\n" if line else "#\n")
                     yaml.dump(body, f, default_flow_style=False, sort_keys=False)
-            console.print_file_generation("external", output_file)
+            files_written += 1
+            size = os.path.getsize(output_file)
+            console.print_success(f"Wrote {os.path.relpath(output_file, os.getcwd())}")
+            console.print_file_generation("external", output_file, size=self._format_size(size))
 
-        return 0
+        return 0, files_written
+
+    @staticmethod
+    def _format_size(num_bytes):
+        if num_bytes < 1024:
+            return f"{num_bytes} B"
+        if num_bytes < 1024 * 1024:
+            return f"{num_bytes / 1024:.1f} KB"
+        return f"{num_bytes / (1024 * 1024):.1f} MB"
 
     @staticmethod
     def execution(args, extra_args, default_output_path, composition, raw_config):

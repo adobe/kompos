@@ -942,6 +942,31 @@ def test_composition_enabled_true_generates():
     print("  ✓ explicit composition.enabled: true generates normally")
 
 
+def test_composition_enabled_false_skips_helm_generate():
+    """composition.enabled: false -> helm runner skips generate (GenericRunner hook)."""
+    print("5.8b Testing composition.enabled: false skips helm generate...")
+    if not HELM_CONFIG.exists():
+        print("  ⊘ Skipped (helm example not found)")
+        return
+
+    import shutil
+    composition_yaml = HELM_CONFIG / "helm.yaml"
+    argoapps = HELM_EXAMPLE / "generated" / "clusters" / "demo-dev-usw2-cluster-01" / "argoapps"
+    if argoapps.exists():
+        shutil.rmtree(argoapps)
+
+    with _composition_enabled_override(composition_yaml, "false"):
+        result = run_kompos([str(HELM_CONFIG), "helm", "generate"], cwd=str(HELM_EXAMPLE))
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, f"Disabled helm composition should exit 0:\n{output}"
+    assert "composition.enabled: false" in output, \
+        f"helm should report skip reason:\n{output}"
+    assert not argoapps.exists(), \
+        f"Disabled helm composition must not generate argoapps/: {argoapps}\n{output}"
+    print("  ✓ composition.enabled: false skips helm generate (generic runner)")
+
+
 def test_composition_enabled_false_skips_non_tfe_in_compile():
     """compile build: a disabled non-TFE composition (terraform runner) is fully skipped.
 
@@ -1589,6 +1614,7 @@ def main():
             test_tfe_multi_cluster,
             test_composition_enabled_false_pauses_workspace,
             test_composition_enabled_true_generates,
+            test_composition_enabled_false_skips_helm_generate,
             test_composition_enabled_false_skips_non_tfe_in_compile,
             test_tfe_unresolved_instance_fails,
             test_compile_build_dispatches_without_crash,

@@ -263,6 +263,14 @@ class GenericRunner:
             get_nested_value_fn=self.get_nested_value
         )
 
+    def honors_composition_enabled(self):
+        """
+        Return False for read-only runners (config, explore) that should still run
+        when composition.enabled is false. Generation runners (helm, tfe, terraform,
+        manual, external) inherit the default True and skip via generate_disabled().
+        """
+        return True
+
     def is_composition_enabled(self, raw_config):
         """
         Return False when composition.enabled is explicitly false in layered config.
@@ -272,7 +280,7 @@ class GenericRunner:
         if enabled is None:
             return True
         if isinstance(enabled, str):
-            return enabled.strip().lower() not in ('false', '0', 'no')
+            return enabled.strip().lower() not in ('false', '0', 'no', 'off')
         return bool(enabled)
 
     def require_composition_instance(self, raw_config):
@@ -367,10 +375,11 @@ class GenericRunner:
 
             # Raw config generation (only for owned compositions)
             raw_config = self.get_raw_config(config_path, composition)
-            if not self.is_composition_enabled(raw_config):
+            if self.honors_composition_enabled() and not self.is_composition_enabled(raw_config):
                 # Disabled: let the runner decide what (if anything) to still emit.
-                # Default is a full skip; the TFE runner overrides this to emit a frozen,
-                # paused workspace definition. Generation only — execution() is not run.
+                # Default is a full skip (helm, terraform, manual, external, …); the TFE
+                # runner overrides generate_disabled() to emit a paused workspace only.
+                # Generation only — execution() is not run.
                 rc = self.generate_disabled(composition, config_path, raw_config)
                 if rc:
                     return rc
