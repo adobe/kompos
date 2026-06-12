@@ -11,8 +11,6 @@
 import logging
 import os
 
-import yaml
-
 from kompos.parser import SubParserConfig
 from kompos.runner import GenericRunner
 from kompos.helpers import console
@@ -75,10 +73,7 @@ class ManualRunner(GenericRunner):
         super(ManualRunner, self).__init__(kompos_config, config_path, execute, RUNNER_TYPE)
 
     def run_configuration(self, args):
-        self.validate_runner = False
-        self.ordered_compositions = False
-        self.reverse = False
-        self.generate_output = False
+        self.configure_passive()
 
     def execution_configuration(self, composition, config_path, default_output_path, raw_config,
                                 filtered_keys, excluded_keys):
@@ -93,9 +88,8 @@ class ManualRunner(GenericRunner):
             )
             return 0
 
-        base = self.kompos_config.get_kompos_setting('defaults.base_output_dir', './generated')
-        subdir = self.get_nested_value(raw_config, 'composition.output_subdir') or 'clusters'
-        instance_dir = os.path.join(base, subdir, instance)
+        subdir = self.get_nested_value(raw_config, 'composition.output_subdir')
+        instance_dir = self.instance_output_dir(instance, subdir)
 
         for spec in files:
             rel_path = spec.get('path')
@@ -113,9 +107,7 @@ class ManualRunner(GenericRunner):
                 body = {}
 
             output_file = os.path.join(instance_dir, rel_path)
-            self.ensure_directory(output_file, is_file_path=True)
-            with open(output_file, 'w') as f:
-                yaml.dump(body, f, default_flow_style=False, sort_keys=False)
+            self.write_structured_file(output_file, body, fmt=spec.get('format'))
             console.print_file_generation("manual", output_file)
 
         return 0

@@ -1342,6 +1342,71 @@ def test_external_command_plugin_writes_outputs():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_external_path_key_plugin_overrides_destination():
+    """Plugin may return path_key to override where Kompos writes (Kompos still writes)."""
+    print("5.16b Testing external runner path_key overrides output destination...")
+
+    import shutil
+    import tempfile
+    import textwrap
+    import yaml as _yaml
+
+    tmp = tempfile.mkdtemp(prefix="kompos-external-pathkey-")
+    comp_dir = os.path.join(tmp, "configs", "cell=foo", "composition=ipam")
+    os.makedirs(comp_dir)
+    plugin_dir = os.path.join(tmp, "plugins")
+    os.makedirs(plugin_dir)
+    # Plugin computes an ABSOLUTE destination from context.config_path (kompos writes
+    # it verbatim) — here: beside cell.yaml, one level up from composition=ipam.
+    with open(os.path.join(plugin_dir, "demo_plugin.py"), "w") as f:
+        f.write(textwrap.dedent('''
+            import os
+            def transform(inputs, context):
+                comp_dir = os.path.abspath(context["config_path"])
+                cell_dir = os.path.dirname(comp_dir)
+                return {
+                    "body": {"ok": True},
+                    "write_path": os.path.join(cell_dir, "cell_ipam.yaml"),
+                }
+        '''))
+
+    cwd = os.getcwd()
+    sys.path.insert(0, plugin_dir)
+    try:
+        os.chdir(tmp)
+        runner = _make_external_runner(os.path.join(tmp, "generated"))
+        raw = {
+            'composition': {
+                'type': 'external',
+                'instance': 'demo-instance-01',
+                'external': {
+                    'entrypoint': 'demo_plugin:transform',
+                    'pythonpath': ['plugins'],
+                    'outputs': [{
+                        'path_key': 'write_path',
+                        'result_key': 'body',
+                        'format': 'yaml',
+                    }],
+                },
+            },
+        }
+        rc = runner.execution_configuration('external', comp_dir, None, raw, [], [])
+        assert rc == 0, "path_key composition should succeed"
+        out = os.path.join(tmp, 'configs', 'cell=foo', 'cell_ipam.yaml')
+        assert os.path.isfile(out), f"plugin path_key output not written: {out}"
+        with open(out) as fh:
+            assert _yaml.safe_load(fh) == {'ok': True}
+        print("  ✓ path_key from plugin directed Kompos write beside cell.yaml")
+    finally:
+        os.chdir(cwd)
+        try:
+            sys.path.remove(plugin_dir)
+        except ValueError:
+            pass
+        sys.modules.pop('demo_plugin', None)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_external_header_key_writes_comment_header():
     """header_key writes the plugin's lines as `# ...` comments above the YAML body."""
     print("5.16 Testing external runner writes header_key as comment lines...")
@@ -1623,6 +1688,7 @@ def main():
             test_manual_composition_writes_declared_files,
             test_external_entrypoint_plugin_writes_outputs,
             test_external_command_plugin_writes_outputs,
+            test_external_path_key_plugin_overrides_destination,
             test_external_header_key_writes_comment_header,
         ]),
         ("6. HELM VALUES GENERATION", [

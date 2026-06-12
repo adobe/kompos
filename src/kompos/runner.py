@@ -10,6 +10,7 @@
 
 import argparse
 import fcntl
+import json
 import logging
 import os
 import shutil
@@ -197,6 +198,16 @@ class GenericRunner:
 
     def run_configuration(self, args):
         return
+
+    def configure_passive(self):
+        """Runner profile for non-infra runners that write their own files in the
+        generation phase (config, explore, compile, manual, external): no infra
+        validation, unordered, no reverse, and no default config-output generation.
+        """
+        self.validate_runner = False
+        self.ordered_compositions = False
+        self.reverse = False
+        self.generate_output = False
 
     def get_compositions(self):
         logging.basicConfig(level=logging.INFO)
@@ -514,6 +525,50 @@ class GenericRunner:
             shutil.rmtree(dir_path)
         os.makedirs(dir_path, exist_ok=True)
         return dir_path
+
+    def instance_output_dir(self, instance, subdir=None):
+        """
+        ``<base_output_dir>/<subdir>/<instance>`` — the per-instance artifact dir
+        shared by the file-writing runners (manual, external).
+
+        Args:
+            instance: Resolved composition instance (directory leaf).
+            subdir:   Output subdir; defaults to 'clusters' to match tfe/helm layout.
+        """
+        base = self.kompos_config.get_kompos_setting('defaults.base_output_dir', './generated')
+        return os.path.join(base, subdir or 'clusters', instance)
+
+    def write_structured_file(self, output_file, body, fmt=None, header_lines=None):
+        """
+        Write ``body`` to ``output_file`` as YAML or JSON, creating parent dirs.
+
+        Args:
+            output_file:  Destination path (parent dirs are created).
+            body:         Serializable mapping/list to write.
+            fmt:          'yaml' | 'json'; inferred from the extension when omitted.
+            header_lines: Optional list[str] written as ``# ...`` comments above a
+                          YAML body (ignored for JSON — emits a warning if provided).
+        Returns:
+            Number of bytes written.
+        """
+        fmt = (fmt or self.extract_format_from_extension(output_file)).lower()
+        self.ensure_directory(output_file, is_file_path=True)
+        with open(output_file, 'w') as f:
+            if fmt == 'json':
+                if header_lines:
+                    console.print_warning(
+                        f"Ignoring header lines for JSON output '{os.path.basename(output_file)}' "
+                        "(JSON has no comments)."
+                    )
+                json.dump(body, f, indent=2, sort_keys=False)
+                f.write('\n')
+            else:
+                if header_lines:
+                    lines = header_lines if isinstance(header_lines, list) else str(header_lines).splitlines()
+                    for line in lines:
+                        f.write(f"# {line}\n" if line else "#\n")
+                yaml.dump(body, f, default_flow_style=False, sort_keys=False)
+        return os.path.getsize(output_file)
 
     @staticmethod
     def load_yaml_file(path):

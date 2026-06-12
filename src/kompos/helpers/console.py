@@ -174,3 +174,12 @@ def print_file_generation(file_type, output_path, format_type=None, size=None):
     print(f"  • {file_type}: {output_path}")
     if size:
         print(f"    {Colors.DIM}Size:{Colors.RESET} {size}")
+
+
+def format_size(num_bytes):
+    """Human-readable byte size (B / KB / MB)."""
+    if num_bytes < 1024:
+        return f"{num_bytes} B"
+    if num_bytes < 1024 * 1024:
+        return f"{num_bytes / 1024:.1f} KB"
+    return f"{num_bytes / (1024 * 1024):.1f} MB"

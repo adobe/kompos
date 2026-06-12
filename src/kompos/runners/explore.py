@@ -81,10 +81,7 @@ class ExploreRunner(GenericRunner):
         super(ExploreRunner, self).__init__(kompos_config, config_path, execute, RUNNER_TYPE)
 
     def run_configuration(self, args):
-        self.validate_runner = False
-        self.ordered_compositions = False
-        self.reverse = False
-        self.generate_output = False
+        self.configure_passive()
 
     def honors_composition_enabled(self):
         return False

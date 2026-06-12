@@ -16,8 +16,6 @@ import subprocess
 import sys
 import time
 
-import yaml
-
 from kompos.parser import SubParserConfig
 from kompos.runner import GenericRunner
 from kompos.helpers import console
@@ -58,18 +56,25 @@ config keys it declares (nothing else), and writes back ONLY what the plugin ret
         - cell.ipam
       output_subdir: cells                         # default: clusters
       outputs:                                     # what Kompos writes from the plugin result
-        - path: cell_ipam.yaml                     # relative to <base>/<subdir>/<instance>/
+        - path: out.yaml                           # destination (optional if path_key is set)
+          path_key: write_path                     # optional — plugin returns the path here
           result_key: ledger                       # literal key of the result dict (optional)
           header_key: report                       # yaml only: result[report] (list[str]) written
                                                     #   as `# ...` comment lines before the body
           format: yaml                             # optional; inferred from extension
 
+Output path rule (one rule): the path comes from the plugin (path_key in the result)
+when set, else from the descriptor's `path`. An ABSOLUTE path is written verbatim; a
+RELATIVE path is placed under the instance dir. A plugin that must write elsewhere
+(e.g. beside cell.yaml) returns an absolute path computed from context.config_path.
+
 Plugin contract:
   Python entrypoint:  def carve(inputs: dict, context: dict) -> dict
     inputs   {declared_dotted_path: value}  — only declared keys, flat dotted keys
-    context  {instance, composition, config_path, outputs}  — read-only metadata
-    returns  dict keyed by output path (or result_key); a single output may also
-             return the bare body (no keying). Keys are matched literally.
+    context  {instance, composition, config_path, outputs}  — read-only metadata;
+             config_path is the CLI path kompos was invoked on
+    returns  dict with result_key bodies; optionally a path_key per output carrying the
+             destination path (Kompos still performs the write)
   Subprocess:  stdin  {"inputs": {...}, "context": {...}}  (JSON)
                stdout {"outputs": {"<declared path>": <body>, ...}}  (JSON)
                (single output may also emit the bare body dict on stdout)
@@ -106,10 +111,7 @@ class ExternalRunner(GenericRunner):
         super(ExternalRunner, self).__init__(kompos_config, config_path, execute, RUNNER_TYPE)
 
     def run_configuration(self, args):
-        self.validate_runner = False
-        self.ordered_compositions = False
-        self.reverse = False
-        self.generate_output = False
+        self.configure_passive()
 
     def execution_configuration(self, composition, config_path, default_output_path, raw_config,
                                 filtered_keys, excluded_keys):
@@ -162,11 +164,9 @@ class ExternalRunner(GenericRunner):
                 )
             inputs[key] = value
 
-        base = self.kompos_config.get_kompos_setting('defaults.base_output_dir', './generated')
         subdir = (spec.get('output_subdir')
-                  or self.get_nested_value(raw_config, 'composition.output_subdir')
-                  or 'clusters')
-        instance_dir = os.path.join(base, subdir, instance)
+                  or self.get_nested_value(raw_config, 'composition.output_subdir'))
+        instance_dir = self.instance_output_dir(instance, subdir)
 
         console.print_section_header(f"External: {instance} ({composition})")
         console.print_kvp("Config", console.format_config_path(config_path), indent=1)
@@ -174,7 +174,6 @@ class ExternalRunner(GenericRunner):
             console.print_kvp("Plugin", entrypoint, indent=1)
         else:
             console.print_kvp("Command", ' '.join(command if isinstance(command, list) else command.split()), indent=1)
-        console.print_kvp("Target", instance_dir, indent=1)
         print()
 
         context = {
@@ -270,26 +269,49 @@ class ExternalRunner(GenericRunner):
 
     # ── output writing ──────────────────────────────────────────────────────────
 
+    def _output_path(self, spec, result, instance_dir):
+        """Destination for one output. One rule: a plugin/descriptor path that is
+        absolute is used as-is; a relative path is placed under the instance dir.
+
+        The path comes from the plugin (``path_key`` in the result) when set,
+        else from the descriptor's ``path``. Plugins that need to write outside
+        the instance dir (e.g. beside cell.yaml) return an absolute path computed
+        from ``context.config_path``.
+        """
+        path_key = spec.get('path_key')
+        rel_path = (path_key and result.get(path_key)) or spec.get('path')
+        if not rel_path:
+            return None
+        if os.path.isabs(rel_path):
+            return os.path.normpath(rel_path)
+        return os.path.normpath(os.path.join(instance_dir, rel_path))
+
     def _write_outputs(self, outputs, result, instance_dir, single):
+        # result is guaranteed a dict here (validated by the caller).
         files_written = 0
         for spec in outputs:
-            rel_path = spec.get('path')
-            if not rel_path:
-                console.print_warning("Skipping composition.external.outputs entry with no 'path'.")
-                continue
+            output_file = self._output_path(spec, result, instance_dir)
+            if not output_file:
+                path_key = spec.get('path_key')
+                console.print_error(
+                    "External output has no destination path",
+                    details=[
+                        "  Set composition.external.outputs[].path, or have the plugin return",
+                        f"  outputs[].path_key{f' ({path_key})' if path_key else ''}.",
+                    ],
+                )
+                return 1, files_written
+            rel_path = os.path.basename(output_file)
 
-            # Plugins key their result by a literal string: the output `path` by
-            # default, or an explicit `result_key`. A single output may also return
-            # the bare body (no keying) for convenience.
-            key = spec.get('result_key') or rel_path
-            if isinstance(result, dict) and key in result:
+            # Body keying: explicit result_key / path, else the bare result for a
+            # single output, else the file's basename.
+            key = spec.get('result_key') or spec.get('path')
+            if key and key in result:
                 body = result[key]
-            elif isinstance(result, dict) and os.path.basename(rel_path) in result:
-                body = result[os.path.basename(rel_path)]
             elif single:
                 body = result
             else:
-                body = None
+                body = result.get(rel_path)
 
             if body is None:
                 console.print_error(
@@ -302,44 +324,17 @@ class ExternalRunner(GenericRunner):
                 return 1, files_written
 
             # Optional comment header (yaml only): the plugin returns lines under
-            # header_key; the runner writes them as `# ...` before the body so a
-            # generated yaml file can carry a DO-NOT-EDIT banner / ASCII map.
-            header = None
-            header_key = spec.get('header_key')
-            if header_key and isinstance(result, dict):
-                header = result.get(header_key)
+            # header_key; written as `# ...` before the body (DO-NOT-EDIT banner etc).
+            header = result.get(spec['header_key']) if spec.get('header_key') else None
 
-            fmt = (spec.get('format') or self.extract_format_from_extension(rel_path)).lower()
-            output_file = os.path.normpath(os.path.join(instance_dir, rel_path))
-            self.ensure_directory(output_file, is_file_path=True)
-            with open(output_file, 'w') as f:
-                if fmt == 'json':
-                    if header:
-                        console.print_warning(
-                            f"Ignoring header_key for JSON output '{rel_path}' (JSON has no comments)."
-                        )
-                    json.dump(body, f, indent=2, sort_keys=False)
-                    f.write('\n')
-                else:
-                    if header:
-                        lines = header if isinstance(header, list) else str(header).splitlines()
-                        for line in lines:
-                            f.write(f"# {line}\n" if line else "#\n")
-                    yaml.dump(body, f, default_flow_style=False, sort_keys=False)
+            size = self.write_structured_file(
+                output_file, body, fmt=spec.get('format'), header_lines=header
+            )
             files_written += 1
-            size = os.path.getsize(output_file)
             console.print_success(f"Wrote {os.path.relpath(output_file, os.getcwd())}")
-            console.print_file_generation("external", output_file, size=self._format_size(size))
+            console.print_file_generation("external", output_file, size=console.format_size(size))
 
         return 0, files_written
-
-    @staticmethod
-    def _format_size(num_bytes):
-        if num_bytes < 1024:
-            return f"{num_bytes} B"
-        if num_bytes < 1024 * 1024:
-            return f"{num_bytes / 1024:.1f} KB"
-        return f"{num_bytes / (1024 * 1024):.1f} MB"
 
     @staticmethod
     def execution(args, extra_args, default_output_path, composition, raw_config):
