@@ -1611,6 +1611,130 @@ def test_helm_list():
     print("  ✓ helm list shows enabled charts with versions")
 
 
+def test_parse_inventory_config():
+    """Inventory config parsing supports inventory and legacy readme keys."""
+    print("6.3b Testing helm inventory config parsing...")
+    from kompos.runners.helm import _parse_inventory_config
+
+    enabled, settings = _parse_inventory_config({'inventory': True})
+    assert enabled and settings == {}
+
+    enabled, settings = _parse_inventory_config({
+        'inventory': {'enabled': True, 'group_by': 'env.name'},
+    })
+    assert enabled and settings.get('group_by') == 'env.name'
+
+    enabled, settings = _parse_inventory_config({
+        'readme': True,
+        'readme_inventory': {'columns': [{'header': 'Cluster', 'template': '{cluster}'}]},
+    })
+    assert enabled and settings.get('columns')
+
+    enabled, _ = _parse_inventory_config({})
+    assert not enabled
+    print("  ✓ inventory config parsing ok")
+
+
+def test_chart_inventory_write_path(tmp_path=None):
+    """Full inventory at charts/{chart}/README.md; plain placeholder at generated/README.md."""
+    print("6.3c Testing chart inventory write path...")
+    import tempfile
+    from kompos.runners.helm import HelmRunner
+    from kompos.helpers.helm_readme import HelmReadmeWriter
+
+    class _Runner:
+        symlink_generated = True
+        inventory = {}
+        bridge_filename = 'bridge.yaml'
+        overrides_subdir = 'overrides'
+
+        def load_yaml_file(self, _path):
+            return None
+
+    charts = tmp_path or Path(tempfile.mkdtemp())
+    chart_dir = charts / 'my-app'
+    gen = chart_dir / 'generated'
+    gen.mkdir(parents=True)
+    (gen / 'demo.yaml').write_text('x: 1\n')
+
+    writer = HelmReadmeWriter(_Runner())
+    writer._preload_templates()
+    tpl = writer._template_cache['helm-chart-readme.md']
+    pipeline = writer._render_pipeline_diagram('demo.yaml')
+    writer._write_chart_inventory_readme(
+        str(chart_dir), 'my-app', {}, tpl, pipeline, configs_root=None)
+
+    root_readme = chart_dir / 'README.md'
+    gen_readme = gen / 'README.md'
+    assert root_readme.is_file(), 'full inventory README must be charts/{chart}/README.md'
+    assert 'Deployment inventory' in root_readme.read_text()
+    assert gen_readme.is_file(), 'placeholder README must be charts/{chart}/generated/README.md'
+    placeholder = gen_readme.read_text()
+    assert 'MANAGED BY KOMPOS' in placeholder
+    assert '# Generated: my-app' in placeholder, 'plain placeholder title'
+    assert 'Deployment inventory' not in placeholder, 'generated/ README stays a plain placeholder'
+    print("  ✓ inventory at chart root, plain placeholder in generated/")
+
+
+def test_helm_missing_tfe_outputs_no_sys_exit(tmp_path=None):
+    """Missing tfe-outputs.yaml must fail one cluster, not sys.exit the whole compile (0.12.5 bug)."""
+    print("6.3e Testing missing tfe-outputs returns None (no sys.exit)...")
+    import tempfile
+    from kompos.runners.helm import HelmRunner
+
+    class _Runner(HelmRunner):
+        def __init__(self):
+            self.config_path = None
+            self.enclosing_key = '__helm_values__'
+
+        def get_raw_config(self, _path, _comp):
+            return {'cluster': {'fullName': 'demo'}}
+
+    runner = _Runner()
+    missing = str((tmp_path or Path(tempfile.mkdtemp())) / 'no-such-tfe-outputs.yaml')
+    context = runner._build_context(None, missing)
+    assert context is None, 'missing infra outputs must return None, not sys.exit'
+    print("  ✓ missing tfe-outputs returns None")
+
+
+def test_compile_flushes_inventory_on_failure():
+    """compile build must flush deferred inventory even when some compositions fail (0.12.5 bug)."""
+    print("6.3f Testing compile flushes inventory on partial failure...")
+    from unittest.mock import MagicMock, patch
+    from kompos.runners import compile as compile_mod
+
+    flush_called = []
+
+    runner = compile_mod.CompileRunner.__new__(compile_mod.CompileRunner)
+    runner.kompos_config = MagicMock()
+    runner.execute = False
+    runner.get_raw_config = MagicMock(return_value={'composition': {'instance': 'demo'}})
+    runner.is_composition_enabled = MagicMock(return_value=True)
+
+    helm_instance = MagicMock()
+    helm_instance.run_configuration = MagicMock()
+    helm_instance.get_compositions.return_value = (['helm-values'], ['/fake/path'])
+    helm_instance._run_compositions_internal.return_value = 1
+    helm_class = MagicMock(return_value=helm_instance)
+
+    dispatch_args = MagicMock()
+    dispatch_args.himl_args = None
+
+    with patch('kompos.helpers.helm_readme.HelmReadmeWriter.flush_pending_chart_inventory',
+               side_effect=lambda: flush_called.append(True)):
+        with patch.object(compile_mod, '_get_runner_class', return_value=helm_class):
+            with patch.object(compile_mod, '_build_default_dispatch_args', return_value=dispatch_args):
+                rc = runner._build(
+                    [('helm-values', '/fake/path')],
+                    {'helm-values': 'helm'},
+                    MagicMock(),
+                )
+
+    assert flush_called, 'flush_pending_chart_inventory must run before compile returns failure'
+    assert rc == 1
+    print("  ✓ compile flushes inventory even when compositions fail")
+
+
 def test_helm_generate_dry_run():
     """Test helm generate --dry-run: interpolation, discovery, no files written"""
     print("6.3 Testing helm generate --dry-run...")
@@ -1661,6 +1785,7 @@ def test_helm_generate_writes_files():
     assert result.returncode == 0, f"helm generate failed:\n{result.stderr}"
     assert (argoapps / "my-app.yaml").exists(),    "my-app.yaml should be written"
     assert (argoapps / "my-ingress.yaml").exists(), "my-ingress.yaml should be written"
+    assert (argoapps / "README.md").exists(),      "cluster README.md is always written"
     content = (argoapps / "my-app.yaml").read_text() + (argoapps / "my-ingress.yaml").read_text()
     assert "{{" not in content,                     "No unresolved {{}} in output files"
     assert "demo-dev-usw2-cluster-01" in content,   "cluster name should be resolved"
@@ -1764,6 +1889,10 @@ def main():
         ("6. HELM VALUES GENERATION", [
             test_helm_help,
             test_helm_list,
+            test_parse_inventory_config,
+            test_chart_inventory_write_path,
+            test_helm_missing_tfe_outputs_no_sys_exit,
+            test_compile_flushes_inventory_on_failure,
             test_helm_generate_dry_run,
             test_helm_generate_writes_files,
             test_helm_generate_single_chart,

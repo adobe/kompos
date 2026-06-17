@@ -144,7 +144,7 @@
                   "default": false
                 },
                 "inventory": {
-                  "description": "Opt-in deployment inventory written into charts/{chart}/README.md (requires symlink_generated). Per-cluster helm-values README.md is always written. Set true for defaults, or an object with enabled and column settings.",
+                  "description": "Opt-in deployment inventory written into charts/{chart}/README.md, with a plain placeholder at charts/{chart}/generated/README.md (requires symlink_generated). Per-cluster helm-values README.md is always written. Set true for defaults, or an object with enabled and column settings.",
                   "oneOf": [
                     { "type": "boolean" },
                     {
@@ -179,12 +179,7 @@
                     "refresh": {
                       "type": "string",
                       "enum": ["always", "deferred", "never"],
-                      "description": "When to refresh charts/*/README.md inventory: always (each generate), deferred (once per compile or standalone generate), never"
-                    },
-                    "cluster_index_cache": {
-                      "type": "boolean",
-                      "description": "Cache cluster metadata at configs/.kompos-inventory-cluster-index.yaml (default true)",
-                      "default": true
+                      "description": "When to refresh charts/{chart}/README.md inventory: always (each generate), deferred (once per compile or standalone generate), never"
                     },
                     "config_filters": {
                       "type": "array",

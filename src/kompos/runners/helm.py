@@ -29,14 +29,18 @@ RUNNER_TYPE = "helm"
 
 
 def _parse_inventory_config(helm_config):
-    """Return (enabled, settings) from helm.config.inventory."""
-    raw = helm_config.get('inventory', False)
+    """Return (enabled, settings) from helm.config.inventory (or legacy readme keys)."""
+    raw = helm_config.get('inventory')
     if raw is True:
         return True, {}
-    if not raw:
-        return False, {}
     if isinstance(raw, dict):
         return bool(raw.get('enabled', True)), raw
+
+    # Legacy (≤0.12.4): helm.config.readme + helm.config.readme_inventory
+    if helm_config.get('readme'):
+        legacy = helm_config.get('readme_inventory')
+        return True, legacy if isinstance(legacy, dict) else {}
+
     return False, {}
 
 # Key injected into context during interpolation, stripped from output.
@@ -161,9 +165,8 @@ class HelmRunner(GenericRunner):
                     "Provide --charts-dir PATH, --chart-dir PATH, "
                     "or set helm.config.charts_dir in .komposconfig.yaml"
                 )
-                sys.exit(1)
-            self.run_generate(args, raw_config, charts_dir, config_path, composition)
-            return
+                return 1
+            return self.run_generate(args, raw_config, charts_dir, config_path, composition)
 
         if args.subcommand == 'delete':
             self.run_delete(raw_config)
@@ -200,9 +203,7 @@ class HelmRunner(GenericRunner):
                 print(f"  {console.Colors.YELLOW}✗{console.Colors.RESET} {symlink_path}")
                 removed += 1
             if os.path.isdir(gen_dir):
-                HelmReadmeWriter.cleanup_legacy_readme(gen_dir)
-                if not os.listdir(gen_dir):
-                    os.rmdir(gen_dir)
+                HelmReadmeWriter._remove_generated_dir_if_empty(gen_dir)
 
         if removed:
             print(f"\n  {console.Colors.GREEN}✓{console.Colors.RESET} Deleted {removed} artifact(s) for {cluster_name}")
@@ -271,7 +272,7 @@ class HelmRunner(GenericRunner):
                 "Could not determine cluster name.",
                 "Ensure composition.instance is set in composition=helm-values config."
             )
-            sys.exit(1)
+            return 1
 
         env_name = self.get_nested_value(raw_config, 'env.name')
 
@@ -291,7 +292,7 @@ class HelmRunner(GenericRunner):
             if not enabled:
                 console.print_warning("No enabled charts found in helm.charts.*")
                 self.report_chart_status(disabled, untracked)
-                return
+                return 0
 
             chart_files = {
                 app_name: os.path.join(charts_dir, app_name, self.bridge_filename)
@@ -303,6 +304,8 @@ class HelmRunner(GenericRunner):
 
         # Build context once — hierarchy + infra outputs, reused for all charts
         context = self._build_context(config_path, infra_outputs_path)
+        if context is None:
+            return 1
 
         argoapps_dir, _ = self._output_paths(cluster_name)
 
@@ -398,7 +401,8 @@ class HelmRunner(GenericRunner):
         if validation_errors:
             console.print_error(
                 f"Unresolved interpolations in {len(validation_errors)} chart(s): {', '.join(validation_errors)}")
-            sys.exit(1)
+            return 1
+        return 0
 
     # ── context ───────────────────────────────────────────────────────────────
 
@@ -414,9 +418,9 @@ class HelmRunner(GenericRunner):
         if infra_outputs is None:
             console.print_error(
                 f"Infra outputs not found: {infra_outputs_path}",
-                "Ensure terraform has been applied and outputs exported before rendering helm values."
+                "Run `kompos configs compile build` (manual/tfe outputs first), or restore the file from git."
             )
-            sys.exit(1)
+            return None
 
         context = self.merge_configs(context, infra_outputs)
         context.pop(self.enclosing_key, None)

@@ -311,14 +311,14 @@ class CompileRunner(GenericRunner):
                 logger.error(f"Failed: {comp_path}: {e}")
                 failed.append(comp_path)
 
+        from kompos.helpers.helm_readme import HelmReadmeWriter
+        HelmReadmeWriter.flush_pending_chart_inventory()
+
         if failed:
             print(f"\n  ✗ {len(failed)} composition(s) failed:")
             for p in failed:
                 print(f"    - {os.path.relpath(p)}")
             return 1
-
-        from kompos.helpers.helm_readme import HelmReadmeWriter
-        HelmReadmeWriter.flush_pending_chart_inventory()
         return 0
 
     # ── prune ─────────────────────────────────────────────────────────────────

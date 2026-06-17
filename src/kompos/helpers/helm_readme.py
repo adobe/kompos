@@ -1,8 +1,12 @@
 """Managed README generation for the helm runner.
 
-Per-cluster ``README.md`` under helm-values output is always written. Deployment
-inventory (also written to ``charts/{chart}/README.md``) is opt-in via
-``helm.config.inventory`` in ``.komposconfig.yaml``.
+Per-cluster ``README.md`` under helm-values output is always written. Opt-in chart
+inventory (``helm.config.inventory``) writes two managed files:
+
+* ``charts/{chart}/README.md`` — full deployment inventory (rendering pipeline,
+  value sources, Source & GitOps links, per-env Argo CD table).
+* ``charts/{chart}/generated/README.md`` — plain placeholder describing the
+  ``generated/`` symlink folder (byte-identical to the pre-inventory README).
 """
 
 import glob
@@ -21,8 +25,6 @@ _PLACEHOLDER = re.compile(r'\{([^}]+)\}')
 _CLUSTER_CONFIG_CACHE = {}
 _ENV_YAML_CACHE = {}
 _PENDING_CHART_INVENTORY = {}
-
-_INDEX_CACHE_FILENAME = '.kompos-inventory-cluster-index.yaml'
 
 # Used when inventory.columns is not set (filesystem layout only).
 _DEFAULT_INVENTORY_COLUMNS = [
@@ -72,13 +74,19 @@ class HelmReadmeWriter:
         self._template_cache = {}
 
     @staticmethod
-    def cleanup_legacy_readme(generated_dir):
-        """Remove README.md left under charts/{chart}/generated/ from older kompos versions."""
-        if not generated_dir:
+    def _remove_generated_dir_if_empty(gen_dir):
+        """Remove charts/{chart}/generated/ once only the managed placeholder README remains."""
+        if not os.path.isdir(gen_dir):
             return
-        legacy_readme = os.path.join(generated_dir, 'README.md')
-        if os.path.isfile(legacy_readme):
-            os.remove(legacy_readme)
+        try:
+            entries = os.listdir(gen_dir)
+        except OSError:
+            return
+        if not entries:
+            os.rmdir(gen_dir)
+        elif entries == ['README.md']:
+            os.remove(os.path.join(gen_dir, 'README.md'))
+            os.rmdir(gen_dir)
 
     def write_cluster_readme(self, argoapps_dir, cluster_name, chart_files):
         """Write per-cluster README (always — same as pre-0.12.3 helm generate behavior)."""
@@ -94,7 +102,7 @@ class HelmReadmeWriter:
     def write_chart_inventory(self, charts_dir, chart_files, config_path=None,
                               composition=None, current_raw_config=None,
                               defer_chart_inventory=False):
-        """Write per-chart README.md with deployment inventory (opt-in via ``helm.config.inventory``)."""
+        """Write per-chart inventory READMEs (opt-in via ``helm.config.inventory``)."""
         if not self._runner.symlink_generated or not charts_dir:
             return
 
@@ -139,9 +147,6 @@ class HelmReadmeWriter:
         inv = self._inventory_config()
         return inv.get('refresh', inv.get('chart_readmes', 'deferred'))
 
-    def _use_disk_index_cache(self):
-        return self._inventory_config().get('cluster_index_cache', True)
-
     def _flush_chart_inventory_for_dir(self, charts_dir):
         self._preload_templates()
         ctx = _PENDING_CHART_INVENTORY.get(charts_dir, {})
@@ -178,6 +183,7 @@ class HelmReadmeWriter:
         for name in (
             'helm-readme.md',
             'helm-chart-readme.md',
+            'helm-generated-placeholder.md',
             'helm-pipeline-diagram.md',
             'helm-deployment-inventory-empty.md',
         ):
@@ -317,83 +323,17 @@ class HelmReadmeWriter:
         pattern = os.path.join(configs_root, '**', f'composition={comp_type}', 'helm.yaml')
         return sorted(os.path.dirname(path) for path in glob.glob(pattern, recursive=True))
 
-    def _index_cache_path(self, configs_root):
-        return os.path.join(configs_root, _INDEX_CACHE_FILENAME)
-
-    def _index_cache_sources(self, configs_root, comp_type):
-        sources = []
-        for root in self._find_helm_values_roots(configs_root, comp_type):
-            helm_yaml = os.path.join(root, 'helm.yaml')
-            if os.path.isfile(helm_yaml):
-                sources.append(helm_yaml)
-            env_dir = self._find_env_dir(root)
-            if env_dir:
-                env_yaml = os.path.join(env_dir, 'env.yaml')
-                if os.path.isfile(env_yaml):
-                    sources.append(env_yaml)
-        return sorted(set(sources))
-
-    @staticmethod
-    def _snapshot_sources(source_paths):
-        snapshot = []
-        for path in source_paths:
-            if os.path.isfile(path):
-                snapshot.append({'path': path, 'mtime': os.path.getmtime(path)})
-        return snapshot
-
-    @staticmethod
-    def _sources_match_snapshot(snapshot):
-        for entry in snapshot:
-            path = entry['path']
-            if not os.path.isfile(path):
-                return False
-            if os.path.getmtime(path) != entry['mtime']:
-                return False
-        return True
-
-    def _load_disk_cluster_index(self, cache_path):
-        try:
-            with open(cache_path) as f:
-                payload = yaml.safe_load(f) or {}
-        except (OSError, yaml.YAMLError):
-            return None
-        snapshot = payload.get('sources') or []
-        if not self._sources_match_snapshot(snapshot):
-            return None
-        clusters = payload.get('clusters')
-        return clusters if isinstance(clusters, dict) else None
-
-    def _save_disk_cluster_index(self, cache_path, clusters, source_paths):
-        payload = {
-            'sources': self._snapshot_sources(source_paths),
-            'clusters': clusters,
-        }
-        with open(cache_path, 'w') as f:
-            yaml.safe_dump(payload, f, default_flow_style=False, sort_keys=False)
-
     def _get_cluster_configs(self, configs_root, composition,
                              current_config_path=None, current_raw_config=None):
+        """Map cluster fullName → config slice for inventory column templates."""
         inventory_config = self._inventory_config()
         comp_type = self._composition_type(composition, inventory_config)
         cache_key = (configs_root, comp_type, tuple(sorted(self._inventory_config_paths())))
         if cache_key in _CLUSTER_CONFIG_CACHE:
             return _CLUSTER_CONFIG_CACHE[cache_key]
 
-        index = None
-        cache_path = self._index_cache_path(configs_root)
-        source_paths = self._index_cache_sources(configs_root, comp_type)
-        if self._use_disk_index_cache() and configs_root:
-            index = self._load_disk_cluster_index(cache_path)
-
-        if index is None:
-            index = self._build_cluster_config_index(
-                configs_root, composition, current_config_path, current_raw_config)
-            if self._use_disk_index_cache() and configs_root and index:
-                try:
-                    self._save_disk_cluster_index(cache_path, index, source_paths)
-                except OSError:
-                    logger.debug('Could not write inventory cluster index cache', exc_info=True)
-
+        index = self._build_cluster_config_index(
+            configs_root, composition, current_config_path, current_raw_config)
         _CLUSTER_CONFIG_CACHE[cache_key] = index
         return index
 
@@ -672,6 +612,8 @@ class HelmReadmeWriter:
                             chart_tpl, chart_pipeline, configs_root=None):
         per_chart_dir = os.path.join(chart_dir, 'generated')
         cluster_names = self._list_generated_cluster_names(per_chart_dir)
+
+        # Full deployment inventory lives at the chart root README.md.
         chart_content = chart_tpl.format(
             chart_name=chart_name,
             bridge_filename=self._runner.bridge_filename,
@@ -683,6 +625,19 @@ class HelmReadmeWriter:
             deployment_inventory=self._format_deployment_inventory(
                 chart_name, cluster_names, cluster_configs),
         )
-        chart_readme = os.path.join(chart_dir, 'README.md')
-        self._write_if_changed(chart_readme, chart_content)
-        self.cleanup_legacy_readme(per_chart_dir)
+        self._write_if_changed(os.path.join(chart_dir, 'README.md'), chart_content)
+
+        # Plain placeholder for the generated/ symlink folder (byte-identical to the
+        # pre-inventory README so existing generated/README.md files show no diff).
+        self._write_generated_placeholder(per_chart_dir, chart_name)
+
+    def _write_generated_placeholder(self, per_chart_dir, chart_name):
+        """Write the plain README placeholder under charts/{chart}/generated/."""
+        if not os.path.isdir(per_chart_dir):
+            return
+        content = self._load_template('helm-generated-placeholder.md').format(
+            chart_name=chart_name,
+            bridge_filename=self._runner.bridge_filename,
+            overrides_subdir=self._runner.overrides_subdir,
+        )
+        self._write_if_changed(os.path.join(per_chart_dir, 'README.md'), content)

@@ -612,12 +612,6 @@ class GenericRunner:
                 json.dump(new, f, indent=2)
                 f.write('\n')
 
-        if new or os.path.isfile(manifest_path):
-            self.ensure_directory(manifest_path, is_file_path=True)
-            with open(manifest_path, 'w') as f:
-                json.dump(new, f, indent=2)
-                f.write('\n')
-
     @staticmethod
     def load_yaml_file(path):
         """
