@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.3] - 2026-06-16
+
+### Changed
+- **Helm managed READMEs** — extracted to `helpers/helm_readme.py` (`HelmReadmeWriter`).
+  Opt-in via `helm.config.readme: true` (default `false`); per-chart READMEs still require
+  `symlink_generated: true`. Inventory columns are config-driven via
+  `helm.config.readme_inventory.columns` (`{cluster}`, `{chart}`, hierarchy paths).
+  Uses filtered himl merges and env.yaml reads for inventory metadata; skips README
+  writes when content is unchanged. `chart_readmes: deferred` refreshes chart READMEs
+  once per compile (or standalone generate); `cluster_index_cache` persists metadata
+  under `configs/.kompos-readme-cluster-index.yaml`. Optional chart-level link table
+  (`readme_inventory.chart_links`) reads repo-defined keys from the configs marker file.
+
 ## [0.12.2] - 2026-06-11
 
 ### Added
@@ -14,8 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   banners, and `compile build` dispatch.
 - **`path_key` on `composition.external.outputs[]`** — a plugin returns its output path (absolute → written verbatim, e.g. beside the source config; relative → under the instance dir); Kompos performs the write, the plugin stays a pure transform.
 
+- **File-level prune for declarative runners** — `manual` and `external` compositions now clean up files they wrote on a prior run but no longer emit (e.g. an `outputs[]`/`files[]` entry renamed or removed). Each composition tracks its own writes in a per-runner manifest (`.kompos-<runner>.manifest`) in its instance dir and deletes only its own stale files, and only under `base_output_dir` (`generated/`) — outputs written elsewhere (e.g. a ledger committed under `configs/` via an absolute `path_key`) are tracked but never auto-deleted. Complements directory-level `compile --prune`, which only removes whole instance dirs.
+
 ### Changed
-- **Shared file-writing plumbing on `GenericRunner`** (`write_structured_file`, `instance_output_dir`, `configure_passive`) — `manual` and `external` now reuse it instead of hand-rolling output paths, and external path resolution collapses to one absolute-vs-instance rule.
+- **Shared file-writing plumbing on `GenericRunner`** (`write_structured_file`, `instance_output_dir`, `configure_passive`, `prune_composition_outputs`) — `manual` and `external` now reuse it instead of hand-rolling output paths, and external path resolution collapses to one absolute-vs-instance rule.
 
 ## [0.11.8] - 2026-06-09
 

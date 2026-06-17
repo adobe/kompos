@@ -91,6 +91,7 @@ class ManualRunner(GenericRunner):
         subdir = self.get_nested_value(raw_config, 'composition.output_subdir')
         instance_dir = self.instance_output_dir(instance, subdir)
 
+        written_paths = []
         for spec in files:
             rel_path = spec.get('path')
             if not rel_path:
@@ -108,7 +109,12 @@ class ManualRunner(GenericRunner):
 
             output_file = os.path.join(instance_dir, rel_path)
             self.write_structured_file(output_file, body, fmt=spec.get('format'))
+            written_paths.append(output_file)
             console.print_file_generation("manual", output_file)
+
+        # File-level prune: drop files this composition wrote on a prior run but
+        # no longer declares (only under generated/; tracked in its own manifest).
+        self.prune_composition_outputs(instance_dir, written_paths)
 
         return 0
 

@@ -1171,6 +1171,7 @@ def test_manual_composition_writes_declared_files():
         runner = ManualRunner.__new__(ManualRunner)
         runner.kompos_config = _StubKomposConfig(tmp)
         runner.config_path = "<test>"
+        runner.runner_type = "manual"
 
         raw = {
             'composition': {
@@ -1220,6 +1221,7 @@ def _make_external_runner(base_dir):
     runner = ExternalRunner.__new__(ExternalRunner)
     runner.kompos_config = _StubKomposConfig(base_dir)
     runner.config_path = "<test>"
+    runner.runner_type = "external"
     return runner
 
 
@@ -1397,6 +1399,68 @@ def test_external_path_key_plugin_overrides_destination():
         with open(out) as fh:
             assert _yaml.safe_load(fh) == {'ok': True}
         print("  ✓ path_key from plugin directed Kompos write beside cell.yaml")
+    finally:
+        os.chdir(cwd)
+        try:
+            sys.path.remove(plugin_dir)
+        except ValueError:
+            pass
+        sys.modules.pop('demo_plugin', None)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_external_prune_removes_stale_outputs():
+    """File-level prune: a composition deletes files it wrote before but no longer emits.
+
+    Run the same external composition twice with a different output filename; the first
+    file must be pruned (only under generated/), tracked via the per-runner manifest.
+    """
+    print("5.16c Testing external runner prunes stale outputs it no longer writes...")
+
+    import shutil
+    import tempfile
+    import textwrap
+
+    tmp = tempfile.mkdtemp(prefix="kompos-external-prune-")
+    plugin_dir = os.path.join(tmp, "plugins")
+    os.makedirs(plugin_dir)
+    with open(os.path.join(plugin_dir, "demo_plugin.py"), "w") as f:
+        f.write(textwrap.dedent('''
+            def transform(inputs, context):
+                return {"body": {"ok": True}}
+        '''))
+
+    cwd = os.getcwd()
+    sys.path.insert(0, plugin_dir)
+    try:
+        os.chdir(tmp)
+        runner = _make_external_runner(os.path.join(tmp, "generated"))
+        inst_dir = os.path.join(tmp, 'generated', 'widgets', 'demo-instance-01')
+
+        def raw_with(path):
+            return {
+                'composition': {
+                    'type': 'external',
+                    'instance': 'demo-instance-01',
+                    'external': {
+                        'entrypoint': 'demo_plugin:transform',
+                        'pythonpath': ['plugins'],
+                        'output_subdir': 'widgets',
+                        'outputs': [{'path': path, 'result_key': 'body', 'format': 'yaml'}],
+                    },
+                },
+            }
+
+        # First run writes old.yaml.
+        assert runner.execution_configuration('external', '<test>', None, raw_with('old.yaml'), [], []) == 0
+        assert os.path.isfile(os.path.join(inst_dir, 'old.yaml')), "first run should write old.yaml"
+
+        # Second run renames the output → new.yaml; old.yaml must be pruned.
+        assert runner.execution_configuration('external', '<test>', None, raw_with('new.yaml'), [], []) == 0
+        assert os.path.isfile(os.path.join(inst_dir, 'new.yaml')), "second run should write new.yaml"
+        assert not os.path.isfile(os.path.join(inst_dir, 'old.yaml')), \
+            "stale old.yaml must be pruned by file-level prune"
+        print("  ✓ external prune removed the renamed-away output it no longer writes")
     finally:
         os.chdir(cwd)
         try:
@@ -1689,6 +1753,7 @@ def main():
             test_external_entrypoint_plugin_writes_outputs,
             test_external_command_plugin_writes_outputs,
             test_external_path_key_plugin_overrides_destination,
+            test_external_prune_removes_stale_outputs,
             test_external_header_key_writes_comment_header,
         ]),
         ("6. HELM VALUES GENERATION", [

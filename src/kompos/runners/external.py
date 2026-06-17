@@ -289,6 +289,7 @@ class ExternalRunner(GenericRunner):
     def _write_outputs(self, outputs, result, instance_dir, single):
         # result is guaranteed a dict here (validated by the caller).
         files_written = 0
+        written_paths = []
         for spec in outputs:
             output_file = self._output_path(spec, result, instance_dir)
             if not output_file:
@@ -331,8 +332,13 @@ class ExternalRunner(GenericRunner):
                 output_file, body, fmt=spec.get('format'), header_lines=header
             )
             files_written += 1
+            written_paths.append(output_file)
             console.print_success(f"Wrote {os.path.relpath(output_file, os.getcwd())}")
             console.print_file_generation("external", output_file, size=console.format_size(size))
+
+        # File-level prune: drop files this composition wrote on a prior run but
+        # no longer emits (only under generated/; tracked in its own manifest).
+        self.prune_composition_outputs(instance_dir, written_paths)
 
         return 0, files_written
 

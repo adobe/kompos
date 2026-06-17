@@ -570,6 +570,53 @@ class GenericRunner:
                 yaml.dump(body, f, default_flow_style=False, sort_keys=False)
         return os.path.getsize(output_file)
 
+    def prune_composition_outputs(self, manifest_dir, written_files):
+        """
+        File-level prune: a composition cleans up the files it produced on a
+        previous run but no longer emits (e.g. an ``outputs[]`` entry renamed or
+        removed). Each composition owns its own manifest, so this is safe even
+        when several runners share an instance dir — a runner only ever deletes
+        files it wrote itself.
+
+        Safety rails:
+          - Only files **under** ``base_output_dir`` (``generated/``) are deleted.
+            Outputs written elsewhere (e.g. a ledger committed under ``configs/``
+            via an absolute ``path_key``) are tracked but never auto-removed.
+          - Deletes only regular files previously recorded in this runner's
+            manifest — never directories, never untracked files.
+
+        Args:
+            manifest_dir:  Directory that owns the manifest (the composition's
+                           instance dir).
+            written_files: Paths written during this run.
+        """
+        base = os.path.abspath(
+            self.kompos_config.get_kompos_setting('defaults.base_output_dir', './generated')
+        )
+        manifest_path = os.path.join(manifest_dir, f".kompos-{self.runner_type}.manifest")
+        new = sorted({os.path.abspath(p) for p in written_files})
+
+        old = []
+        if os.path.isfile(manifest_path):
+            try:
+                with open(manifest_path) as f:
+                    old = json.load(f)
+            except (ValueError, OSError):
+                old = []
+
+        for stale in sorted(set(old) - set(new)):
+            stale_abs = os.path.abspath(stale)
+            under_base = os.path.commonpath([base, stale_abs]) == base
+            if under_base and os.path.isfile(stale_abs):
+                os.remove(stale_abs)
+                console.print_warning(f"Pruned stale output: {os.path.relpath(stale_abs)}")
+
+        if new or os.path.isfile(manifest_path):
+            self.ensure_directory(manifest_path, is_file_path=True)
+            with open(manifest_path, 'w') as f:
+                json.dump(new, f, indent=2)
+                f.write('\n')
+
     @staticmethod
     def load_yaml_file(path):
         """
