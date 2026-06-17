@@ -88,14 +88,41 @@ class HelmReadmeWriter:
             os.remove(os.path.join(gen_dir, 'README.md'))
             os.rmdir(gen_dir)
 
-    def write_cluster_readme(self, argoapps_dir, cluster_name, chart_files):
-        """Write per-cluster README (always — same as pre-0.12.3 helm generate behavior)."""
+    def write_cluster_readme(self, argoapps_dir, cluster_name, chart_files,
+                             rendered=None, disabled=None):
+        """Write per-cluster README listing every chart processed for the cluster.
+
+        The ``## Charts processed`` section covers enabled charts:
+          * rendered values             → plain ``- `chart.yaml```
+          * enabled, nothing to generate (no ``bridge.yaml``/overrides) → flagged
+
+        Disabled charts get a separate ``## Charts disabled`` section.
+        """
         self._preload_templates()
-        charts_list = '\n'.join(f'  - `{name}.yaml`' for name in sorted(chart_files.keys()))
+        rendered = set(chart_files.keys()) if rendered is None else rendered
+        disabled = set(disabled or [])
+        lines = []
+        for name in sorted(chart_files.keys()):
+            if name in rendered:
+                lines.append(f'  - `{name}.yaml`')
+            else:
+                lines.append(f'  - `{name}.yaml` _(enabled — nothing to generate)_')
+        charts_list = '\n'.join(lines)
+
+        disabled_section = ''
+        if disabled:
+            disabled_lines = '\n'.join(
+                f'  - `{name}.yaml`' for name in sorted(disabled))
+            disabled_section = (
+                '\n## Charts disabled\n\n'
+                'Present on disk but disabled in `helm.charts.*` — no values emitted.\n\n'
+                f'{disabled_lines}\n')
+
         cluster_readme = self._load_template('helm-readme.md').format(
             cluster_name=cluster_name,
             pipeline_diagram=self._render_pipeline_diagram(f'{cluster_name}.yaml'),
             charts_list=charts_list,
+            disabled_section=disabled_section,
         )
         self._write_if_changed(os.path.join(argoapps_dir, 'README.md'), cluster_readme)
 

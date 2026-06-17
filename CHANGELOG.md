@@ -9,7 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Helm cluster README** — always writes `README.md` in helm-values output (pipeline diagram + chart list).
-- **Chart deployment inventory** — opt-in via `helm.config.inventory`; writes `charts/{chart}/README.md` with configurable columns, env grouping, and chart-registry links. Requires `symlink_generated: true`.
+- **Chart deployment inventory** — opt-in via `helm.config.inventory`; writes `charts/{chart}/README.md` with configurable columns, env grouping, and chart-registry links. Requires `symlink_generated: true`. The `charts/{chart}/generated/README.md` placeholder is kept unchanged (plain pre-inventory README).
+
+### Changed
+- **Cluster README** — `helm-values/README.md` `## Charts processed` section lists rendered charts plainly and enabled-with-nothing-to-generate as `_(enabled — nothing to generate)_`. Disabled charts now get their own `## Charts disabled` section instead of an easy-to-miss inline flag.
+
+### Fixed
+- **Cluster README / prune** — prune and chart symlinks track only charts that actually rendered values, so stale files for charts that stop rendering are removed.
 
 ## [0.12.2] - 2026-06-11
 

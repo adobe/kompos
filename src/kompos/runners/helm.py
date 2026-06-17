@@ -311,6 +311,7 @@ class HelmRunner(GenericRunner):
 
         dry_run = getattr(args, 'dry_run', False)
         rendered_count = 0
+        rendered_files = {}
         validation_errors = []
 
         hierarchy_path = config_path or self.config_path
@@ -325,6 +326,11 @@ class HelmRunner(GenericRunner):
                                           cluster_name, env_name)
             if rendered is None:
                 continue
+
+            # Only charts that actually produce values count as rendered — a chart
+            # enabled in helm.charts.* with no bridge.yaml and no overrides yields
+            # nothing and must not appear in READMEs/inventory or block prune.
+            rendered_files[app_name] = values_path
 
             # Track validation warnings regardless of dry-run
             validation_warning = getattr(self, '_last_validation_warning', None)
@@ -381,11 +387,15 @@ class HelmRunner(GenericRunner):
                 charts_dir_abs = os.path.dirname(os.path.abspath(args.chart_dir))
             else:
                 charts_dir_abs = charts_dir
-            self.prune_argoapps(argoapps_dir, rendered=set(chart_files.keys()))
+            self.prune_argoapps(argoapps_dir, rendered=set(rendered_files.keys()))
             pruned_charts = self._prune_chart_symlinks(
-                cluster_name, set(chart_files.keys()), charts_dir_abs)
+                cluster_name, set(rendered_files.keys()), charts_dir_abs)
             writer = HelmReadmeWriter(self)
-            writer.write_cluster_readme(argoapps_dir, cluster_name, chart_files)
+            # List every enabled chart, but distinguish those that rendered values
+            # from those enabled with nothing to generate (no bridge/overrides).
+            writer.write_cluster_readme(
+                argoapps_dir, cluster_name, chart_files,
+                rendered=set(rendered_files.keys()), disabled=disabled)
             if self.inventory_enabled:
                 print()
                 print(f"    Updating inventory…")

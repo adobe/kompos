@@ -8,10 +8,10 @@ Do not edit these files — they are overwritten on every generation run.
 
 {pipeline_diagram}
 
-## Charts rendered
+## Charts processed
 
 {charts_list}
-
+{disabled_section}
 ## How to regenerate
 
 ```bash

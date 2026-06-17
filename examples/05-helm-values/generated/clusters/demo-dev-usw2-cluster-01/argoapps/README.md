@@ -41,10 +41,17 @@ Each step merges on top of the previous — last value for a key wins.
 Missing files are skipped (each override layer is optional).
 
 
-## Charts rendered
+## Charts processed
 
   - `my-app.yaml`
   - `my-ingress.yaml`
+
+## Charts disabled
+
+Present on disk but disabled in `helm.charts.*` — no values emitted.
+
+  - `my-bad-bridge.yaml`
+  - `my-worker.yaml`
 
 ## How to regenerate
 
