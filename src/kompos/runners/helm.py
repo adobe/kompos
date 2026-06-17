@@ -27,6 +27,18 @@ logger = logging.getLogger(__name__)
 
 RUNNER_TYPE = "helm"
 
+
+def _parse_inventory_config(helm_config):
+    """Return (enabled, settings) from helm.config.inventory."""
+    raw = helm_config.get('inventory', False)
+    if raw is True:
+        return True, {}
+    if not raw:
+        return False, {}
+    if isinstance(raw, dict):
+        return bool(raw.get('enabled', True)), raw
+    return False, {}
+
 # Key injected into context during interpolation, stripped from output.
 # Isolates chart values from kompos context keys — never appears in output files.
 DEFAULT_ENCLOSING_KEY = "__helm_values__"
@@ -125,8 +137,7 @@ class HelmRunner(GenericRunner):
         self.overrides_subdir   = helm_config.get('overrides_subdir',  'overrides')
         self.bridge_filename    = helm_config.get('bridge_filename',   'bridge.yaml')
         self.symlink_generated  = helm_config.get('symlink_generated', False)
-        self.readme_enabled     = helm_config.get('readme', False)
-        self.readme_inventory   = helm_config.get('readme_inventory', {})
+        self.inventory_enabled, self.inventory = _parse_inventory_config(helm_config)
 
     def run_configuration(self, args):
         self.validate_runner = False
@@ -370,15 +381,16 @@ class HelmRunner(GenericRunner):
             self.prune_argoapps(argoapps_dir, rendered=set(chart_files.keys()))
             pruned_charts = self._prune_chart_symlinks(
                 cluster_name, set(chart_files.keys()), charts_dir_abs)
-            if self.readme_enabled:
+            writer = HelmReadmeWriter(self)
+            writer.write_cluster_readme(argoapps_dir, cluster_name, chart_files)
+            if self.inventory_enabled:
                 print()
-                print(f"    Updating READMEs…")
-                HelmReadmeWriter(self).write_all(
-                    argoapps_dir, cluster_name, env_name, chart_files,
-                    charts_dir=charts_dir_abs, pruned_charts=pruned_charts,
+                print(f"    Updating inventory…")
+                writer.write_chart_inventory(
+                    charts_dir_abs, chart_files,
                     config_path=config_path, composition=composition,
                     current_raw_config=raw_config,
-                    defer_chart_readmes=getattr(self, 'defer_chart_readmes', False))
+                    defer_chart_inventory=getattr(self, 'defer_chart_inventory', False))
 
         self.report_chart_status(disabled, untracked)
         console.print_summary(total_files=rendered_count, elapsed_time=time.time() - start)

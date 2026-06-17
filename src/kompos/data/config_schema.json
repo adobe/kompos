@@ -143,15 +143,18 @@
                   "description": "Create symlinks in charts/{chart}/generated/ pointing to the source of truth in generated/clusters/",
                   "default": false
                 },
-                "readme": {
-                  "type": "boolean",
-                  "description": "Generate managed README.md files for helm-values output and charts/ (requires symlink_generated for per-chart READMEs)",
-                  "default": false
-                },
-                "readme_inventory": {
-                  "type": "object",
-                  "description": "Optional deployment inventory table for chart READMEs. columns[] templates use {cluster}, {chart}, and hierarchy paths (e.g. env.name). Cluster config scan runs only when a column needs hierarchy fields.",
-                  "properties": {
+                "inventory": {
+                  "description": "Opt-in deployment inventory written into charts/{chart}/README.md (requires symlink_generated). Per-cluster helm-values README.md is always written. Set true for defaults, or an object with enabled and column settings.",
+                  "oneOf": [
+                    { "type": "boolean" },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "description": "Generate chart README inventory (default true when inventory is an object)",
+                          "default": true
+                        },
                     "configs_marker": {
                       "type": "string",
                       "description": "Filename marking the configs/ root (default: chart_registry.yaml)"
@@ -173,14 +176,14 @@
                       "type": "string",
                       "description": "Markdown heading per group (default: '### {group}')"
                     },
-                    "chart_readmes": {
+                    "refresh": {
                       "type": "string",
                       "enum": ["always", "deferred", "never"],
-                      "description": "When to refresh charts/*/README.md: always (each generate), deferred (once per compile or standalone generate), never"
+                      "description": "When to refresh charts/*/README.md inventory: always (each generate), deferred (once per compile or standalone generate), never"
                     },
                     "cluster_index_cache": {
                       "type": "boolean",
-                      "description": "Cache cluster metadata at configs/.kompos-readme-cluster-index.yaml (default true)",
+                      "description": "Cache cluster metadata at configs/.kompos-inventory-cluster-index.yaml (default true)",
                       "default": true
                     },
                     "config_filters": {
@@ -225,7 +228,9 @@
                       }
                     }
                   }
-                },
+                }
+              ]
+            },
                 "overrides_merge": {
                   "type": "boolean",
                   "description": "Enable merging overrides/{env}.yaml and overrides/{cluster}.yaml on top of rendered bridge values",

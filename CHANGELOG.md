@@ -5,18 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.12.3] - 2026-06-16
+## [0.12.4] - 2026-06-16
 
-### Changed
-- **Helm managed READMEs** — extracted to `helpers/helm_readme.py` (`HelmReadmeWriter`).
-  Opt-in via `helm.config.readme: true` (default `false`); per-chart READMEs still require
-  `symlink_generated: true`. Inventory columns are config-driven via
-  `helm.config.readme_inventory.columns` (`{cluster}`, `{chart}`, hierarchy paths).
-  Uses filtered himl merges and env.yaml reads for inventory metadata; skips README
-  writes when content is unchanged. `chart_readmes: deferred` refreshes chart READMEs
-  once per compile (or standalone generate); `cluster_index_cache` persists metadata
-  under `configs/.kompos-readme-cluster-index.yaml`. Optional chart-level link table
-  (`readme_inventory.chart_links`) reads repo-defined keys from the configs marker file.
+### Added
+- **Helm cluster README** — always writes `README.md` in helm-values output (pipeline diagram + chart list).
+- **Chart deployment inventory** — opt-in via `helm.config.inventory`; writes `charts/{chart}/README.md` with configurable columns, env grouping, and chart-registry links. Requires `symlink_generated: true`.
 
 ## [0.12.2] - 2026-06-11
 

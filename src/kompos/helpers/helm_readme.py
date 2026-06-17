@@ -1,9 +1,8 @@
 """Managed README generation for the helm runner.
 
-Opt-in via ``helm.config.readme: true`` in ``.komposconfig.yaml``. Deployment
-inventory columns are defined under ``helm.config.readme_inventory`` — kompos
-only resolves ``{cluster}``, ``{chart}``, and hierarchy paths from config; no
-repo-specific naming or URLs are baked into this module.
+Per-cluster ``README.md`` under helm-values output is always written. Deployment
+inventory (also written to ``charts/{chart}/README.md``) is opt-in via
+``helm.config.inventory`` in ``.komposconfig.yaml``.
 """
 
 import glob
@@ -21,11 +20,11 @@ _PLACEHOLDER = re.compile(r'\{([^}]+)\}')
 # invocations in one compile build (keyed by configs root + composition type).
 _CLUSTER_CONFIG_CACHE = {}
 _ENV_YAML_CACHE = {}
-_PENDING_CHART_REFRESH = {}
+_PENDING_CHART_INVENTORY = {}
 
-_INDEX_CACHE_FILENAME = '.kompos-readme-cluster-index.yaml'
+_INDEX_CACHE_FILENAME = '.kompos-inventory-cluster-index.yaml'
 
-# Used when readme_inventory.columns is not set (filesystem layout only).
+# Used when inventory.columns is not set (filesystem layout only).
 _DEFAULT_INVENTORY_COLUMNS = [
     {
         'header': 'Cluster',
@@ -81,13 +80,9 @@ class HelmReadmeWriter:
         if os.path.isfile(legacy_readme):
             os.remove(legacy_readme)
 
-    def write_all(self, argoapps_dir, cluster_name, env_name, chart_files,
-                  charts_dir=None, pruned_charts=None, config_path=None,
-                  composition=None, current_raw_config=None,
-                  defer_chart_readmes=False):
-        """Write per-cluster and (optionally) per-chart managed README files."""
+    def write_cluster_readme(self, argoapps_dir, cluster_name, chart_files):
+        """Write per-cluster README (always — same as pre-0.12.3 helm generate behavior)."""
         self._preload_templates()
-
         charts_list = '\n'.join(f'  - `{name}.yaml`' for name in sorted(chart_files.keys()))
         cluster_readme = self._load_template('helm-readme.md').format(
             cluster_name=cluster_name,
@@ -96,14 +91,18 @@ class HelmReadmeWriter:
         )
         self._write_if_changed(os.path.join(argoapps_dir, 'README.md'), cluster_readme)
 
+    def write_chart_inventory(self, charts_dir, chart_files, config_path=None,
+                              composition=None, current_raw_config=None,
+                              defer_chart_inventory=False):
+        """Write per-chart README.md with deployment inventory (opt-in via ``helm.config.inventory``)."""
         if not self._runner.symlink_generated or not charts_dir:
             return
 
-        mode = self._chart_readmes_mode()
+        mode = self._chart_inventory_refresh_mode()
         if mode == 'never':
             return
 
-        _PENDING_CHART_REFRESH[os.path.abspath(charts_dir)] = {
+        _PENDING_CHART_INVENTORY[os.path.abspath(charts_dir)] = {
             'runner': self._runner,
             'composition': composition,
             'config_path': config_path,
@@ -111,29 +110,41 @@ class HelmReadmeWriter:
         }
 
         if mode == 'always':
-            self._flush_chart_readmes_for_dir(os.path.abspath(charts_dir))
-        elif mode == 'deferred' and not defer_chart_readmes:
-            self.flush_pending_chart_readmes()
+            self._flush_chart_inventory_for_dir(os.path.abspath(charts_dir))
+        elif mode == 'deferred' and not defer_chart_inventory:
+            self.flush_pending_chart_inventory()
+
+    def write_all(self, argoapps_dir, cluster_name, env_name, chart_files,
+                  charts_dir=None, pruned_charts=None, config_path=None,
+                  composition=None, current_raw_config=None,
+                  defer_chart_inventory=False):
+        """Write cluster README and (when inventory enabled) chart inventory READMEs."""
+        self.write_cluster_readme(argoapps_dir, cluster_name, chart_files)
+        self.write_chart_inventory(
+            charts_dir, chart_files, config_path=config_path,
+            composition=composition, current_raw_config=current_raw_config,
+            defer_chart_inventory=defer_chart_inventory)
 
     @classmethod
-    def flush_pending_chart_readmes(cls):
-        """Write chart READMEs once after all helm generate runs (e.g. end of compile build)."""
-        for charts_dir in list(_PENDING_CHART_REFRESH.keys()):
-            ctx = _PENDING_CHART_REFRESH.get(charts_dir)
+    def flush_pending_chart_inventory(cls):
+        """Write chart inventory READMEs once after all helm generate runs."""
+        for charts_dir in list(_PENDING_CHART_INVENTORY.keys()):
+            ctx = _PENDING_CHART_INVENTORY.get(charts_dir)
             if not ctx:
                 continue
-            HelmReadmeWriter(ctx['runner'])._flush_chart_readmes_for_dir(charts_dir)
-        _PENDING_CHART_REFRESH.clear()
+            HelmReadmeWriter(ctx['runner'])._flush_chart_inventory_for_dir(charts_dir)
+        _PENDING_CHART_INVENTORY.clear()
 
-    def _chart_readmes_mode(self):
-        return self._inventory_config().get('chart_readmes', 'deferred')
+    def _chart_inventory_refresh_mode(self):
+        inv = self._inventory_config()
+        return inv.get('refresh', inv.get('chart_readmes', 'deferred'))
 
     def _use_disk_index_cache(self):
         return self._inventory_config().get('cluster_index_cache', True)
 
-    def _flush_chart_readmes_for_dir(self, charts_dir):
+    def _flush_chart_inventory_for_dir(self, charts_dir):
         self._preload_templates()
-        ctx = _PENDING_CHART_REFRESH.get(charts_dir, {})
+        ctx = _PENDING_CHART_INVENTORY.get(charts_dir, {})
         composition = ctx.get('composition')
         config_path = ctx.get('config_path')
         current_raw_config = ctx.get('current_raw_config')
@@ -150,7 +161,7 @@ class HelmReadmeWriter:
         configs_root = self._find_configs_root(config_path)
         for app_name in sorted(self._discover_charts_with_symlinks(charts_dir)):
             chart_dir = os.path.join(charts_dir, app_name)
-            self._write_chart_readme(
+            self._write_chart_inventory_readme(
                 chart_dir, app_name, cluster_configs, chart_tpl, chart_pipeline,
                 configs_root=configs_root)
 
@@ -173,7 +184,7 @@ class HelmReadmeWriter:
             self._load_template(name)
 
     def _inventory_config(self):
-        return getattr(self._runner, 'readme_inventory', None) or {}
+        return getattr(self._runner, 'inventory', None) or {}
 
     def _inventory_columns(self):
         return self._inventory_config().get('columns') or _DEFAULT_INVENTORY_COLUMNS
@@ -381,7 +392,7 @@ class HelmReadmeWriter:
                 try:
                     self._save_disk_cluster_index(cache_path, index, source_paths)
                 except OSError:
-                    logger.debug('Could not write readme cluster index cache', exc_info=True)
+                    logger.debug('Could not write inventory cluster index cache', exc_info=True)
 
         _CLUSTER_CONFIG_CACHE[cache_key] = index
         return index
@@ -657,7 +668,7 @@ class HelmReadmeWriter:
         table = '| Resource | Location |\n|----------|----------|\n' + '\n'.join(rows)
         return f'## {heading}\n\n{table}\n\n'
 
-    def _write_chart_readme(self, chart_dir, chart_name, cluster_configs,
+    def _write_chart_inventory_readme(self, chart_dir, chart_name, cluster_configs,
                             chart_tpl, chart_pipeline, configs_root=None):
         per_chart_dir = os.path.join(chart_dir, 'generated')
         cluster_names = self._list_generated_cluster_names(per_chart_dir)
