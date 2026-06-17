@@ -143,6 +143,89 @@
                   "description": "Create symlinks in charts/{chart}/generated/ pointing to the source of truth in generated/clusters/",
                   "default": false
                 },
+                "readme": {
+                  "type": "boolean",
+                  "description": "Generate managed README.md files for helm-values output and charts/ (requires symlink_generated for per-chart READMEs)",
+                  "default": false
+                },
+                "readme_inventory": {
+                  "type": "object",
+                  "description": "Optional deployment inventory table for chart READMEs. columns[] templates use {cluster}, {chart}, and hierarchy paths (e.g. env.name). Cluster config scan runs only when a column needs hierarchy fields.",
+                  "properties": {
+                    "configs_marker": {
+                      "type": "string",
+                      "description": "Filename marking the configs/ root (default: chart_registry.yaml)"
+                    },
+                    "composition_type": {
+                      "type": "string",
+                      "description": "Composition directory name to glob for per-cluster config (default: current composition type)"
+                    },
+                    "group_by": {
+                      "type": "string",
+                      "description": "Hierarchy path to split inventory into multiple tables (e.g. env.name). The matching column is omitted from each table."
+                    },
+                    "group_order": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "description": "Order of group sections when group_by is set (e.g. [dev, stage, prod]). Empty groups are skipped."
+                    },
+                    "group_header_template": {
+                      "type": "string",
+                      "description": "Markdown heading per group (default: '### {group}')"
+                    },
+                    "chart_readmes": {
+                      "type": "string",
+                      "enum": ["always", "deferred", "never"],
+                      "description": "When to refresh charts/*/README.md: always (each generate), deferred (once per compile or standalone generate), never"
+                    },
+                    "cluster_index_cache": {
+                      "type": "boolean",
+                      "description": "Cache cluster metadata at configs/.kompos-readme-cluster-index.yaml (default true)",
+                      "default": true
+                    },
+                    "config_filters": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "description": "Himl filters when loading per-cluster metadata for inventory columns"
+                    },
+                    "columns": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "header": { "type": "string" },
+                          "template": { "type": "string" },
+                          "empty": { "type": "string" }
+                        },
+                        "required": ["header", "template"]
+                      }
+                    },
+                    "chart_links_heading": {
+                      "type": "string",
+                      "description": "Markdown H2 for chart-level link table (default: Source & GitOps)"
+                    },
+                    "chart_registry_charts_path": {
+                      "type": "string",
+                      "description": "Dot path to per-chart metadata in the configs marker file (default: helm.charts)"
+                    },
+                    "chart_links": {
+                      "type": "array",
+                      "description": "Rows for chart-level link table; omit to use built-in defaults (chart_repo, version.yaml, argocd_app). Set [] to disable.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": { "type": "string" },
+                          "key": { "type": "string", "description": "Registry key under helm.charts.{chart}" },
+                          "from_key": { "type": "string", "description": "Derive URL from another registry key (use with path_suffix)" },
+                          "path_suffix": { "type": "string", "description": "File path appended to from_key (tree→blob for GitHub)" },
+                          "link_text": { "type": "string", "description": "Markdown link label; {chart} is substituted" },
+                          "note": { "type": "string", "description": "Suffix after the link" }
+                        },
+                        "required": ["label"]
+                      }
+                    }
+                  }
+                },
                 "overrides_merge": {
                   "type": "boolean",
                   "description": "Enable merging overrides/{env}.yaml and overrides/{cluster}.yaml on top of rendered bridge values",

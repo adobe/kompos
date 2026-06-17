@@ -299,6 +299,8 @@ class CompileRunner(GenericRunner):
             logger.info(f"[{target_runner}] {os.path.relpath(comp_path)}")
             try:
                 runner = runner_class(self.kompos_config, comp_path, self.execute)
+                if target_runner == 'helm':
+                    runner.defer_chart_readmes = True
                 runner.run_configuration(dispatch_args)
                 runner.himl_args = dispatch_args
                 comps, paths = runner.get_compositions()
@@ -314,6 +316,9 @@ class CompileRunner(GenericRunner):
             for p in failed:
                 print(f"    - {os.path.relpath(p)}")
             return 1
+
+        from kompos.helpers.helm_readme import HelmReadmeWriter
+        HelmReadmeWriter.flush_pending_chart_readmes()
         return 0
 
     # ── prune ─────────────────────────────────────────────────────────────────

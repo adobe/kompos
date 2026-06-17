@@ -20,6 +20,7 @@ from himl.interpolation import InterpolationValidator
 
 from kompos.parser import SubParserConfig
 from kompos.runner import GenericRunner
+from kompos.helpers.helm_readme import HelmReadmeWriter
 from kompos.helpers import console
 
 logger = logging.getLogger(__name__)
@@ -124,6 +125,8 @@ class HelmRunner(GenericRunner):
         self.overrides_subdir   = helm_config.get('overrides_subdir',  'overrides')
         self.bridge_filename    = helm_config.get('bridge_filename',   'bridge.yaml')
         self.symlink_generated  = helm_config.get('symlink_generated', False)
+        self.readme_enabled     = helm_config.get('readme', False)
+        self.readme_inventory   = helm_config.get('readme_inventory', {})
 
     def run_configuration(self, args):
         self.validate_runner = False
@@ -148,7 +151,7 @@ class HelmRunner(GenericRunner):
                     "or set helm.config.charts_dir in .komposconfig.yaml"
                 )
                 sys.exit(1)
-            self.run_generate(args, raw_config, charts_dir, config_path)
+            self.run_generate(args, raw_config, charts_dir, config_path, composition)
             return
 
         if args.subcommand == 'delete':
@@ -186,11 +189,8 @@ class HelmRunner(GenericRunner):
                 print(f"  {console.Colors.YELLOW}✗{console.Colors.RESET} {symlink_path}")
                 removed += 1
             if os.path.isdir(gen_dir):
-                remaining = [f for f in os.listdir(gen_dir) if f != 'README.md']
-                if not remaining:
-                    readme = os.path.join(gen_dir, 'README.md')
-                    if os.path.isfile(readme):
-                        os.remove(readme)
+                HelmReadmeWriter.cleanup_legacy_readme(gen_dir)
+                if not os.listdir(gen_dir):
                     os.rmdir(gen_dir)
 
         if removed:
@@ -251,7 +251,7 @@ class HelmRunner(GenericRunner):
 
     # ── generate ──────────────────────────────────────────────────────────────
 
-    def run_generate(self, args, raw_config, charts_dir, config_path=None):
+    def run_generate(self, args, raw_config, charts_dir, config_path=None, composition=None):
         start = time.time()
         cluster_name = self.get_composition_name(raw_config)
 
@@ -363,8 +363,22 @@ class HelmRunner(GenericRunner):
             rendered_count += 1
 
         if not dry_run:
+            if args.chart_dir:
+                charts_dir_abs = os.path.dirname(os.path.abspath(args.chart_dir))
+            else:
+                charts_dir_abs = charts_dir
             self.prune_argoapps(argoapps_dir, rendered=set(chart_files.keys()))
-            self._write_generated_readmes(argoapps_dir, cluster_name, env_name, chart_files)
+            pruned_charts = self._prune_chart_symlinks(
+                cluster_name, set(chart_files.keys()), charts_dir_abs)
+            if self.readme_enabled:
+                print()
+                print(f"    Updating READMEs…")
+                HelmReadmeWriter(self).write_all(
+                    argoapps_dir, cluster_name, env_name, chart_files,
+                    charts_dir=charts_dir_abs, pruned_charts=pruned_charts,
+                    config_path=config_path, composition=composition,
+                    current_raw_config=raw_config,
+                    defer_chart_readmes=getattr(self, 'defer_chart_readmes', False))
 
         self.report_chart_status(disabled, untracked)
         console.print_summary(total_files=rendered_count, elapsed_time=time.time() - start)
@@ -507,49 +521,20 @@ class HelmRunner(GenericRunner):
 
         return bridge_values
 
-    # ── generated README ────────────────────────────────────────────────────
-
-    def _write_generated_readmes(self, argoapps_dir, cluster_name, env_name, chart_files):
-        """Write managed README.md in per-cluster and per-chart output directories."""
-        charts_list = '\n'.join(f'  - `{name}.yaml`' for name in sorted(chart_files.keys()))
-
-        template_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)), 'data', 'templates', 'helm-readme.md')
-        with open(template_path) as f:
-            template = f.read()
-
-        content = template.format(
-            cluster_name=cluster_name,
-            bridge_filename=self.bridge_filename,
-            overrides_subdir=self.overrides_subdir,
-            charts_list=charts_list,
-        )
-
-        # Per-cluster: generated/clusters/{cluster}/helm-values/README.md
-        readme_path = os.path.join(argoapps_dir, 'README.md')
-        self.ensure_directory(readme_path, is_file_path=True)
-        with open(readme_path, 'w') as f:
-            f.write(content)
-
-        # Per-chart: charts/{chart}/generated/README.md (only when symlinks enabled)
-        if self.symlink_generated:
-            chart_template_path = os.path.join(
-                os.path.dirname(os.path.dirname(__file__)), 'data', 'templates', 'helm-chart-readme.md')
-            with open(chart_template_path) as f:
-                chart_template = f.read()
-
-            for app_name, values_path in chart_files.items():
-                chart_dir = os.path.dirname(values_path)
-                per_chart_dir = os.path.join(chart_dir, 'generated')
-                if os.path.isdir(per_chart_dir):
-                    chart_content = chart_template.format(
-                        chart_name=app_name,
-                        bridge_filename=self.bridge_filename,
-                        overrides_subdir=self.overrides_subdir,
-                    )
-                    per_chart_readme = os.path.join(per_chart_dir, 'README.md')
-                    with open(per_chart_readme, 'w') as f:
-                        f.write(chart_content)
+    def _prune_chart_symlinks(self, cluster_name, rendered, charts_dir):
+        """Drop charts/{chart}/generated/{cluster}.yaml when chart is no longer rendered."""
+        affected = set()
+        if not charts_dir or not os.path.isdir(charts_dir):
+            return affected
+        for chart_name in os.listdir(charts_dir):
+            if chart_name in rendered:
+                continue
+            symlink_path = os.path.join(
+                charts_dir, chart_name, 'generated', f'{cluster_name}.yaml')
+            if os.path.islink(symlink_path) or os.path.isfile(symlink_path):
+                os.remove(symlink_path)
+                affected.add(chart_name)
+        return affected
 
     # ── reporting ─────────────────────────────────────────────────────────────
 
