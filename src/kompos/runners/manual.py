@@ -109,7 +109,7 @@ class ManualRunner(GenericRunner):
 
             output_file = os.path.join(instance_dir, rel_path)
             self.write_structured_file(output_file, body, fmt=spec.get('format'))
-            written_paths.append(output_file)
+            written_paths.append(rel_path)
             console.print_file_generation("manual", output_file)
 
         # File-level prune: drop files this composition wrote on a prior run but

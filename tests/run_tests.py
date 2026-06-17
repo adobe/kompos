@@ -1460,6 +1460,11 @@ def test_external_prune_removes_stale_outputs():
         assert os.path.isfile(os.path.join(inst_dir, 'new.yaml')), "second run should write new.yaml"
         assert not os.path.isfile(os.path.join(inst_dir, 'old.yaml')), \
             "stale old.yaml must be pruned by file-level prune"
+        manifest_path = os.path.join(inst_dir, '.kompos-external.manifest')
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+        assert manifest == ['new.yaml'], \
+            f"manifest must store instance-relative paths, got {manifest!r}"
         print("  ✓ external prune removed the renamed-away output it no longer writes")
     finally:
         os.chdir(cwd)

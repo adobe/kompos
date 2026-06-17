@@ -332,7 +332,13 @@ class ExternalRunner(GenericRunner):
                 output_file, body, fmt=spec.get('format'), header_lines=header
             )
             files_written += 1
-            written_paths.append(output_file)
+            declared = spec.get('path')
+            if declared:
+                written_paths.append(declared)
+            elif os.path.isabs(output_file):
+                written_paths.append(output_file)
+            else:
+                written_paths.append(os.path.relpath(output_file, instance_dir))
             console.print_success(f"Wrote {os.path.relpath(output_file, os.getcwd())}")
             console.print_file_generation("external", output_file, size=console.format_size(size))
 
