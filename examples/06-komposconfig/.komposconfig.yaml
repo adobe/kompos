@@ -6,7 +6,19 @@ komposconfig:
       local_path: "./compositions/terraform"
       root_path: ""
 
-    # Execution order — dependencies resolved left to right
+    # Structured cross-runner build order for `compile build`.
+    # Each {runner, type} pair controls when that composition type is dispatched
+    # relative to all others across all runners.  Dependency graph expressed here:
+    #   external/ipam → tfe/cell → tfe/cluster → helm/helm-values
+    # Compositions not listed run last (alphabetical within that group).
+    # Omit this section entirely to fall back to runner-level priority
+    # (external → terraform → tfe → manual → helm).
+    build_order:
+      - { runner: terraform, type: account  }
+      - { runner: terraform, type: cluster  }
+
+    # Per-runner execution order — also serves as the routing table:
+    # comp_type → runner_type.  Required even when build_order is set.
     order:
       terraform:
         - account

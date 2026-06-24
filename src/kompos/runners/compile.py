@@ -273,6 +273,31 @@ class CompileRunner(GenericRunner):
     # ── build ─────────────────────────────────────────────────────────────────
 
     def _build(self, all_comps, routing, args):
+        # Sort compositions using the structured build_order from komposconfig.
+        # Each entry is {runner: <type>, type: <comp_type>}, giving fine-grained control
+        # over interleaving of runners (e.g. external/ipam → tfe/cell → external/registry).
+        # Falls back to runner-level priority (external first) when build_order is absent.
+        _structured = self.kompos_config.build_order()
+        if _structured:
+            _priority = {
+                (entry['runner'], entry['type']): i
+                for i, entry in enumerate(_structured)
+            }
+            _fallback = len(_structured)
+            all_comps = sorted(
+                all_comps,
+                key=lambda c: (
+                    _priority.get((routing.get(c[0], ''), c[0]), _fallback),
+                    c[1],
+                ),
+            )
+        else:
+            _default_runner_order = ['external', 'terraform', 'tfe', 'manual', 'helm']
+            _runner_priority = {r: i for i, r in enumerate(_default_runner_order)}
+            all_comps = sorted(
+                all_comps,
+                key=lambda c: (_runner_priority.get(routing.get(c[0], ''), 99), c[1]),
+            )
         failed = []
         for comp_type, comp_path in all_comps:
             target_runner = routing.get(comp_type)

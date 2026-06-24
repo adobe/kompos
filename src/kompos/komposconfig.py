@@ -207,6 +207,15 @@ class KomposConfig:
         """Get execution order for compositions"""
         return self.get_kompos_setting(f"compositions.order.{composition}", default)
 
+    def build_order(self):
+        """
+        Return the structured cross-runner build order as a list of
+        {runner, type} dicts, e.g.:
+            [{runner: external, type: ipam}, {runner: tfe, type: cell}, ...]
+        Returns an empty list when not configured (caller falls back to defaults).
+        """
+        return self.get_kompos_setting("compositions.build_order", [])
+
     # ====================================================================================
     # Runner Configuration Methods
     # ====================================================================================

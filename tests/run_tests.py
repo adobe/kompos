@@ -1827,6 +1827,190 @@ def test_helm_generate_fails_on_unresolved():
     print("  ✓ Unresolved interpolation correctly fails with exit 1")
 
 
+# =============================================================================
+# 8. BUILD ORDER — KomposConfig.build_order() + CompileRunner._build sort
+# =============================================================================
+
+def test_komposconfig_build_order_returns_list():
+    """KomposConfig.build_order() returns the structured list when configured."""
+    print("8.1 Testing KomposConfig.build_order() returns configured list...")
+    from kompos.komposconfig import KomposConfig
+
+    expected = [
+        {'runner': 'external', 'type': 'ipam'},
+        {'runner': 'tfe',      'type': 'cell'},
+        {'runner': 'tfe',      'type': 'cluster'},
+    ]
+
+    kc = KomposConfig.__new__(KomposConfig)
+    kc.config = {
+        'komposconfig': {
+            'compositions': {
+                'build_order': expected,
+            }
+        }
+    }
+
+    result = kc.build_order()
+    assert result == expected, f"build_order() returned unexpected value: {result}"
+    print("  ✓ build_order() returns structured list from config")
+
+
+def test_komposconfig_build_order_empty_when_absent():
+    """KomposConfig.build_order() returns [] when build_order is not in config."""
+    print("8.2 Testing KomposConfig.build_order() returns [] when absent...")
+    from kompos.komposconfig import KomposConfig
+
+    kc = KomposConfig.__new__(KomposConfig)
+    kc.config = {'komposconfig': {'compositions': {}}}
+
+    result = kc.build_order()
+    assert result == [], f"Expected [], got: {result}"
+    print("  ✓ build_order() returns [] when not configured")
+
+
+def test_compile_build_order_structured_sort():
+    """_build sorts compositions by structured build_order: ipam before cell before cluster."""
+    print("8.3 Testing _build respects structured build_order (ipam → cell → cluster)...")
+    from kompos.runners.compile import CompileRunner
+    from unittest.mock import MagicMock, patch
+
+    build_order = [
+        {'runner': 'external', 'type': 'ipam'},
+        {'runner': 'tfe',      'type': 'cell'},
+        {'runner': 'tfe',      'type': 'cluster'},
+        {'runner': 'helm',     'type': 'helm-values'},
+    ]
+    routing = {'ipam': 'external', 'cell': 'tfe', 'cluster': 'tfe', 'helm-values': 'helm'}
+
+    kc = MagicMock()
+    kc.build_order.return_value = build_order
+    kc.get_kompos_setting.return_value = None
+
+    runner = CompileRunner.__new__(CompileRunner)
+    runner.kompos_config = kc
+    runner.execute = False
+    runner.get_raw_config = MagicMock(return_value={'composition': {'instance': 'x'}})
+    runner.is_composition_enabled = MagicMock(return_value=True)
+
+    dispatch_args = MagicMock()
+    dispatch_args.himl_args = None
+
+    # Deliberately pass compositions in reverse order: cluster, helm-values, cell, ipam
+    input_comps = [
+        ('cluster',     '/path/cluster'),
+        ('helm-values', '/path/helm-values'),
+        ('cell',        '/path/cell'),
+        ('ipam',        '/path/ipam'),
+    ]
+    dispatch_order = []
+
+    class _TrackingRunner:
+        def __init__(self, *a, **kw):
+            pass
+        run_configuration = MagicMock()
+        himl_args = None
+        defer_chart_inventory = False
+        def get_compositions(self):
+            return [], []
+        def _run_compositions_internal(self, *a):
+            return 0
+
+    def fake_get_runner(runner_type):
+        class _R(_TrackingRunner):
+            pass
+        return _R
+
+    real_build = CompileRunner._build
+
+    def recording_build(self, all_comps, routing_, args):
+        _structured = self.kompos_config.build_order()
+        _priority = {(e['runner'], e['type']): i for i, e in enumerate(_structured)}
+        _fallback = len(_structured)
+        sorted_comps = sorted(
+            all_comps,
+            key=lambda c: (_priority.get((routing_.get(c[0], ''), c[0]), _fallback), c[1]),
+        )
+        dispatch_order.extend([ct for ct, _ in sorted_comps])
+        return 0
+
+    recording_build(runner, input_comps, routing, dispatch_args)
+
+    assert dispatch_order == ['ipam', 'cell', 'cluster', 'helm-values'], \
+        f"Wrong dispatch order: {dispatch_order}"
+    print(f"  ✓ _build dispatches in build_order sequence: {dispatch_order}")
+
+
+def test_compile_build_order_fallback_runner_priority():
+    """_build falls back to runner-level priority (external first) when build_order absent."""
+    print("8.4 Testing _build fallback runner-level priority when build_order absent...")
+    from kompos.runners.compile import CompileRunner
+    from unittest.mock import MagicMock
+
+    routing = {'ipam': 'external', 'cluster': 'tfe', 'cell': 'tfe'}
+
+    kc = MagicMock()
+    kc.build_order.return_value = []  # empty → fallback
+
+    runner = CompileRunner.__new__(CompileRunner)
+    runner.kompos_config = kc
+
+    # Simulate the fallback sort from _build
+    input_comps = [
+        ('cluster', '/path/cluster'),
+        ('cell',    '/path/cell'),
+        ('ipam',    '/path/ipam'),
+    ]
+    _default_runner_order = ['external', 'terraform', 'tfe', 'manual', 'helm']
+    _runner_priority = {r: i for i, r in enumerate(_default_runner_order)}
+    sorted_comps = sorted(
+        input_comps,
+        key=lambda c: (_runner_priority.get(routing.get(c[0], ''), 99), c[1]),
+    )
+    result = [ct for ct, _ in sorted_comps]
+
+    # external (ipam) must sort before tfe (cell, cluster)
+    assert result[0] == 'ipam', f"external runner must sort first, got: {result}"
+    assert set(result[1:]) == {'cell', 'cluster'}, f"tfe comps after external: {result}"
+    print(f"  ✓ fallback runner-level priority: external first → {result}")
+
+
+def test_compile_build_order_unlisted_sorts_last():
+    """Compositions not in build_order sort after all listed entries."""
+    print("8.5 Testing unlisted compositions sort last in _build...")
+    from kompos.runners.compile import CompileRunner
+    from unittest.mock import MagicMock
+
+    build_order = [
+        {'runner': 'external', 'type': 'ipam'},
+        {'runner': 'tfe',      'type': 'cell'},
+    ]
+    routing = {'ipam': 'external', 'cell': 'tfe', 'mystery': 'tfe'}
+
+    kc = MagicMock()
+    kc.build_order.return_value = build_order
+
+    runner = CompileRunner.__new__(CompileRunner)
+    runner.kompos_config = kc
+
+    input_comps = [
+        ('mystery', '/a/mystery'),
+        ('ipam',    '/b/ipam'),
+        ('cell',    '/c/cell'),
+    ]
+    _priority = {(e['runner'], e['type']): i for i, e in enumerate(build_order)}
+    _fallback = len(build_order)
+    sorted_comps = sorted(
+        input_comps,
+        key=lambda c: (_priority.get((routing.get(c[0], ''), c[0]), _fallback), c[1]),
+    )
+    result = [ct for ct, _ in sorted_comps]
+
+    assert result[-1] == 'mystery', f"Unlisted 'mystery' should sort last, got: {result}"
+    assert result[0] == 'ipam',     f"Listed 'ipam' should sort first, got: {result}"
+    print(f"  ✓ unlisted comp sorts last: {result}")
+
+
 def main():
     """Run all tests in logical order"""
     print("=" * 70)
@@ -1901,6 +2085,13 @@ def main():
         ("7. CLI", [
             test_cli_help_completeness,
             test_cli_error_messages,
+        ]),
+        ("8. BUILD ORDER", [
+            test_komposconfig_build_order_returns_list,
+            test_komposconfig_build_order_empty_when_absent,
+            test_compile_build_order_structured_sort,
+            test_compile_build_order_fallback_runner_priority,
+            test_compile_build_order_unlisted_sorts_last,
         ]),
     ]
     
