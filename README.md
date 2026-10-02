@@ -130,6 +130,7 @@ Comprehensive examples are available in [`examples/`](./examples/) with a progre
 3. **[Config Exploration](./examples/03-config-exploration/)** - Analyze and visualize configuration hierarchies
 4. **[TFE Multi-Cluster](./examples/04-tfe-multi-cluster/)** - Terraform Enterprise workspace and composition generation per cluster
 5. **[Helm Values Rendering](./examples/05-helm-values/)** - Render cluster-specific Helm values from hierarchy + TFE outputs for ArgoCD
+6. **[Compile Cache and Plugin Mutation](./examples/07-compile-cache/)** - Refresh inherited inputs before ordered, infrastructure-free consumers run
 
 See the [Examples README](./examples/README.md) for a complete guide with difficulty levels, time estimates, and
 learning paths.

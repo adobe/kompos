@@ -7,6 +7,9 @@ Practical reference for using Kompos day-to-day.
 ### Generate Files
 
 ```bash
+# Compile all compositions under a subtree
+kompos configs compile build --prune
+
 # Generate all TFE files
 kompos configs/path/to/composition tfe generate
 
@@ -20,6 +23,18 @@ kompos configs/... tfe generate --workspace-only
 kompos configs/... terraform plan
 kompos configs/... terraform apply
 ```
+
+`compile` shares parsed YAML and unresolved merged hierarchies across its runners
+in memory for that invocation only. It checks file versions and rediscovers YAML
+directory contents before reuse, so edits, additions, and deletions made by plugins
+are picked up by subsequent config requests. Each output processes an isolated
+copy with its own interpolation, filters, exclusions, and validation. No cache is
+persisted between runs, and standalone runner commands are unchanged.
+
+`compile` reports discovery and metadata-loading progress on stderr, before loading
+composition configs. Metadata progress includes the index, total count, and path
+for the first composition, every tenth composition, and the last composition.
+The existing composition listing remains on stdout.
 
 ### View Configuration
 

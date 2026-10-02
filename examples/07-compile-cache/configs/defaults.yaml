@@ -1,0 +1,8 @@
+project: cache-demo
+features:
+  enabled: false
+report:
+  project: "{{project}}"
+  message: "{{settings.message}}"
+  replicas: "{{settings.replicas}}"
+  feature_enabled: "{{features.enabled}}"

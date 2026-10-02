@@ -50,11 +50,19 @@ class GenericRunner:
         self.kompos_config = kompos_config
         self.config_path = config_path
         self._raw_config_cache = {}
+        self._raw_config_versions = {}
+        self.compile_context = None
         self.himl_args = None
         self.reverse = False
         self.ordered_compositions = False
 
         self.generate_output = True
+
+    def set_compile_context(self, context):
+        self.compile_context = context
+        self.config_processor = context.processor() if context is not None else ConfigProcessor()
+        self._raw_config_cache.clear()
+        self._raw_config_versions.clear()
 
     @staticmethod
     def extract_format_from_extension(extension):
@@ -238,10 +246,15 @@ class GenericRunner:
 
         Memoized per (config_path, composition): the same raw config is read
         multiple times in a single run (enabled check, ownership, generation),
-        and generate_config re-runs the full himl merge each call.
+        and generation resolves the hierarchical config each call. During compile,
+        input versions are checked before reuse so plugin edits invalidate metadata.
         """
         cache_key = (config_path, composition)
-        if cache_key not in self._raw_config_cache:
+        version = None
+        if self.compile_context is not None:
+            version = self.config_processor.input_version(config_path)
+        if (cache_key not in self._raw_config_cache
+                or self._raw_config_versions.get(cache_key) != version):
             self._raw_config_cache[cache_key] = self.generate_config(
                 config_path=config_path,
                 exclude_keys=[],  # No exclusions - all keys available for interpolation
@@ -249,6 +262,7 @@ class GenericRunner:
                 skip_interpolation_validation=True,
                 skip_secrets=True
             )
+            self._raw_config_versions[cache_key] = version
         return self._raw_config_cache[cache_key]
 
     def get_composition_name(self, raw_config):

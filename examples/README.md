@@ -97,6 +97,22 @@ kompos data/cloud=aws/project=demo/env=dev/region=us-west-2/cluster=demo-cluster
 
 ---
 
+### 7. [Compile Cache and Plugin Mutation](07-compile-cache/)
+
+**Learn:** How ordered plugins update inherited inputs without stale compile-cache reads
+
+- **Difficulty:** Intermediate · **Time:** 10-15 min
+- **Topics:** Compile-scoped caching, external plugins, manual outputs, invalidation
+
+The plugin rewrites shared settings and creates inherited feature data before two
+consumers emit reports. Dry-runs do not execute the plugin; repeated builds produce
+the same data. No infrastructure tools or credentials are required.
+
+Follow the [example README](07-compile-cache/README.md) to run in a disposable copy
+without changing the checked-in inputs.
+
+---
+
 ## Example Comparison
 
 | Example                       | Runner  | Focus                    | Difficulty | Time      |
@@ -106,6 +122,7 @@ kompos data/cloud=aws/project=demo/env=dev/region=us-west-2/cluster=demo-cluster
 | **03-config-exploration**     | explore | Debugging                | ⭐⭐ Medium  | 15-20 min |
 | **04-tfe-multi-cluster**      | tfe     | Terraform / TFE workflow | ⭐⭐⭐ High   | 30-45 min |
 | **05-helm-values**            | helm    | Helm / ArgoCD delivery   | ⭐⭐ Medium  | 15-20 min |
+| **07-compile-cache**          | external/manual | Plugin mutation and caching | ⭐⭐ Medium | 10-15 min |
 
 ---
 
@@ -126,5 +143,6 @@ examples/
 ├── 02-module-version-pinning/
 ├── 03-config-exploration/
 ├── 04-tfe-multi-cluster/     ← TFE + Terraform workflow
-└── 05-helm-values/           ← Helm values + ArgoCD delivery
+├── 05-helm-values/           ← Helm values + ArgoCD delivery
+└── 07-compile-cache/         ← Cache invalidation + ordered plugin consumers
 ```

@@ -1,0 +1,9 @@
+consumer: alpha
+composition:
+  instance: "{{consumer}}-{{settings.message}}"
+  output_subdir: reports
+  files:
+    - path: report.yaml
+      content:
+        consumer: "{{consumer}}"
+        config: "{{report}}"

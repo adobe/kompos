@@ -12,10 +12,12 @@ import argparse
 import logging
 import os
 import shutil
+import sys
 
 from kompos.parser import SubParserConfig
 from kompos.runner import GenericRunner, COMPOSITION_KEY, split_path
 from kompos.helpers import console
+from kompos.compile_context import CompileContext
 
 logger = logging.getLogger(__name__)
 
@@ -180,6 +182,13 @@ class CompileRunner(GenericRunner):
         self.configure_passive()
 
     def run(self, args, extra_args):
+        self.set_compile_context(CompileContext())
+        try:
+            return self._run_with_context(args, extra_args)
+        finally:
+            self.set_compile_context(None)
+
+    def _run_with_context(self, args, extra_args):
         self.run_configuration(args)
 
         # Seed himl_args with defaults for dispatch
@@ -192,12 +201,15 @@ class CompileRunner(GenericRunner):
         prune   = getattr(args, 'prune',   False)
 
         routing   = self._build_routing_map()
+        console.print_status(f"Discovering compositions under {os.path.relpath(self.config_path)}...")
         all_comps = self._walk_compositions(self.config_path)
 
+        console.print_status(f"Discovered {len(all_comps)} composition(s).")
         if not all_comps:
             console.print_warning("No compositions found under the given path.")
             return 0
 
+        console.print_status("Loading composition metadata...")
         enabled_comps, disabled_comps = self._partition_enabled_compositions(all_comps)
 
         print(f"\n  Found {len(all_comps)} composition(s):\n")
@@ -239,7 +251,16 @@ class CompileRunner(GenericRunner):
         Recursively walk root, returning (comp_type, comp_path) for every
         composition=* directory found at any depth.
         Does NOT recurse inside composition directories.
+
+        If root itself is a composition dir (basename matches
+        COMPOSITION_KEY + "="), it is returned directly as the single
+        discovered composition — its contents are not walked, same as any
+        composition dir found during the recursive walk below.
         """
+        root_name = os.path.basename(os.path.normpath(root))
+        if COMPOSITION_KEY + "=" in root_name:
+            return [(split_path(root_name)[1], root)]
+
         results = []
         try:
             entries = sorted(os.listdir(root))
@@ -262,7 +283,12 @@ class CompileRunner(GenericRunner):
         """Load raw config once per composition; split enabled vs disabled."""
         enabled = []
         disabled = []
-        for comp_type, comp_path in all_comps:
+        total = len(all_comps)
+        for index, (comp_type, comp_path) in enumerate(all_comps, start=1):
+            if index == 1 or index % 10 == 0 or index == total:
+                console.print_status(
+                    f"Loading composition metadata [{index}/{total}]: {os.path.relpath(comp_path)}"
+                )
             raw_config = self.get_raw_config(comp_path, comp_type)
             if self.is_composition_enabled(raw_config):
                 enabled.append((comp_type, comp_path))
@@ -324,6 +350,7 @@ class CompileRunner(GenericRunner):
             logger.info(f"[{target_runner}] {os.path.relpath(comp_path)}")
             try:
                 runner = runner_class(self.kompos_config, comp_path, self.execute)
+                runner.set_compile_context(self.compile_context)
                 if target_runner == 'helm':
                     runner.defer_chart_inventory = True
                 runner.run_configuration(dispatch_args)
@@ -331,16 +358,17 @@ class CompileRunner(GenericRunner):
                 comps, paths = runner.get_compositions()
                 rc = runner._run_compositions_internal(dispatch_args, [], comps, paths)
                 if rc != 0:
+                    print(f"  \033[91m❌\033[0m [{target_runner}] {os.path.relpath(comp_path)}", file=sys.stderr)
                     failed.append(comp_path)
             except Exception as e:
-                logger.error(f"Failed: {comp_path}: {e}")
+                print(f"  \033[91m❌\033[0m [{target_runner}] {os.path.relpath(comp_path)}: {e}", file=sys.stderr)
                 failed.append(comp_path)
 
         from kompos.helpers.helm_readme import HelmReadmeWriter
         HelmReadmeWriter.flush_pending_chart_inventory()
 
         if failed:
-            print(f"\n  ✗ {len(failed)} composition(s) failed:")
+            print(f"\n  \033[91m✗\033[0m {len(failed)} composition(s) failed:")
             for p in failed:
                 print(f"    - {os.path.relpath(p)}")
             return 1

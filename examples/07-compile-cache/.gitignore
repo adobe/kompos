@@ -1,0 +1,5 @@
+generated/
+.kompos-runtime/
+__pycache__/
+*.pyc
+configs/team=demo/generated_features.yaml

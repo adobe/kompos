@@ -1,0 +1,3 @@
+settings:
+  message: before-plugin
+  replicas: 1

@@ -1,0 +1,21 @@
+desired:
+  settings:
+    message: after-plugin
+    replicas: 3
+  features:
+    enabled: true
+composition:
+  instance: refresh
+  external:
+    entrypoint: "cache_demo_plugin:refresh"
+    pythonpath: [plugins]
+    inputs:
+      - desired.settings
+      - desired.features
+    outputs:
+      - path_key: settings_path
+        result_key: settings
+        format: yaml
+      - path_key: features_path
+        result_key: features
+        format: yaml

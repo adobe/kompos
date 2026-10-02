@@ -10,6 +10,7 @@
 
 import logging
 import os
+import shlex
 
 from kompos.parser import SubParserConfig
 from kompos.runners.terraform_helper import GenericTerraformRunner
@@ -123,7 +124,10 @@ class TerraformRunner(GenericTerraformRunner):
 
         remove_cache = TerraformRunner.remove_local_cache_cmd(args.subcommand)
         extra_args_str = ' '.join(extra_args)
-        cmd = (f"cd {runtime_dir} && "
+        # Config-derived values are shell-quoted so that paths with spaces and any
+        # incidental shell metacharacters are passed literally. extra_args is left
+        # as-is to preserve operator passthrough semantics.
+        cmd = (f"cd {shlex.quote(runtime_dir)} && "
                f"{remove_cache} "
                f"{terraform_env_config} ; terraform init && terraform {args.subcommand} {var_file} {extra_args_str}")
 

@@ -1701,11 +1701,13 @@ def test_compile_flushes_inventory_on_failure():
     """compile build must flush deferred inventory even when some compositions fail (0.12.5 bug)."""
     print("6.3f Testing compile flushes inventory on partial failure...")
     from unittest.mock import MagicMock, patch
+    from kompos.compile_context import CompileContext
     from kompos.runners import compile as compile_mod
 
     flush_called = []
 
     runner = compile_mod.CompileRunner.__new__(compile_mod.CompileRunner)
+    runner.compile_context = CompileContext()
     runner.kompos_config = MagicMock()
     runner.execute = False
     runner.get_raw_config = MagicMock(return_value={'composition': {'instance': 'demo'}})
@@ -1730,6 +1732,10 @@ def test_compile_flushes_inventory_on_failure():
                     MagicMock(),
                 )
 
+    helm_instance.set_compile_context.assert_called_once_with(runner.compile_context)
+    helm_instance._run_compositions_internal.assert_called_once_with(
+        dispatch_args, [], ['helm-values'], ['/fake/path']
+    )
     assert flush_called, 'flush_pending_chart_inventory must run before compile returns failure'
     assert rc == 1
     print("  ✓ compile flushes inventory even when compositions fail")
@@ -2011,12 +2017,164 @@ def test_compile_build_order_unlisted_sorts_last():
     print(f"  ✓ unlisted comp sorts last: {result}")
 
 
+def test_compile_walk_discovers_root_as_composition_dir():
+    """_walk_compositions recognizes root itself as a composition dir.
+
+    Regression for: pointing `compile` directly at a composition path (e.g.
+    .../composition=ipam) used to list root's *contents* (plugin config files,
+    not composition=* subdirs) and silently return [] — "No compositions
+    found under the given path" — even though root was a valid composition.
+    """
+    print("8.6 Testing _walk_compositions discovers root itself as a composition...")
+    import shutil
+    import tempfile
+    from kompos.runners.compile import CompileRunner
+
+    tmp = tempfile.mkdtemp(prefix="kompos-walk-root-")
+    try:
+        comp_dir = os.path.join(tmp, "composition=ipam")
+        os.makedirs(comp_dir)
+        # Contents that are NOT composition=* dirs — this is what a real
+        # composition dir looks like (config files, no nested compositions).
+        with open(os.path.join(comp_dir, "ipam.yaml"), "w") as f:
+            f.write("ipam: {}\n")
+
+        runner = CompileRunner.__new__(CompileRunner)
+        result = runner._walk_compositions(comp_dir)
+
+        assert result == [("ipam", comp_dir)], \
+            f"root-as-composition-dir should be discovered directly: {result}"
+        print(f"  ✓ root composition dir discovered without walking its contents: {result}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_compile_walk_discovers_nested_compositions():
+    """_walk_compositions still finds composition=* dirs nested under a non-composition root.
+
+    Regression guard alongside the root-as-composition-dir fix above: passing
+    a parent dir (e.g. cell=pluto01) must keep discovering every composition=*
+    subdirectory at any depth, and must not recurse into a found composition.
+    """
+    print("8.7 Testing _walk_compositions discovers nested composition dirs...")
+    import shutil
+    import tempfile
+    from kompos.runners.compile import CompileRunner
+
+    tmp = tempfile.mkdtemp(prefix="kompos-walk-nested-")
+    try:
+        cell_root = os.path.join(tmp, "cell=pluto01")
+        ipam_dir = os.path.join(cell_root, "composition=ipam")
+        cell_dir = os.path.join(cell_root, "composition=cell")
+        cluster_cluster_dir = os.path.join(cell_root, "cluster=akita", "composition=cluster")
+        for d in (ipam_dir, cell_dir, cluster_cluster_dir):
+            os.makedirs(d)
+        # A file inside a discovered composition dir must not be mistaken for
+        # a nested composition (confirms "does NOT recurse inside" holds).
+        with open(os.path.join(ipam_dir, "ipam.yaml"), "w") as f:
+            f.write("ipam: {}\n")
+
+        runner = CompileRunner.__new__(CompileRunner)
+        result = runner._walk_compositions(cell_root)
+
+        assert set(result) == {
+            ("ipam", ipam_dir),
+            ("cell", cell_dir),
+            ("cluster", cluster_cluster_dir),
+        }, f"nested discovery should find all three, none duplicated: {result}"
+        print(f"  ✓ nested composition dirs discovered: {sorted(ct for ct, _ in result)}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_compile_cache_example():
+    """Ordered plugins refresh warmed inherited inputs before manual consumers run."""
+    import shutil
+    import tempfile
+
+    print("5.20 Testing compile cache example with inherited plugin mutations...")
+    example = PROJECT_ROOT / "examples" / "07-compile-cache"
+    with tempfile.TemporaryDirectory(prefix="kompos-compile-cache-") as tmp:
+        copied = Path(tmp) / "example"
+        shutil.copytree(
+            example, copied,
+            ignore=shutil.ignore_patterns(
+                "generated", ".kompos-runtime", "__pycache__", "*.pyc",
+                "generated_features.yaml",
+            ),
+        )
+        configs = copied / "configs"
+        shared = configs / "team=demo" / "shared.yaml"
+        features = shared.parent / "generated_features.yaml"
+        assert yaml.safe_load(shared.read_text()) == {
+            "settings": {"message": "before-plugin", "replicas": 1},
+        }, "Example must start with the pre-mutation input"
+        before = {
+            path.relative_to(configs).as_posix(): path.read_bytes()
+            for path in configs.rglob("*.yaml")
+        }
+
+        dry_run = run_kompos(["configs", "compile", "build", "--dry-run"], cwd=str(copied))
+        assert dry_run.returncode == 0, (
+            f"Cache example dry-run failed:\n{dry_run.stdout}\n{dry_run.stderr}"
+        )
+        assert "Discovered 3 composition(s)." in dry_run.stderr
+        assert not (copied / "generated").exists(), "Dry-run must not write outputs"
+        assert before == {
+            path.relative_to(configs).as_posix(): path.read_bytes()
+            for path in configs.rglob("*.yaml")
+        }, "Dry-run must not rewrite or create inherited inputs"
+
+        previous_outputs = None
+        for _ in range(2):
+            result = run_kompos(["configs", "compile", "build", "--prune"], cwd=str(copied))
+            assert result.returncode == 0, (
+                f"Cache example compile failed:\n{result.stdout}\n{result.stderr}"
+            )
+            assert yaml.safe_load(shared.read_text()) == {
+                "settings": {"message": "after-plugin", "replicas": 3},
+            }
+            assert yaml.safe_load(features.read_text()) == {"features": {"enabled": True}}
+
+            generated = copied / "generated"
+            reports = generated / "reports"
+            assert {path.name for path in reports.iterdir()} == {
+                "alpha-after-plugin", "beta-after-plugin",
+            }, "Generation and pruning must use refreshed instance metadata"
+            for consumer in ("alpha", "beta"):
+                report = reports / f"{consumer}-after-plugin" / "report.yaml"
+                assert yaml.safe_load(report.read_text()) == {
+                    "consumer": consumer,
+                    "config": {
+                        "project": "cache-demo",
+                        "message": "after-plugin",
+                        "replicas": 3,
+                        "feature_enabled": True,
+                    },
+                }, f"Consumer read stale or incorrectly interpolated data: {report}"
+
+            outputs = {
+                path.relative_to(generated).as_posix(): path.read_bytes()
+                for path in generated.rglob("*") if path.is_file()
+            }
+            if previous_outputs is not None:
+                assert outputs == previous_outputs, "Repeated builds must produce identical files"
+            previous_outputs = outputs
+
+    print("  ✓ Dry-run is read-only; both consumers see mutations and repeat builds are identical")
+
+
 def main():
     """Run all tests in logical order"""
     print("=" * 70)
     print("KOMPOS INTEGRATION TESTS")
     print("=" * 70)
     print()
+    import unittest
+    cache_tests = unittest.defaultTestLoader.discover(
+        str(PROJECT_ROOT / "tests"), pattern="test_compile_context.py"
+    )
+    cache_result = unittest.TextTestRunner(verbosity=2).run(cache_tests)
     
     test_groups = [
         ("1. CONFIG HIML GENERATION & INTERPOLATION", [
@@ -2069,6 +2227,7 @@ def main():
             test_external_path_key_plugin_overrides_destination,
             test_external_prune_removes_stale_outputs,
             test_external_header_key_writes_comment_header,
+            test_compile_cache_example,
         ]),
         ("6. HELM VALUES GENERATION", [
             test_helm_help,
@@ -2092,11 +2251,13 @@ def main():
             test_compile_build_order_structured_sort,
             test_compile_build_order_fallback_runner_priority,
             test_compile_build_order_unlisted_sorts_last,
+            test_compile_walk_discovers_root_as_composition_dir,
+            test_compile_walk_discovers_nested_compositions,
         ]),
     ]
     
-    total_passed = 0
-    total_failed = 0
+    total_failed = len(cache_result.failures) + len(cache_result.errors)
+    total_passed = cache_result.testsRun - total_failed
     
     for group_name, tests in test_groups:
         print(f"\n{group_name}")

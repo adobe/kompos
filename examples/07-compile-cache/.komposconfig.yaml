@@ -1,0 +1,17 @@
+komposconfig:
+  # Required by the schema; no Terraform runner is used.
+  terraform: {}
+  defaults:
+    base_output_dir: generated
+  compositions:
+    order:
+      external: [refresh]
+      manual: [report]
+    build_order:
+      - {runner: external, type: refresh}
+      - {runner: manual, type: report}
+    properties:
+      refresh:
+        output_subdir: plugins
+      report:
+        output_subdir: reports

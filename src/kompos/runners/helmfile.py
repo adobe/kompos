@@ -10,6 +10,7 @@
 
 import logging
 import os
+import shlex
 import sys
 
 from kubeconfig import KubeConfig
@@ -79,7 +80,8 @@ class HelmfileRunner(GenericRunner):
         helmfile_composition_path = os.path.join(default_output_path, composition)
 
         extra_args_str = ' '.join(extra_args)
-        cmd = f"cd {helmfile_composition_path} && helmfile {args.subcommand} {extra_args_str}"
+        # Quote the config-derived path; leave subcommand/extra_args as operator passthrough.
+        cmd = f"cd {shlex.quote(helmfile_composition_path)} && helmfile {args.subcommand} {extra_args_str}"
 
         return dict(command=cmd)
 
@@ -115,7 +117,11 @@ class HelmfileRunner(GenericRunner):
 
     def generate_eks_kube_config(self, cluster_name, aws_profile, region):
         file_location = self.get_tmp_file()
-        cmd = f"aws eks update-kubeconfig --name {cluster_name} --profile {aws_profile} --region {region} --kubeconfig {file_location}"
+        # All values here are config-derived; quote them so a value with spaces or
+        # shell metacharacters is passed literally to the aws CLI.
+        cmd = (f"aws eks update-kubeconfig --name {shlex.quote(cluster_name)} "
+               f"--profile {shlex.quote(aws_profile)} --region {shlex.quote(region)} "
+               f"--kubeconfig {shlex.quote(file_location)}")
 
         return_code = self.execute(dict(command=cmd))
         if return_code != 0:
