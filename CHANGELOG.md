@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.9] - 2026-10-02
+
+### Added
+- **Compile progress** — composition discovery and metadata-loading progress are reported to stderr before loading completes.
+- **Compile cache example** — self-contained `examples/07-compile-cache` demonstrates ordered plugin rewrites, newly created inherited inputs, and downstream consumers without infrastructure tools or credentials.
+
+### Changed
+- **Compile input caching** — `compile build` shares parsed YAML and unresolved hierarchy caches across metadata and runner reads for each invocation. Output interpolation, dynamic values, and secrets are reevaluated per output; cached inputs refresh when file fingerprints or hierarchy YAML membership change. Caches do not persist across invocations, and ordered execution does not introduce a dependency DAG.
+
+### Fixed
+- **Root composition discovery** — compiling a `composition=*` directory directly now discovers that composition without walking its contents.
+- **Shell argument quoting** — config-derived Helmfile/Terraform working-directory paths and Helmfile AWS kubeconfig arguments are shell-quoted to preserve literal spaces and quotes.
+
 ## [0.12.8] - 2026-06-24
 
 ### Added
