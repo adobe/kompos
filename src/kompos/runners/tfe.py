@@ -66,6 +66,7 @@ Examples:
 Output:
   - Composition files: generated/{composition_type}/{instance}/
   - Workspace config:  generated/workspaces/{instance}.workspace.yaml
+                       (workspaces_sub_dir may interpolate, e.g. "workspaces/{{project.name}}")
   - Tfvars file:       generated/{composition_type}/{instance}/generated.tfvars.yaml
 
 For more information, see: docs/GUIDE.md
@@ -89,12 +90,6 @@ class TFERunner(GenericTerraformRunner):
         
         self.generate_workspaces = workspace_config.get('generate', True)
         self.workspace_config_key = workspace_config.get('config_key', 'workspace')
-        
-        # Build workspaces directory from base + subdir
-        base_output_dir = self.kompos_config.get_runtime_setting(
-            self.runner_type, 'generation_config.base_output_dir', './generated')
-        workspaces_subdir = workspace_config.get('workspaces_sub_dir', 'workspaces')
-        self.workspaces_dir = os.path.join(base_output_dir, workspaces_subdir)
         
         self.workspace_extension = workspace_config.get('workspace_extension', '.workspace.yaml')
         self.workspace_format = self.extract_format_from_extension(self.workspace_extension)
@@ -159,7 +154,8 @@ class TFERunner(GenericTerraformRunner):
 
         # Generate workspace config file
         if generate_workspace:
-            self.generate_workspace_config(config_path, raw_config, instance_name=instance)
+            if not self.generate_workspace_config(config_path, raw_config, instance_name=instance):
+                return 1
             config_files += 1
 
         # Print summary with metrics
@@ -196,7 +192,8 @@ class TFERunner(GenericTerraformRunner):
         console.print_status(
             f"  {console.Colors.YELLOW}↳{console.Colors.RESET} '{composition}' "
             f"{console.Colors.DIM}paused (composition.enabled: false): workspace only, infra frozen{console.Colors.RESET}")
-        self.generate_workspace_config(config_path, raw_config, instance_name=instance)
+        if not self.generate_workspace_config(config_path, raw_config, instance_name=instance):
+            return 1
         return 0
 
     def generate_composition(self, composition, raw_config, instance_name=None):
@@ -304,14 +301,26 @@ class TFERunner(GenericTerraformRunner):
         console.print_file_generation("tfvars", output_file)
 
     def generate_workspace_config(self, config_path, raw_config, instance_name=None):
-        """Generate the workspace configuration file for TFE workspace creation"""
+        """Generate the workspace configuration file for TFE workspace creation.
+
+        Returns False when workspaces_sub_dir does not resolve.
+        """
         workspace_name = instance_name or self.get_composition_name(raw_config)
         if not workspace_name:
-            return
+            return True
+
+        workspaces_dir = self.kompos_config.get_workspaces_dir(
+            self.runner_type, raw_config, self.get_nested_value)
+        if not workspaces_dir:
+            console.print_error(
+                f"Cannot resolve workspaces_sub_dir for workspace '{workspace_name}'",
+                details=[f"  Key: komposconfig.{self.runner_type}.workspaces_config.workspaces_sub_dir",
+                         f"  Config path: {self.config_path}"])
+            return False
 
         # Build output file path
         output_file = self.build_output_path(
-            base_dir=self.workspaces_dir,
+            base_dir=workspaces_dir,
             filename=f'{workspace_name}{self.workspace_extension}'
         )
 
@@ -328,6 +337,7 @@ class TFERunner(GenericTerraformRunner):
         )
         
         console.print_file_generation("workspace", output_file)
+        return True
 
     @staticmethod
     def execution(args, extra_args, default_output_path, composition, raw_config):

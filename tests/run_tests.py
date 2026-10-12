@@ -11,8 +11,10 @@ Tests critical functionality in a logical order:
 
 Run with: python tests/run_tests.py
 """
+import contextlib
 import sys
 import subprocess
+import tempfile
 import yaml
 import json
 import os
@@ -822,6 +824,93 @@ def test_tfe_generates_workspaces():
     print(f"  ✓ Workspace generated ({workspace_files[0].name})")
 
 
+@contextlib.contextmanager
+def _tfe_example_with_workspaces_sub_dir(sub_dir):
+    """Copy of the TFE example with workspaces_config.workspaces_sub_dir overridden.
+    Yields the copy's root."""
+    import shutil
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir) / "example"
+        shutil.copytree(TFE_EXAMPLE, root, ignore=shutil.ignore_patterns("generated", ".kompos-runtime"))
+        komposconfig = root / ".komposconfig.yaml"
+        text = komposconfig.read_text()
+        anchor = '      workspaces_sub_dir:  "workspaces"\n'
+        assert anchor in text, "TFE example komposconfig changed; update this test"
+        komposconfig.write_text(text.replace(anchor, f'      workspaces_sub_dir:  "{sub_dir}"\n'))
+        yield root
+
+
+def test_tfe_workspaces_sub_dir_interpolation():
+    """workspaces_sub_dir interpolates per composition (incl. paused workspaces)"""
+    print("5.4b Testing TFE workspaces_sub_dir interpolation...")
+    if not TFE_CONFIG_DEV.exists():
+        print("  ⊘ Skipped (TFE example not found)")
+        return
+
+    with _tfe_example_with_workspaces_sub_dir("workspaces/{{environment}}") as root:
+        workspaces = root / "generated" / "workspaces"
+        dev = root / TFE_CONFIG_DEV.relative_to(TFE_EXAMPLE)
+        result = run_kompos([str(dev), "tfe", "generate", "--workspace-only"], cwd=str(root))
+        output = result.stdout + result.stderr
+        assert result.returncode == 0, f"Interpolated workspaces_sub_dir failed:\n{output}"
+        expected = workspaces / "dev" / "demo-dev-usw2-cluster-01.workspace.yaml"
+        assert expected.exists(), f"Expected workspace {expected}:\n{output}"
+
+        # Paused compositions still emit their workspace, into their own resolved dir
+        prod = root / TFE_CONFIG_PROD.relative_to(TFE_EXAMPLE)
+        with _composition_enabled_override(prod / "composition.yaml", "false"):
+            result = run_kompos([str(prod), "tfe", "generate"], cwd=str(root))
+        output = result.stdout + result.stderr
+        assert result.returncode == 0, f"Paused interpolated workspaces_sub_dir failed:\n{output}"
+        paused = workspaces / "prod" / "demo-prod-use1-cluster-02.workspace.yaml"
+        assert paused.exists(), f"Expected paused workspace {paused}:\n{output}"
+        assert not list(workspaces.glob("*.workspace.yaml")), "Nothing should land in the flat dir"
+    print("  ✓ workspaces_sub_dir resolves per composition (workspaces/dev, workspaces/prod)")
+
+
+def test_tfe_workspaces_sub_dir_unresolved_fails():
+    """workspaces_sub_dir with an unresolvable interpolation fails without writing"""
+    print("5.4c Testing TFE workspaces_sub_dir unresolved interpolation fails...")
+    if not TFE_CONFIG_DEV.exists():
+        print("  ⊘ Skipped (TFE example not found)")
+        return
+
+    with _tfe_example_with_workspaces_sub_dir("workspaces/{{does.not_exist}}") as root:
+        dev = root / TFE_CONFIG_DEV.relative_to(TFE_EXAMPLE)
+        result = run_kompos([str(dev), "tfe", "generate", "--workspace-only"], cwd=str(root))
+        output = result.stdout + result.stderr
+        assert result.returncode != 0, f"Unresolved workspaces_sub_dir should fail:\n{output}"
+        assert "workspaces_sub_dir" in output, f"Should explain the failure:\n{output}"
+        generated = root / "generated"
+        written = list(generated.rglob("*.workspace.yaml")) if generated.exists() else []
+        assert not written, f"Unresolved workspaces_sub_dir must not write workspaces: {written}"
+    print("  ✓ unresolved workspaces_sub_dir fails with no workspace written")
+
+
+def test_komposconfig_get_workspaces_dir():
+    """KomposConfig.get_workspaces_dir(): layered value, static fallback, unresolved"""
+    print("5.4d Testing KomposConfig.get_workspaces_dir()...")
+    from kompos.komposconfig import KomposConfig
+    from kompos.runner import GenericRunner
+
+    kc = KomposConfig.__new__(KomposConfig)
+    kc.config = {'komposconfig': {'tfe': {'workspaces_config': {'workspaces_sub_dir': 'static-ws'}}}}
+    get = GenericRunner.get_nested_value
+
+    def layered(sub_dir):
+        return {'komposconfig': {'tfe': {'workspaces_config': {'workspaces_sub_dir': sub_dir}}}}
+
+    resolved = kc.get_workspaces_dir('tfe', layered('workspaces/aip-inference'), get)
+    assert resolved == os.path.join('./generated', 'workspaces/aip-inference'), resolved
+    fallback = kc.get_workspaces_dir('tfe', {}, get)
+    assert fallback == os.path.join('./generated', 'static-ws'), fallback
+    assert kc.get_workspaces_dir('tfe', layered('workspaces/{{project.name}}'), get) is None
+
+    kc.config = {'komposconfig': {}}
+    default = kc.get_workspaces_dir('tfe', {}, get)
+    assert default == os.path.join('./generated', 'workspaces'), default
+    print("  ✓ layered value wins, static/default fallback, unresolved returns None")
+
 def test_tfe_multi_cluster():
     """Test dev and prod cluster configs both exist and have expected structure"""
     print("5.5 Testing multi-cluster configs...")
@@ -845,8 +934,6 @@ def test_tfe_multi_cluster():
 # =============================================================================
 # 5b. COMPOSITION ENABLED TOGGLE (composition.enabled: false skips generation)
 # =============================================================================
-
-import contextlib
 
 
 @contextlib.contextmanager
@@ -2212,6 +2299,9 @@ def main():
             test_tfe_generates_tfvars,
             test_tfe_generates_versioned_compositions,
             test_tfe_generates_workspaces,
+            test_tfe_workspaces_sub_dir_interpolation,
+            test_tfe_workspaces_sub_dir_unresolved_fails,
+            test_komposconfig_get_workspaces_dir,
             test_tfe_multi_cluster,
             test_composition_enabled_false_pauses_workspace,
             test_composition_enabled_true_generates,

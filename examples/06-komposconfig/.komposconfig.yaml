@@ -61,6 +61,9 @@ komposconfig:
       config_key:          "workspace"
       workspaces_sub_dir:  "workspaces"
       workspace_extension: ".workspace.yaml"
+      # workspaces_sub_dir may interpolate from the layered config, e.g. one dir per project:
+      #   workspaces_sub_dir: "workspaces/{{project.name}}"
+      # Result:   generated/workspaces/{project}/{instance}.workspace.yaml
     tfvars_config:
       extension: ".tfvars.yaml"
       filename:  "generated"

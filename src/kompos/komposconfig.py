@@ -330,3 +330,40 @@ class KomposConfig:
         # Fallback if not defined or unresolved (caller prints one user-facing error)
         logger.debug("No resolved composition.instance in layered config")
         return None
+
+    def get_workspaces_dir(self, runner, raw_config, get_nested_value_fn):
+        """
+        Get the workspace config output directory for a composition.
+
+        .komposconfig.yaml is part of the layered config, so workspaces_sub_dir may use
+        Himl interpolation and resolve per composition:
+          workspaces_sub_dir: "workspaces/{{project.name}}"
+
+        Lookup order:
+        1. komposconfig.{runner}.workspaces_config.workspaces_sub_dir from layered config
+        2. workspaces_config.workspaces_sub_dir runtime setting (.komposconfig.yaml)
+        3. "workspaces"
+
+        Args:
+            runner: Runner name (e.g., 'tfe')
+            raw_config: Himl-generated configuration dictionary
+            get_nested_value_fn: Function to extract nested values from raw_config
+
+        Returns:
+            {base_output_dir}/{workspaces_sub_dir}, or None if workspaces_sub_dir
+            is unresolved (caller prints one user-facing error)
+        """
+        base_output_dir = self.get_runtime_setting(
+            runner, 'generation_config.base_output_dir', './generated')
+
+        sub_dir = get_nested_value_fn(
+            raw_config, f"komposconfig.{runner}.workspaces_config.workspaces_sub_dir")
+        if sub_dir is None:
+            workspace_config = self.get_runtime_setting(runner, 'workspaces_config', {}) or {}
+            sub_dir = workspace_config.get('workspaces_sub_dir', 'workspaces')
+
+        if '{{' in str(sub_dir):
+            logger.debug(f"Unresolved workspaces_sub_dir in layered config: {sub_dir!r}")
+            return None
+
+        return os.path.join(base_output_dir, str(sub_dir))
