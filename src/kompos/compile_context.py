@@ -4,6 +4,7 @@
 # of the License at http://www.apache.org/licenses/LICENSE-2.0
 
 from copy import deepcopy
+import hashlib
 import os
 
 from himl.config_generator import ConfigGenerator, ConfigProcessor
@@ -18,11 +19,10 @@ class CompileContext:
 
     @staticmethod
     def _file_version(path):
-        stat = os.stat(path)
-        return (
-            stat.st_dev, stat.st_ino, stat.st_size,
-            stat.st_mtime_ns, stat.st_ctime_ns,
-        )
+        # Stat metadata cannot prove a file is unchanged: coarse filesystem clocks
+        # let same-size rewrites keep identical size, mtime, and ctime.
+        with open(path, "rb") as f:
+            return hashlib.file_digest(f, "sha256").digest()
 
     def input_version(self, hierarchy):
         # Rediscover directories on each request so added/deleted YAML participates.

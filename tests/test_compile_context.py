@@ -119,13 +119,22 @@ class CompileContextTests(unittest.TestCase):
         self.assertEqual(result["reference"], "modified")
         self.assertEqual(load.call_count, 1)
 
-    def test_same_size_edit_with_restored_mtime_is_detected(self):
+    def test_same_size_edit_with_identical_stat_is_detected(self):
         self.process()
-        before = self.defaults.stat()
+        target = os.path.abspath(self.defaults)
+        frozen = os.stat(target)
+        real_stat = os.stat
+
+        def coarse_clock_stat(path, *args, **kwargs):
+            # A coarse filesystem clock leaves every stat field unchanged.
+            if os.path.abspath(path) == target:
+                return frozen
+            return real_stat(path, *args, **kwargs)
+
         self.defaults.write_text(self.defaults.read_text().replace("original", "changed!"))
-        os.utime(self.defaults, ns=(before.st_atime_ns, before.st_mtime_ns))
-        self.assertEqual(self.defaults.stat().st_size, before.st_size)
-        self.assertEqual(self.process()["reference"], "changed!")
+        with patch.object(os, "stat", coarse_clock_stat):
+            self.assertEqual(os.stat(self.defaults), frozen)
+            self.assertEqual(self.process()["reference"], "changed!")
 
     def test_atomic_replacement_is_detected(self):
         self.process()
