@@ -72,8 +72,8 @@ whole `report` mapping remain typed after interpolation.
 Parsed YAML is shared across compositions for one compile invocation. Unresolved
 merged hierarchies are cached per path; each use gets an independent copy before
 output interpolation and dynamic or secret resolution. Existing-file changes
-are detected through device/inode, size, modification-time and change-time
-fingerprints. Hierarchy membership is rediscovered to detect new or removed YAML
+are detected by SHA-256 content hash, so same-size rewrites are caught even when
+the filesystem clock leaves timestamps unchanged. Hierarchy membership is rediscovered to detect new or removed YAML
 files. There is no persisted cache, and a new invocation starts with a new cache.
 
 The plugin applies fixed desired values rather than incrementing counters or
