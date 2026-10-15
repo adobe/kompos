@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Interpolated `workspaces_sub_dir`** — `komposconfig.tfe.workspaces_config.workspaces_sub_dir` is read from the layered config, so it can interpolate per composition (e.g. `"workspaces/{{project.name}}"` → `generated/workspaces/<project>/<instance>.workspace.yaml`). Lets each TFE organization's workspace manager watch only its own manifests. An unresolved value fails the composition. Static values behave as before.
+- **Interpolated composition `output_subdir`** — `komposconfig.compositions.properties.<type>.output_subdir` is read from the layered config, so it can interpolate per composition (e.g. `"clusters/{{project.name}}"` → `generated/clusters/<project>/<instance>/`). Applies to tfe composition files, tfvars and paused compositions, to helm values (`properties.<helm composition>.output_subdir`, default `clusters`; set it to match the cluster composition's), and to `compile build --prune`, which scans each resolved dir and never prunes a live composition's resolved dir. An unresolved value fails the composition, naming the key, before anything is written; the same guard applies to manual/external `composition.output_subdir`. Static values behave as before.
 
 ### Fixed
 - **Compile cache stale reads** — cached inputs are validated by content hash instead of stat metadata, so same-size rewrites are detected on filesystems with coarse timestamps (e.g. Linux ext4).

@@ -64,10 +64,12 @@ Examples:
   kompos configs/.../composition=cluster tfe generate --filter cluster --filter vpc --exclude node_groups
 
 Output:
-  - Composition files: generated/{composition_type}/{instance}/
+  - Composition files: generated/{output_subdir}/{instance}/
+                       (compositions.properties.{type}.output_subdir, default {type};
+                        may interpolate, e.g. "clusters/{{project.name}}")
   - Workspace config:  generated/workspaces/{instance}.workspace.yaml
                        (workspaces_sub_dir may interpolate, e.g. "workspaces/{{project.name}}")
-  - Tfvars file:       generated/{composition_type}/{instance}/generated.tfvars.yaml
+  - Tfvars file:       generated/{output_subdir}/{instance}/generated.tfvars.yaml
 
 For more information, see: docs/GUIDE.md
         '''
@@ -128,6 +130,11 @@ class TFERunner(GenericTerraformRunner):
         if not instance:
             return 1
 
+        # Resolve the per-composition output dir before writing anything
+        composition_output_dir = self.resolve_composition_output_dir(composition, raw_config, instance)
+        if not composition_output_dir:
+            return 1
+
         composition_files = 0
         config_files = 0
 
@@ -138,7 +145,9 @@ class TFERunner(GenericTerraformRunner):
 
         # Generate per-cluster composition (working_directory for TFE)
         if generate_composition:
-            file_count = self.generate_composition(composition, raw_config, instance_name=instance)
+            file_count = self.generate_composition(
+                composition, raw_config, instance_name=instance,
+                composition_output_dir=composition_output_dir)
             composition_files = file_count if file_count else 0
             # Add separator after composition files if we're generating config files
             if generate_tfvars or generate_workspace:
@@ -148,7 +157,7 @@ class TFERunner(GenericTerraformRunner):
         if generate_tfvars:
             self.generate_tfvars(
                 composition, config_path, raw_config, filtered_keys, excluded_keys,
-                instance_name=instance,
+                instance_name=instance, composition_output_dir=composition_output_dir,
             )
             config_files += 1
 
@@ -192,11 +201,31 @@ class TFERunner(GenericTerraformRunner):
         console.print_status(
             f"  {console.Colors.YELLOW}↳{console.Colors.RESET} '{composition}' "
             f"{console.Colors.DIM}paused (composition.enabled: false): workspace only, infra frozen{console.Colors.RESET}")
+        # The workspace's working_directory points at the (frozen) composition output dir,
+        # so its output_subdir must resolve too.
+        if not self.resolve_composition_output_dir(composition, raw_config, instance):
+            return 1
         if not self.generate_workspace_config(config_path, raw_config, instance_name=instance):
             return 1
         return 0
 
-    def generate_composition(self, composition, raw_config, instance_name=None):
+    def resolve_composition_output_dir(self, composition, raw_config, instance_name):
+        """
+        Resolve {base_dir}/{output_subdir} for this composition from the layered config.
+
+        Returns None (after printing one error) when output_subdir is unresolved.
+        """
+        composition_output_dir = self.kompos_config.get_composition_output_dir_for(
+            self.base_dir, composition, raw_config, self.get_nested_value)
+        if not composition_output_dir:
+            console.print_error(
+                f"Cannot resolve output_subdir for composition '{instance_name}'",
+                details=[f"  Key: komposconfig.compositions.properties.{composition}.output_subdir",
+                         f"  Config path: {self.config_path}"])
+        return composition_output_dir
+
+    def generate_composition(self, composition, raw_config, instance_name=None,
+                             composition_output_dir=None):
         """
         Generate per-cluster TFE working_directory with modules.
         
@@ -207,6 +236,7 @@ class TFERunner(GenericTerraformRunner):
             composition: Name of the composition (e.g., 'cluster')
             raw_config: Configuration dictionary from hiera
             instance_name: Pre-resolved composition.instance (optional)
+            composition_output_dir: Pre-resolved {base_dir}/{output_subdir} (optional)
             
         Returns:
             int: Total number of files processed
@@ -226,9 +256,13 @@ class TFERunner(GenericTerraformRunner):
 
         # Target composition path: base/composition_type/composition_instance
         # - base: ./generated (from .komposconfig.yaml defaults.base_dir)
-        # - composition_type: accounts/ or clusters/ (from .komposconfig.yaml properties)
+        # - composition_type: accounts/ or clusters/ (from .komposconfig.yaml properties;
+        #   may interpolate per composition, e.g. "clusters/{{project.name}}")
         # - composition_instance: my-account/ (from composition.output_dir interpolation)
-        composition_output_dir = self.kompos_config.get_composition_output_dir(self.base_dir, composition)
+        composition_output_dir = (composition_output_dir
+                                  or self.resolve_composition_output_dir(composition, raw_config, cluster_name))
+        if not composition_output_dir:
+            return 0
         instance_dir = self.get_composition_output_dir(raw_config)
         target_dir = self.build_output_path(
             base_dir=composition_output_dir,
@@ -261,7 +295,7 @@ class TFERunner(GenericTerraformRunner):
         return file_count
 
     def generate_tfvars(self, composition, config_path, raw_config, filtered_keys, excluded_keys,
-                        instance_name=None):
+                        instance_name=None, composition_output_dir=None):
         """Generate the tfvars file for TFE (per-composition)"""
         workspace_name = instance_name or self.get_composition_name(raw_config)
         if not workspace_name:
@@ -272,7 +306,10 @@ class TFERunner(GenericTerraformRunner):
         tfvars_filename = f'{base_filename}{self.tfvars_extension}'
 
         # Build output path: base/composition_type/composition_instance/filename
-        composition_output_dir = self.kompos_config.get_composition_output_dir(self.base_dir, composition)
+        composition_output_dir = (composition_output_dir
+                                  or self.resolve_composition_output_dir(composition, raw_config, workspace_name))
+        if not composition_output_dir:
+            return
         instance_dir = self.get_composition_output_dir(raw_config)
         instance_base = self.build_output_path(
             base_dir=composition_output_dir,

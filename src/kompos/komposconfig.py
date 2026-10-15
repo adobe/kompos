@@ -299,6 +299,59 @@ class KomposConfig:
         )
         return os.path.join(base_dir, output_subdir)
 
+    def get_composition_output_subdir(self, composition, raw_config=None, get_nested_value_fn=None,
+                                      default=None):
+        """
+        Get a composition type's output_subdir, resolved per composition.
+
+        .komposconfig.yaml is part of the layered config, so output_subdir may use
+        Himl interpolation and resolve per composition:
+          compositions.properties.cluster.output_subdir: "clusters/{{project.name}}"
+
+        Lookup order:
+        1. komposconfig.compositions.properties.{composition}.output_subdir from layered config
+        2. compositions.properties.{composition}.output_subdir runtime setting (.komposconfig.yaml)
+        3. default, or the composition type name when no default is given
+
+        Args:
+            composition: Composition type (e.g., 'cluster', 'account')
+            raw_config: Himl-generated configuration dictionary (optional)
+            get_nested_value_fn: Function to extract nested values from raw_config
+            default: Fallback when no output_subdir is configured (default: composition)
+
+        Returns:
+            The output_subdir, or None if it is unresolved (caller prints one
+            user-facing error)
+        """
+        key = f"compositions.properties.{composition}.output_subdir"
+        sub_dir = None
+        if raw_config is not None and get_nested_value_fn is not None:
+            sub_dir = get_nested_value_fn(raw_config, f"komposconfig.{key}")
+        if sub_dir is None:
+            sub_dir = self.get_kompos_setting(key, None)
+        if sub_dir is None:
+            sub_dir = composition if default is None else default
+
+        if '{{' in str(sub_dir):
+            logger.debug(f"Unresolved {key} in layered config: {sub_dir!r}")
+            return None
+        return str(sub_dir)
+
+    def get_composition_output_dir_for(self, base_dir, composition, raw_config, get_nested_value_fn,
+                                       default=None):
+        """
+        Per-composition variant of get_composition_output_dir(): output_subdir is read
+        from the layered config (see get_composition_output_subdir()).
+
+        Returns:
+            {base_dir}/{output_subdir}, or None if output_subdir is unresolved
+        """
+        sub_dir = self.get_composition_output_subdir(
+            composition, raw_config, get_nested_value_fn, default=default)
+        if sub_dir is None:
+            return None
+        return os.path.join(base_dir, sub_dir)
+
     def get_composition_name(self, raw_config, get_nested_value_fn):
         """
         Get the resolved composition instance identifier from layered config.
