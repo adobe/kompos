@@ -1,0 +1,14 @@
+my-ingress:
+  namespace: ingress
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: node-role.kubernetes.io/system-node
+            operator: In
+            values:
+            - 'true'
+  service:
+    annotations:
+      securityGroups: sg-0pub111222333444,sg-0int555666777888,sg-0wrk999000111222
