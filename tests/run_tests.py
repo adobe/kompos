@@ -911,6 +911,130 @@ def test_komposconfig_get_workspaces_dir():
     assert default == os.path.join('./generated', 'workspaces'), default
     print("  ✓ layered value wins, static/default fallback, unresolved returns None")
 
+
+@contextlib.contextmanager
+def _tfe_example_with_output_subdir(sub_dir):
+    """Copy of the TFE example where the `terraform` composition is routed to tfe and
+    compositions.properties.terraform.output_subdir is set to sub_dir. Yields the root."""
+    import shutil
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir) / "example"
+        shutil.copytree(TFE_EXAMPLE, root, ignore=shutil.ignore_patterns("generated", ".kompos-runtime"))
+        komposconfig = root / ".komposconfig.yaml"
+        text = komposconfig.read_text()
+        order = '      terraform:\n        - cluster\n'
+        props = '      cluster:\n        output_subdir: "clusters"\n'
+        assert order in text and props in text, "TFE example komposconfig changed; update this test"
+        text = text.replace(order, '      tfe:\n        - terraform\n')
+        text = text.replace(props, f'      terraform:\n        output_subdir: "{sub_dir}"\n')
+        komposconfig.write_text(text)
+        yield root
+
+
+def test_tfe_composition_output_subdir_interpolation():
+    """compositions.properties.<type>.output_subdir interpolates per composition (tfe + compile --prune)"""
+    print("5.4e Testing composition output_subdir interpolation...")
+    if not TFE_CONFIG_DEV.exists():
+        print("  ⊘ Skipped (TFE example not found)")
+        return
+
+    with _tfe_example_with_output_subdir("clusters/{{environment}}") as root:
+        generated = root / "generated"
+        dev = root / TFE_CONFIG_DEV.relative_to(TFE_EXAMPLE)
+        prod = root / TFE_CONFIG_PROD.relative_to(TFE_EXAMPLE)
+        dev_dir = generated / "clusters" / "dev" / "demo-dev-usw2-cluster-01"
+
+        result = run_kompos([str(dev), "tfe", "generate"], cwd=str(root))
+        output = result.stdout + result.stderr
+        assert result.returncode == 0, f"Interpolated output_subdir failed:\n{output}"
+        assert (dev_dir / "generated.tfvars.yaml").exists(), f"Expected tfvars under {dev_dir}:\n{output}"
+        assert list(dev_dir.glob("*.tf")), f"Expected composition files under {dev_dir}:\n{output}"
+        assert not (generated / "terraform").exists(), "Nothing should land in the type-name dir"
+        assert not (generated / "clusters" / "demo-dev-usw2-cluster-01").exists(), \
+            "Nothing should land in the flat clusters dir"
+
+        # Paused compositions resolve their own dir too, and still emit their workspace
+        with _composition_enabled_override(prod / "composition.yaml", "false"):
+            result = run_kompos([str(prod), "tfe", "generate"], cwd=str(root))
+        output = result.stdout + result.stderr
+        assert result.returncode == 0, f"Paused interpolated output_subdir failed:\n{output}"
+        assert (generated / "workspaces" / "demo-prod-use1-cluster-02.workspace.yaml").exists(), \
+            f"Paused composition should still emit its workspace:\n{output}"
+
+        # compile --prune: keep interpolated (incl. frozen paused) outputs, prune only removed ones
+        frozen = generated / "clusters" / "prod" / "demo-prod-use1-cluster-02"
+        frozen.mkdir(parents=True)
+        (frozen / "main.tf").write_text("# frozen artifact\n")
+        ghost = generated / "clusters" / "dev" / "ghost-dev-usw2-cluster-09"
+        ghost.mkdir(parents=True)
+        (ghost / "main.tf").write_text("# stale artifact\n")
+        with _composition_enabled_override(prod / "composition.yaml", "false"):
+            result = run_kompos(["data", "compile", "build", "--prune"], cwd=str(root))
+        output = result.stdout + result.stderr
+        assert result.returncode == 0, f"compile build --prune failed:\n{output}"
+        assert (dev_dir / "generated.tfvars.yaml").exists(), f"Interpolated output must survive prune:\n{output}"
+        assert (frozen / "main.tf").exists(), f"Paused interpolated output must survive prune:\n{output}"
+        assert not ghost.exists(), f"Removed composition should be pruned from its resolved dir:\n{output}"
+    print("  ✓ output_subdir resolves per composition (clusters/dev, clusters/prod); prune keeps them")
+
+
+def test_tfe_composition_output_subdir_unresolved_fails():
+    """compositions.properties.<type>.output_subdir with an unresolvable interpolation fails without writing"""
+    print("5.4f Testing composition output_subdir unresolved interpolation fails...")
+    if not TFE_CONFIG_DEV.exists():
+        print("  ⊘ Skipped (TFE example not found)")
+        return
+
+    key = "komposconfig.compositions.properties.terraform.output_subdir"
+    with _tfe_example_with_output_subdir("clusters/{{does.not_exist}}") as root:
+        dev = root / TFE_CONFIG_DEV.relative_to(TFE_EXAMPLE)
+        prod = root / TFE_CONFIG_PROD.relative_to(TFE_EXAMPLE)
+        cases = (("generate", [str(dev), "tfe", "generate"], False),
+                 ("--workspace-only", [str(dev), "tfe", "generate", "--workspace-only"], False),
+                 ("paused", [str(prod), "tfe", "generate"], True))
+        for label, args, paused in cases:
+            if paused:
+                with _composition_enabled_override(prod / "composition.yaml", "false"):
+                    result = run_kompos(args, cwd=str(root))
+            else:
+                result = run_kompos(args, cwd=str(root))
+            output = result.stdout + result.stderr
+            assert result.returncode != 0, f"Unresolved output_subdir should fail ({label}):\n{output}"
+            assert key in output, f"Should name the key ({label}):\n{output}"
+            generated = root / "generated"
+            written = [p for p in generated.rglob("*") if p.is_file()] if generated.exists() else []
+            assert not written, f"Unresolved output_subdir must not write anything ({label}): {written}"
+    print("  ✓ unresolved output_subdir fails naming the key, nothing written")
+
+
+def test_komposconfig_get_composition_output_subdir():
+    """KomposConfig.get_composition_output_subdir()/_dir_for(): layered, static, default, unresolved"""
+    print("5.4g Testing KomposConfig.get_composition_output_subdir()...")
+    from kompos.komposconfig import KomposConfig
+    from kompos.runner import GenericRunner
+
+    kc = KomposConfig.__new__(KomposConfig)
+    kc.config = {'komposconfig': {'compositions': {'properties': {'cluster': {'output_subdir': 'clusters'}}}}}
+    get = GenericRunner.get_nested_value
+
+    def layered(comp, sub_dir):
+        return {'komposconfig': {'compositions': {'properties': {comp: {'output_subdir': sub_dir}}}}}
+
+    assert kc.get_composition_output_subdir('cluster', layered('cluster', 'clusters/aip'), get) == 'clusters/aip'
+    assert kc.get_composition_output_subdir('cluster', {}, get) == 'clusters'
+    assert kc.get_composition_output_subdir('cluster') == 'clusters'
+    assert kc.get_composition_output_subdir('account', {}, get) == 'account'
+    assert kc.get_composition_output_subdir('helm-values', {}, get, default='clusters') == 'clusters'
+    assert kc.get_composition_output_subdir('cluster', layered('cluster', 'clusters/{{project.name}}'), get) is None
+    assert kc.get_composition_output_dir_for('./generated', 'cluster', layered('cluster', 'clusters/aip'), get) \
+        == os.path.join('./generated', 'clusters/aip')
+    assert kc.get_composition_output_dir_for(
+        './generated', 'cluster', layered('cluster', 'clusters/{{project.name}}'), get) is None
+    # Static path unchanged
+    assert kc.get_composition_output_dir('./generated', 'cluster') == os.path.join('./generated', 'clusters')
+    print("  ✓ layered value wins, static/type-name/default fallback, unresolved returns None")
+
+
 def test_tfe_multi_cluster():
     """Test dev and prod cluster configs both exist and have expected structure"""
     print("5.5 Testing multi-cluster configs...")
@@ -1230,6 +1354,109 @@ def test_compile_prune_keeps_helm_only_cluster():
         assert not os.path.isdir(os.path.join(clusters, "ghost")), \
             "cluster removed from configs/ should be pruned"
         print("  ✓ compile --prune keeps helm-only cluster, prunes only removed ones")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_compile_prune_interpolated_output_subdir_mixed_layout():
+    """compile --prune with mixed static + interpolated output_subdir under one parent dir.
+
+    `cluster-legacy` keeps static "clusters"; `cluster` uses "clusters/{{project.name}}".
+    The static scan of generated/clusters must not delete the project dir, and the
+    project dir must itself be scanned for stale instances.
+    """
+    print("5.12b Testing compile --prune with mixed static/interpolated output_subdir...")
+
+    import shutil
+    import tempfile
+    from kompos.komposconfig import KomposConfig
+    from kompos.runners.compile import CompileRunner
+
+    class _StubKomposConfig:
+        get_composition_output_subdir = KomposConfig.get_composition_output_subdir
+
+        def __init__(self, base, order, subdirs):
+            self._base, self._order, self._subdirs = base, order, subdirs
+
+        def get_kompos_setting(self, key, default=None):
+            if key == 'defaults.base_output_dir':
+                return self._base
+            parts = key.split('.')
+            if (len(parts) == 4 and parts[0] == 'compositions'
+                    and parts[1] == 'properties' and parts[3] == 'output_subdir'):
+                return self._subdirs.get(parts[2], default)
+            return default
+
+        def composition_order(self, runner_type, default=None):
+            return self._order.get(runner_type, default if default is not None else [])
+
+    tmp = tempfile.mkdtemp(prefix="kompos-prune-")
+    try:
+        clusters = os.path.join(tmp, "clusters")
+        os.makedirs(os.path.join(clusters, "legacy-a", "tfe"))           # static (live)
+        os.makedirs(os.path.join(clusters, "ghost-legacy", "tfe"))       # static (removed)
+        os.makedirs(os.path.join(clusters, "aip", "alpha", "tfe"))       # interpolated (live)
+        os.makedirs(os.path.join(clusters, "aip", "ghost", "tfe"))       # interpolated (removed)
+
+        order = {"tfe": ["cluster-legacy", "cluster"]}
+        subdirs = {"cluster-legacy": "clusters", "cluster": "clusters/{{project.name}}"}
+        runner = CompileRunner.__new__(CompileRunner)
+        runner.kompos_config = _StubKomposConfig(tmp, order, subdirs)
+
+        def raw_config(path, comp):
+            raw = {"composition": {"instance": path}}
+            if comp == "cluster":
+                raw["komposconfig"] = {"compositions": {"properties": {
+                    "cluster": {"output_subdir": "clusters/aip"}}}}
+            return raw
+        runner.get_raw_config = raw_config
+
+        live_comps = [("cluster-legacy", "legacy-a"), ("cluster", "alpha")]
+        runner._prune_stale(live_comps, {"cluster-legacy": "tfe", "cluster": "tfe"}, dry_run=False)
+
+        assert os.path.isdir(os.path.join(clusters, "legacy-a")), "static live instance must be kept"
+        assert os.path.isdir(os.path.join(clusters, "aip", "alpha")), \
+            "interpolated live instance must NOT be pruned by the static clusters scan"
+        assert not os.path.isdir(os.path.join(clusters, "ghost-legacy")), "removed static instance pruned"
+        assert not os.path.isdir(os.path.join(clusters, "aip", "ghost")), \
+            "removed instance under the resolved dir should be pruned"
+        print("  ✓ compile --prune keeps the resolved project dir, prunes stale instances in both")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_manual_unresolved_output_subdir_fails():
+    """A manual composition with an unresolved composition.output_subdir fails without writing."""
+    print("5.13b Testing manual composition unresolved output_subdir fails...")
+
+    import shutil
+    import tempfile
+    from kompos.runners.manual import ManualRunner
+
+    class _StubKomposConfig:
+        def __init__(self, base):
+            self._base = base
+
+        def get_kompos_setting(self, key, default=None):
+            return self._base if key == 'defaults.base_output_dir' else default
+
+        def get_composition_name(self, raw_config, get_nested_value_fn):
+            return get_nested_value_fn(raw_config, 'composition.instance')
+
+    tmp = tempfile.mkdtemp(prefix="kompos-manual-")
+    try:
+        runner = ManualRunner.__new__(ManualRunner)
+        runner.kompos_config = _StubKomposConfig(tmp)
+        runner.config_path = "<test>"
+        runner.runner_type = "manual"
+        raw = {'composition': {'type': 'manual', 'instance': 'mock-01',
+                               'output_subdir': 'clusters/{{project.name}}',
+                               'files': [{'path': 'notes/info.yaml', 'content': {'a': 1}}]}}
+        rc = runner.execution_configuration('manual', '<test>', None, raw, [], [])
+        assert rc == 1, "unresolved composition.output_subdir should fail"
+        written = [os.path.join(d, f) for d, _, fs in os.walk(tmp) for f in fs]
+        assert not written, f"nothing should be written: {written}"
+        print("  ✓ unresolved composition.output_subdir fails, nothing written")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -1885,6 +2112,52 @@ def test_helm_generate_writes_files():
     print("  ✓ argoapps/ files written with resolved values")
 
 
+def test_helm_output_subdir_interpolation():
+    """helm-values output dir follows compositions.properties.<type>.output_subdir (interpolated)"""
+    print("6.4b Testing helm output_subdir interpolation...")
+    if not HELM_CONFIG.exists():
+        print("  ⊘ Skipped (helm example not found)")
+        return
+
+    import shutil
+    inst = "demo-dev-usw2-cluster-01"
+    key = "komposconfig.compositions.properties.helm-values.output_subdir"
+    for sub_dir, ok in (("clusters/{{env.name}}", True), ("clusters/{{does.not_exist}}", False)):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "example"
+            shutil.copytree(HELM_EXAMPLE, root, ignore=shutil.ignore_patterns(".kompos-runtime"))
+            komposconfig = root / ".komposconfig.yaml"
+            text = komposconfig.read_text()
+            anchor = "  compositions:\n"
+            assert anchor in text, "helm example komposconfig changed; update this test"
+            komposconfig.write_text(text.replace(
+                anchor, f'{anchor}    properties:\n      helm-values:\n        output_subdir: "{sub_dir}"\n', 1))
+            # Infra outputs live under the cluster's resolved dir
+            generated = root / "generated"
+            shutil.rmtree(generated / "clusters" / inst / "argoapps", ignore_errors=True)
+            (generated / "clusters" / "dev").mkdir()
+            shutil.move(str(generated / "clusters" / inst), str(generated / "clusters" / "dev" / inst))
+            before = sorted(p for p in generated.rglob("*") if p.is_file())
+
+            config = root / HELM_CONFIG.relative_to(HELM_EXAMPLE)
+            result = run_kompos([str(config), "helm", "generate"], cwd=str(root))
+            output = result.stdout + result.stderr
+            argoapps = generated / "clusters" / "dev" / inst / "argoapps"
+            if ok:
+                assert result.returncode == 0, f"helm generate with interpolated output_subdir failed:\n{output}"
+                assert (argoapps / "my-app.yaml").exists(), f"Expected values under {argoapps}:\n{output}"
+                assert "{{" not in (argoapps / "my-app.yaml").read_text(), "infra outputs should resolve"
+                result = run_kompos([str(config), "helm", "delete"], cwd=str(root))
+                assert result.returncode == 0 and not argoapps.exists(), \
+                    f"helm delete should remove the resolved dir:\n{result.stdout + result.stderr}"
+            else:
+                assert result.returncode != 0, f"Unresolved output_subdir should fail:\n{output}"
+                assert key in output, f"Should name the key:\n{output}"
+                after = sorted(p for p in generated.rglob("*") if p.is_file())
+                assert after == before, f"Unresolved output_subdir must not write: {set(after) - set(before)}"
+    print("  ✓ helm values land under the resolved dir; unresolved fails naming the key")
+
+
 def test_helm_generate_single_chart():
     """Test --chart-dir renders only the specified chart"""
     print("6.5 Testing --chart-dir single chart mode...")
@@ -2302,6 +2575,9 @@ def main():
             test_tfe_workspaces_sub_dir_interpolation,
             test_tfe_workspaces_sub_dir_unresolved_fails,
             test_komposconfig_get_workspaces_dir,
+            test_tfe_composition_output_subdir_interpolation,
+            test_tfe_composition_output_subdir_unresolved_fails,
+            test_komposconfig_get_composition_output_subdir,
             test_tfe_multi_cluster,
             test_composition_enabled_false_pauses_workspace,
             test_composition_enabled_true_generates,
@@ -2311,7 +2587,9 @@ def main():
             test_compile_build_dispatches_without_crash,
             test_compile_prune_keeps_disabled_composition,
             test_compile_prune_keeps_helm_only_cluster,
+            test_compile_prune_interpolated_output_subdir_mixed_layout,
             test_manual_composition_writes_declared_files,
+            test_manual_unresolved_output_subdir_fails,
             test_external_entrypoint_plugin_writes_outputs,
             test_external_command_plugin_writes_outputs,
             test_external_path_key_plugin_overrides_destination,
@@ -2328,6 +2606,7 @@ def main():
             test_compile_flushes_inventory_on_failure,
             test_helm_generate_dry_run,
             test_helm_generate_writes_files,
+            test_helm_output_subdir_interpolation,
             test_helm_generate_single_chart,
             test_helm_generate_fails_on_unresolved,
         ]),

@@ -29,6 +29,32 @@ composition:
   instance: "{{cluster.fullName}}"  # Part 3
 ```
 
+**Per-composition `output_subdir`:** `.komposconfig.yaml` is part of the layered config,
+so `output_subdir` may use Himl interpolation and resolve per composition:
+
+```yaml
+komposconfig:
+  compositions:
+    properties:
+      cluster:
+        output_subdir: "clusters/{{project.name}}"   # → generated/clusters/<project>/<instance>/
+      helm-values:
+        output_subdir: "clusters/{{project.name}}"   # keep helm values next to the cluster
+```
+
+- Lookup: layered `komposconfig.compositions.properties.<type>.output_subdir` →
+  static `.komposconfig.yaml` value → type name (helm: `clusters`).
+- Applies to tfe (composition files, tfvars, paused compositions), helm values
+  (`<subdir>/<cluster>/<helm output_subdir>`, infra outputs read from the same dir) and
+  `compile build --prune`.
+- An unresolved value (still containing `{{`) fails that composition with an error naming
+  the key; nothing is written.
+- manual/external compositions use `composition.output_subdir` (default `clusters`), which
+  may interpolate too, e.g. `"{{komposconfig.compositions.properties.cluster.output_subdir}}"`.
+- `--prune` scans every static `output_subdir` plus each composition's resolved one, and never
+  prunes a live composition's resolved dir or its parents. A removed project's whole dir is
+  only pruned if its parent is itself a scanned `output_subdir`.
+
 ### KomposConfig vs GenericRunner
 
 **KomposConfig** - How Kompos operates

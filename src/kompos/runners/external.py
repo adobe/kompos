@@ -164,9 +164,13 @@ class ExternalRunner(GenericRunner):
                 )
             inputs[key] = value
 
+        subdir_key = ('composition.external.output_subdir' if spec.get('output_subdir')
+                      else 'composition.output_subdir')
         subdir = (spec.get('output_subdir')
                   or self.get_nested_value(raw_config, 'composition.output_subdir'))
-        instance_dir = self.instance_output_dir(instance, subdir)
+        instance_dir = self.resolve_instance_output_dir(instance, subdir, subdir_key)
+        if not instance_dir:
+            return 1
 
         console.print_section_header(f"External: {instance} ({composition})")
         console.print_kvp("Config", console.format_config_path(config_path), indent=1)

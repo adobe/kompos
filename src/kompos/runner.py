@@ -552,6 +552,23 @@ class GenericRunner:
         base = self.kompos_config.get_kompos_setting('defaults.base_output_dir', './generated')
         return os.path.join(base, subdir or 'clusters', instance)
 
+    def resolve_instance_output_dir(self, instance, subdir, key):
+        """
+        instance_output_dir() for a layered ``output_subdir`` (which may interpolate,
+        e.g. ``composition.output_subdir: "clusters/{{project.name}}"``).
+
+        Returns None (after printing one error naming ``key``) when ``subdir`` is
+        left unresolved, so the caller fails the composition without writing.
+        """
+        if subdir is not None and '{{' in str(subdir):
+            console.print_error(
+                f"Cannot resolve output_subdir for composition '{instance}'",
+                details=[f"  Key: {key}",
+                         f"  Value: {subdir!r} (unresolved)",
+                         f"  Config path: {self.config_path}"])
+            return None
+        return self.instance_output_dir(instance, subdir)
+
     def write_structured_file(self, output_file, body, fmt=None, header_lines=None):
         """
         Write ``body`` to ``output_file`` as YAML or JSON, creating parent dirs.

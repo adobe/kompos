@@ -122,7 +122,9 @@ class HelmRunner(GenericRunner):
       rendered = context.pop(enclosing_key)     # extract clean values
 
     Output:
-      generated/clusters/{cluster}/argoapps/{app}.yaml
+      generated/{output_subdir}/{cluster}/argoapps/{app}.yaml
+      (output_subdir: compositions.properties.<type>.output_subdir, default "clusters";
+       may interpolate, e.g. "clusters/{{project.name}}")
     """
 
 
@@ -169,8 +171,7 @@ class HelmRunner(GenericRunner):
             return self.run_generate(args, raw_config, charts_dir, config_path, composition)
 
         if args.subcommand == 'delete':
-            self.run_delete(raw_config)
-            return
+            return self.run_delete(raw_config, composition)
 
     @staticmethod
     def execution(args, extra_args, default_output_path, composition, raw_config):
@@ -178,7 +179,7 @@ class HelmRunner(GenericRunner):
 
     # ── delete ────────────────────────────────────────────────────────────────
 
-    def run_delete(self, raw_config):
+    def run_delete(self, raw_config, composition=None):
         """Delete all generated helm values for a cluster."""
         import shutil
 
@@ -187,7 +188,10 @@ class HelmRunner(GenericRunner):
             console.print_error("Could not determine cluster name.")
             sys.exit(1)
 
-        argoapps_dir, chart_symlinks = self._output_paths(cluster_name)
+        clusters_dir = self._clusters_dir(composition, raw_config, cluster_name)
+        if not clusters_dir:
+            return 1
+        argoapps_dir, chart_symlinks = self._output_paths(cluster_name, clusters_dir)
 
         console.print_section_header(f"Helm Delete: {cluster_name}")
         removed = 0
@@ -212,16 +216,43 @@ class HelmRunner(GenericRunner):
 
     # ── output paths ─────────────────────────────────────────────────────────
 
-    def _output_paths(self, cluster_name):
+    def _clusters_dir(self, composition, raw_config, cluster_name):
+        """
+        Return {base_output_dir}/{output_subdir}: the dir holding per-cluster outputs.
+
+        output_subdir is compositions.properties.{composition}.output_subdir (e.g.
+        properties.helm-values.output_subdir), default "clusters". It is read from the
+        layered config so it may interpolate per composition and should match the
+        cluster composition's, e.g. "clusters/{{project.name}}".
+
+        Returns None (after printing one error) when output_subdir is unresolved.
+        """
+        if not composition:
+            return os.path.join(self.base_output_dir, 'clusters')
+        clusters_dir = self.kompos_config.get_composition_output_dir_for(
+            self.base_output_dir, composition, raw_config, self.get_nested_value, default='clusters')
+        if not clusters_dir:
+            console.print_error(
+                f"Cannot resolve output_subdir for composition '{cluster_name}'",
+                details=[f"  Key: komposconfig.compositions.properties.{composition}.output_subdir",
+                         f"  Config path: {self.config_path}"])
+        return clusters_dir
+
+    def _output_paths(self, cluster_name, clusters_dir=None):
         """
         Return the output paths that generate/delete operate on.
+
+        Args:
+            cluster_name: Resolved cluster (composition instance) name
+            clusters_dir: Resolved {base_output_dir}/{output_subdir} (default: generated/clusters)
 
         Returns:
             argoapps_dir: generated/clusters/{cluster}/helm-values/
             chart_symlinks: list of (symlink_path, parent_generated_dir) tuples
         """
-        argoapps_dir = os.path.join(
-            self.base_output_dir, 'clusters', cluster_name, self.argoapps_subdir)
+        if clusters_dir is None:
+            clusters_dir = os.path.join(self.base_output_dir, 'clusters')
+        argoapps_dir = os.path.join(clusters_dir, cluster_name, self.argoapps_subdir)
 
         chart_symlinks = []
         charts_dir = self.default_charts_dir
@@ -274,6 +305,10 @@ class HelmRunner(GenericRunner):
             )
             return 1
 
+        clusters_dir = self._clusters_dir(composition, raw_config, cluster_name)
+        if not clusters_dir:
+            return 1
+
         env_name = self.get_nested_value(raw_config, 'env.name')
 
         console.print_section_header(f"Helm Values Render: {cluster_name}")
@@ -299,15 +334,14 @@ class HelmRunner(GenericRunner):
                 for app_name in enabled
             }
 
-        infra_outputs_path = os.path.join(
-            self.base_output_dir, 'clusters', cluster_name, self.tfe_outputs_path)
+        infra_outputs_path = os.path.join(clusters_dir, cluster_name, self.tfe_outputs_path)
 
         # Build context once — hierarchy + infra outputs, reused for all charts
         context = self._build_context(config_path, infra_outputs_path)
         if context is None:
             return 1
 
-        argoapps_dir, _ = self._output_paths(cluster_name)
+        argoapps_dir, _ = self._output_paths(cluster_name, clusters_dir)
 
         dry_run = getattr(args, 'dry_run', False)
         rendered_count = 0

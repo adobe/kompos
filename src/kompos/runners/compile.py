@@ -383,8 +383,18 @@ class CompileRunner(GenericRunner):
         enabled AND disabled. Disabling a composition skips its generation but
         keeps it in the live set, so its artifacts are frozen, not pruned. Only
         compositions removed from configs/ entirely are treated as stale.
+
+        ``compositions.properties.<type>.output_subdir`` may interpolate per
+        composition (e.g. "clusters/{{project.name}}"). Such dirs are resolved from
+        each live composition's layered config and scanned too; they (and their
+        parents) are never pruned themselves, so a project-scoped dir nested inside
+        another type's static dir survives that dir's scan.
         """
+        base = self.kompos_config.get_kompos_setting('defaults.base_output_dir', './generated')
+
         live_instances = {}
+        resolved_dirs = set()   # interpolated output_subdir dirs, resolved per composition
+        live_dirs = set()       # resolved per-composition instance dirs
         for comp_type, comp_path in live_comps:
             runner_type = routing.get(comp_type)
             if not runner_type:
@@ -395,11 +405,15 @@ class CompileRunner(GenericRunner):
                 if not inst or '{{' in str(inst):
                     inst = raw.get('cluster', {}).get('fullName', '')
             except Exception:
-                inst = ''
+                raw, inst = None, ''
             if inst:
                 live_instances.setdefault(runner_type, set()).add(inst)
+            if raw is not None and inst:
+                for out_dir, scan in self._live_output_dirs(comp_type, runner_type, raw, base):
+                    live_dirs.add(os.path.join(out_dir, inst))
+                    if scan:
+                        resolved_dirs.add(out_dir)
 
-        base = self.kompos_config.get_kompos_setting('defaults.base_output_dir', './generated')
         pruned = []
 
         # A single instance dir under generated/<subdir>/ can be claimed by more than
@@ -413,29 +427,70 @@ class CompileRunner(GenericRunner):
         for instances in live_instances.values():
             all_live |= instances
 
-        scanned_dirs = set()
-        for runner_type, live in live_instances.items():
+        # Never prune a resolved output dir, a live instance dir, or any of their parents.
+        protected = set()
+        for path in resolved_dirs | live_dirs:
+            path = os.path.normpath(path)
+            while path not in protected and path not in ('', '.', os.sep):
+                protected.add(path)
+                path = os.path.dirname(path)
+
+        target_dirs = []
+        for runner_type in live_instances:
             for comp_type in self.kompos_config.composition_order(runner_type, default=[]):
                 subdir = self.kompos_config.get_kompos_setting(
                     f'compositions.properties.{comp_type}.output_subdir', comp_type)
-                target_dir = os.path.join(base, subdir)
-                if target_dir in scanned_dirs or not os.path.isdir(target_dir):
+                if '{{' in str(subdir):
+                    continue  # interpolated: resolved per composition below
+                target_dirs.append(os.path.join(base, subdir))
+        target_dirs.extend(sorted(resolved_dirs))
+
+        scanned_dirs = set()
+        for target_dir in target_dirs:
+            target_dir = os.path.normpath(target_dir)
+            if target_dir in scanned_dirs or not os.path.isdir(target_dir):
+                continue
+            scanned_dirs.add(target_dir)
+            for entry in sorted(os.listdir(target_dir)):
+                stale = os.path.join(target_dir, entry)
+                if entry in all_live or stale in protected:
                     continue
-                scanned_dirs.add(target_dir)
-                for entry in sorted(os.listdir(target_dir)):
-                    if entry not in all_live:
-                        stale = os.path.join(target_dir, entry)
-                        if os.path.isdir(stale):
-                            rel = os.path.relpath(stale)
-                            if dry_run:
-                                print(f"  (prune) {rel}")
-                            else:
-                                shutil.rmtree(stale)
-                                console.print_warning(f"Pruned stale: {rel}")
-                            pruned.append(stale)
+                if os.path.isdir(stale):
+                    rel = os.path.relpath(stale)
+                    if dry_run:
+                        print(f"  (prune) {rel}")
+                    else:
+                        shutil.rmtree(stale)
+                        console.print_warning(f"Pruned stale: {rel}")
+                    pruned.append(stale)
 
         if not pruned:
             print("  No stale artifacts to prune.")
+
+    def _is_layered_output_subdir(self, comp_type, raw):
+        """True when the layered output_subdir differs from the static .komposconfig.yaml
+        value (i.e. it interpolated or was overridden in configs/)."""
+        key = f'compositions.properties.{comp_type}.output_subdir'
+        layered = self.get_nested_value(raw, f'komposconfig.{key}')
+        return layered is not None and layered != self.kompos_config.get_kompos_setting(key, None)
+
+    def _live_output_dirs(self, comp_type, runner_type, raw, base):
+        """Return (dir, scan) for each resolved {base}/{output_subdir} a live composition
+        writes its instance under. ``scan`` marks interpolated compositions.properties
+        dirs, which prune must scan in addition to the static ones."""
+        dirs = []
+        if self._is_layered_output_subdir(comp_type, raw):
+            sub_dir = self.kompos_config.get_composition_output_subdir(
+                comp_type, raw, self.get_nested_value,
+                default='clusters' if runner_type == 'helm' else None)
+            if sub_dir:
+                dirs.append((os.path.join(base, sub_dir), True))
+        if runner_type in ('manual', 'external'):
+            sub_dir = (self.get_nested_value(raw, 'composition.external.output_subdir')
+                       or self.get_nested_value(raw, 'composition.output_subdir'))
+            if sub_dir and '{{' not in str(sub_dir):
+                dirs.append((os.path.join(base, str(sub_dir)), False))
+        return dirs
 
     # ── routing ───────────────────────────────────────────────────────────────
 

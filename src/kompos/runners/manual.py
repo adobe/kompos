@@ -89,7 +89,9 @@ class ManualRunner(GenericRunner):
             return 0
 
         subdir = self.get_nested_value(raw_config, 'composition.output_subdir')
-        instance_dir = self.instance_output_dir(instance, subdir)
+        instance_dir = self.resolve_instance_output_dir(instance, subdir, 'composition.output_subdir')
+        if not instance_dir:
+            return 1
 
         written_paths = []
         for spec in files:

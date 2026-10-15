@@ -26,6 +26,10 @@ komposconfig:
 
     # Per-composition type properties — output_subdir controls where generated
     # files land under the base output directory.
+    # output_subdir may interpolate from the layered config, e.g. one dir per project:
+    #   cluster:
+    #     output_subdir: "clusters/{{project.name}}"
+    # Result:   generated/clusters/{project}/{instance}/
     properties:
       account:
         output_subdir: "accounts"
