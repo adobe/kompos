@@ -540,18 +540,6 @@ class GenericRunner:
         os.makedirs(dir_path, exist_ok=True)
         return dir_path
 
-    def instance_output_dir(self, instance, subdir=None):
-        """
-        ``<base_output_dir>/<subdir>/<instance>`` — the per-instance artifact dir
-        shared by the file-writing runners (manual, external).
-
-        Args:
-            instance: Resolved composition instance (directory leaf).
-            subdir:   Output subdir; defaults to 'clusters' to match tfe/helm layout.
-        """
-        base = self.kompos_config.get_kompos_setting('defaults.base_output_dir', './generated')
-        return os.path.join(base, subdir or 'clusters', instance)
-
     def write_structured_file(self, output_file, body, fmt=None, header_lines=None):
         """
         Write ``body`` to ``output_file`` as YAML or JSON, creating parent dirs.

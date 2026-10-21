@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Partitioned generated output** — optional `compositions.partition.key` in `.komposconfig.yaml` names a config key (e.g. `project.name`) whose value roots generated output: `generated/<value>/<output_subdir>/<instance>/`. Types opt out with `compositions.properties.<type>.partitioned: false`. `KomposConfig.get_instance_dir()` owns the layout for the tfe, helm (values + `tfe-outputs.yaml`), manual and external runners; `compile --prune` prunes per partition, removed partitions and the pre-partition layout. An unresolved, non-string or colliding value fails the composition with nothing written. Without `partition`, output is unchanged.
+
 ### Changed
 - **Interpolated `workspaces_sub_dir`** — `komposconfig.tfe.workspaces_config.workspaces_sub_dir` is read from the layered config, so it can interpolate per composition (e.g. `"workspaces/{{project.name}}"` → `generated/workspaces/<project>/<instance>.workspace.yaml`). Lets each TFE organization's workspace manager watch only its own manifests. An unresolved value fails the composition. Static values behave as before.
 

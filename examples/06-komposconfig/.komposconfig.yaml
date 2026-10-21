@@ -24,8 +24,14 @@ komposconfig:
         - account
         - cluster
 
+    # Optional: partition generated output by a config value (kompos doesn't
+    # interpret the key) → generated/<project>/clusters/<cluster>/.
+    # A type opts out with `partitioned: false`. Without `partition`, layout is unchanged.
+    # partition:
+    #   key: "project.name"
+
     # Per-composition type properties — output_subdir controls where generated
-    # files land under the base output directory.
+    # files land under the base output directory (or under the partition root).
     properties:
       account:
         output_subdir: "accounts"

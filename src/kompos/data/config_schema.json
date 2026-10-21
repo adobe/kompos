@@ -25,6 +25,15 @@
         "compositions": {
           "type": "object",
           "properties": {
+            "partition": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "description": "Dotted config key whose value partitions generated output: <base_output_dir>/<value>/<output_subdir>/<instance>"
+                }
+              }
+            },
             "source": {
               "type": "object",
               "properties": {

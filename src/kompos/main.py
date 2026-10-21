@@ -17,7 +17,7 @@ from simpledi import Container, auto, cache, instance, ListInstanceProvider
 from kompos.parser import RootParser
 from kompos.helpers import print_error
 from . import Executor
-from .komposconfig import KomposConfig
+from .komposconfig import KomposConfig, KomposConfigError
 from .runner import GenericRunner
 from .runners.config import ConfigRenderParserConfig, ConfigRenderRunner
 from .runners.explore import ExploreParserConfig, ExploreRunner
@@ -181,7 +181,11 @@ class AppContainer(Container):
             sys.exit(1)
 
         try:
+            self.kompos_config.validate_partition()
             return runner_instance.run(self.console_args, self.console_extra_args)
+        except KomposConfigError as e:
+            print_error(str(e), f"  Config path: {self.config_path}")
+            sys.exit(1)
         except Exception as e:
             error_msg = str(e)
             error_type = type(e).__name__

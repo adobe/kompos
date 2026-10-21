@@ -29,6 +29,31 @@ composition:
   instance: "{{cluster.fullName}}"  # Part 3
 ```
 
+### Partitioned Output
+
+Optional: `compositions.partition.key` names a dotted config key whose value adds a
+root dir between base and type — `base/<value>/type/instance`. Kompos doesn't interpret
+the key; `.komposconfig.yaml` stays static.
+
+```yaml
+komposconfig:
+  compositions:
+    partition:
+      key: "project.name"        # generated/<project>/clusters/<cluster>/
+    properties:
+      cluster:
+        output_subdir: "clusters"
+      ipam:
+        output_subdir: "ipam"
+        partitioned: false       # opt out: stays at generated/ipam/<instance>/
+```
+
+Without `partition`, output is unchanged. The value must resolve to a single dir name that
+isn't an `output_subdir` (unresolved, non-string or `clusters` fail with nothing written), and a
+partitioned and an unpartitioned type can't share an `output_subdir`. All runners (incl. helm
+values and `tfe-outputs.yaml`) use `KomposConfig.get_instance_dir()`. `compile --prune` prunes per
+partition, removed partitions and the pre-partition layout; other dirs under base are untouched.
+
 ### KomposConfig vs GenericRunner
 
 **KomposConfig** - How Kompos operates
