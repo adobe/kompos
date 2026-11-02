@@ -911,6 +911,96 @@ def test_komposconfig_get_workspaces_dir():
     assert default == os.path.join('./generated', 'workspaces'), default
     print("  ✓ layered value wins, static/default fallback, unresolved returns None")
 
+
+@contextlib.contextmanager
+def _tfe_example_with_partition(key):
+    """Copy of the TFE example with compositions.partition.key set. Yields the copy's root."""
+    import shutil
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir) / "example"
+        shutil.copytree(TFE_EXAMPLE, root, ignore=shutil.ignore_patterns("generated", ".kompos-runtime"))
+        komposconfig = root / ".komposconfig.yaml"
+        text = komposconfig.read_text()
+        anchor = '    properties:\n'
+        assert anchor in text, "TFE example komposconfig changed; update this test"
+        komposconfig.write_text(text.replace(anchor, f'    partition:\n      key: "{key}"\n{anchor}', 1))
+        yield root
+
+
+def test_partition_output_layout():
+    """compositions.partition.key puts output under <base>/<value>/ (incl. paused compositions)"""
+    print("5.4e Testing partitioned output layout...")
+    if not TFE_CONFIG_DEV.exists():
+        print("  ⊘ Skipped (TFE example not found)")
+        return
+    instance = "demo-dev-usw2-cluster-01"
+
+    with _tfe_example_with_partition("environment") as root:
+        dev = root / TFE_CONFIG_DEV.relative_to(TFE_EXAMPLE)
+        result = run_kompos([str(dev), "tfe", "generate"], cwd=str(root))
+        output = result.stdout + result.stderr
+        assert result.returncode == 0, f"Partitioned generate failed:\n{output}"
+        assert (root / "generated" / "dev" / "terraform" / instance / "main.tf").exists(), output
+        assert not (root / "generated" / "terraform").exists(), "Nothing in the unpartitioned dir"
+
+        prod = root / TFE_CONFIG_PROD.relative_to(TFE_EXAMPLE)
+        with _composition_enabled_override(prod / "composition.yaml", "false"):
+            result = run_kompos([str(prod), "tfe", "generate"], cwd=str(root))
+        output = result.stdout + result.stderr
+        assert result.returncode == 0, f"Paused partitioned composition failed:\n{output}"
+        assert (root / "generated" / "workspaces" / "demo-prod-use1-cluster-02.workspace.yaml").exists()
+    print("  ✓ output under generated/<value>/, paused composition ok")
+
+
+def test_partition_bad_key_fails():
+    """An unresolved or non-string partition value fails with nothing written"""
+    print("5.4f Testing unresolved / non-string partition key fails...")
+    if not TFE_CONFIG_DEV.exists():
+        print("  ⊘ Skipped (TFE example not found)")
+        return
+    for key in ("does.not_exist", "vpc.single_nat_gateway"):
+        with _tfe_example_with_partition(key) as root:
+            dev = root / TFE_CONFIG_DEV.relative_to(TFE_EXAMPLE)
+            result = run_kompos([str(dev), "tfe", "generate"], cwd=str(root))
+            output = result.stdout + result.stderr
+            assert result.returncode != 0, f"Bad partition key {key} should fail:\n{output}"
+            assert "compositions.partition.key" in output, f"Should name the key:\n{output}"
+            assert not (root / "generated").exists(), f"Nothing should be written for {key}"
+    print("  ✓ unresolved and non-string partition values fail with nothing written")
+
+
+def test_komposconfig_partition_layout():
+    """KomposConfig.get_output_root()/get_instance_dir() + load-time collision checks"""
+    print("5.4g Testing KomposConfig partition layout...")
+    from kompos.komposconfig import KomposConfig, KomposConfigError
+    from kompos.runner import GenericRunner
+
+    get = GenericRunner.get_nested_value
+    kc = KomposConfig.__new__(KomposConfig)
+    props = {'cluster': {'output_subdir': 'clusters'}, 'account': {'output_subdir': 'accounts'}}
+    kc.config = {'komposconfig': {'compositions': {'properties': props}}}
+    raw = {'project': {'name': 'p1'}, 'composition': {'instance': 'c1'}}
+    assert kc.get_instance_dir('cluster', raw, get) == os.path.join('./generated', 'clusters', 'c1')
+
+    kc.config['komposconfig']['compositions']['partition'] = {'key': 'project.name'}
+    kc.validate_partition()
+    assert kc.get_output_root(raw, get) == os.path.join('./generated', 'p1')
+    assert kc.get_instance_dir('cluster', raw, get) == os.path.join('./generated', 'p1', 'clusters', 'c1')
+    props['account']['partitioned'] = False
+    assert kc.get_instance_dir('account', raw, get) == os.path.join('./generated', 'accounts', 'c1')
+
+    def rejects(fn, *args):
+        try:
+            fn(*args)
+        except KomposConfigError:
+            return True
+    assert all(rejects(kc.get_output_root, {'project': {'name': bad}}, get)
+               for bad in ('clusters', '{{x}}', 42, '', 'a/b')), "bad partition values must be rejected"
+    props['account']['output_subdir'] = 'clusters'
+    assert rejects(kc.validate_partition), "partitioned + unpartitioned types can't share an output_subdir"
+    print("  ✓ root/instance dirs, opt-out, rejects collisions, unresolved and non-string values")
+
+
 def test_tfe_multi_cluster():
     """Test dev and prod cluster configs both exist and have expected structure"""
     print("5.5 Testing multi-cluster configs...")
@@ -1190,7 +1280,9 @@ def test_compile_prune_keeps_helm_only_cluster():
     import tempfile
     from kompos.runners.compile import CompileRunner
 
-    class _StubKomposConfig:
+    from kompos.komposconfig import KomposConfig
+
+    class _StubKomposConfig(KomposConfig):
         def __init__(self, base, order, subdirs):
             self._base, self._order, self._subdirs = base, order, subdirs
 
@@ -1234,6 +1326,46 @@ def test_compile_prune_keeps_helm_only_cluster():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_compile_prune_partitioned():
+    """compile --prune with partitioning: old layout, removed project, stale instance"""
+    print("5.12b Testing compile --prune with partitioned output...")
+    import shutil
+    from kompos.komposconfig import KomposConfig
+    from kompos.runner import GenericRunner
+    from kompos.runners.compile import CompileRunner
+
+    tmp = tempfile.mkdtemp(prefix="kompos-prune-part-")
+    try:
+        keep = ["p1/clusters/c1", "accounts/a1", "workspaces/p1"]
+        drop = ["clusters/c1", "p1/clusters/stale", "gone", "accounts/ghost"]
+        for d in keep + ["gone/clusters/c9"] + drop[:2] + drop[3:]:
+            os.makedirs(os.path.join(tmp, d), exist_ok=True)
+
+        kc = KomposConfig.__new__(KomposConfig)
+        kc.config = {'komposconfig': {
+            'defaults': {'base_output_dir': tmp},
+            'compositions': {
+                'partition': {'key': 'project.name'},
+                'order': {'tfe': ['account', 'cluster']},
+                'properties': {'cluster': {'output_subdir': 'clusters'},
+                               'account': {'output_subdir': 'accounts', 'partitioned': False}}}}}
+        runner = CompileRunner.__new__(CompileRunner)
+        runner.kompos_config = kc
+        runner.get_nested_value = GenericRunner.get_nested_value
+        runner.get_raw_config = lambda path, comp: {
+            'project': {'name': path.split(':')[0]}, 'composition': {'instance': path.split(':')[-1]}}
+
+        live = [("cluster", "p1:c1"), ("account", "p1:a1")]
+        runner._prune_stale(live, {"cluster": "tfe", "account": "tfe"}, dry_run=False)
+        for d in keep:
+            assert os.path.isdir(os.path.join(tmp, d)), f"{d} must be kept"
+        for d in drop:
+            assert not os.path.isdir(os.path.join(tmp, d)), f"{d} should be pruned"
+        print("  ✓ prunes old layout, removed project and stale instance; keeps live + unrelated dirs")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_manual_composition_writes_declared_files():
     """A manual composition materializes composition.files (from_key + inline content)."""
     print("5.13 Testing manual composition writes declared files...")
@@ -1243,7 +1375,9 @@ def test_manual_composition_writes_declared_files():
     import yaml as _yaml
     from kompos.runners.manual import ManualRunner
 
-    class _StubKomposConfig:
+    from kompos.komposconfig import KomposConfig
+
+    class _StubKomposConfig(KomposConfig):
         def __init__(self, base):
             self._base = base
 
@@ -1295,7 +1429,9 @@ def _make_external_runner(base_dir):
     """Build an ExternalRunner with a stub kompos_config for unit testing."""
     from kompos.runners.external import ExternalRunner
 
-    class _StubKomposConfig:
+    from kompos.komposconfig import KomposConfig
+
+    class _StubKomposConfig(KomposConfig):
         def __init__(self, base):
             self._base = base
 
@@ -2302,6 +2438,9 @@ def main():
             test_tfe_workspaces_sub_dir_interpolation,
             test_tfe_workspaces_sub_dir_unresolved_fails,
             test_komposconfig_get_workspaces_dir,
+            test_partition_output_layout,
+            test_partition_bad_key_fails,
+            test_komposconfig_partition_layout,
             test_tfe_multi_cluster,
             test_composition_enabled_false_pauses_workspace,
             test_composition_enabled_true_generates,
@@ -2311,6 +2450,7 @@ def main():
             test_compile_build_dispatches_without_crash,
             test_compile_prune_keeps_disabled_composition,
             test_compile_prune_keeps_helm_only_cluster,
+            test_compile_prune_partitioned,
             test_manual_composition_writes_declared_files,
             test_external_entrypoint_plugin_writes_outputs,
             test_external_command_plugin_writes_outputs,

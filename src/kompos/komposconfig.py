@@ -33,6 +33,10 @@ def get_value_or(dictionary, x_path, default=None):
         if isinstance(d, dict) else default, keys, dictionary)
 
 
+class KomposConfigError(Exception):
+    """Invalid kompos tool configuration or output layout."""
+
+
 class KomposConfig:
     """
     Parses all the available configuration files in order and merges them together.
@@ -282,22 +286,55 @@ class KomposConfig:
     # Composition Output & Naming Methods
     # ====================================================================================
 
-    def get_composition_output_dir(self, base_dir, composition):
-        """
-        Get output directory for a composition with hierarchical lookup.
-        
-        Args:
-            base_dir: Base directory for output
-            composition: Composition name (e.g., 'cluster', 'account')
-        
-        Returns:
-            Full path: {base_dir}/{output_subdir}/
-        """
-        output_subdir = self.get_kompos_setting(
-            f"compositions.properties.{composition}.output_subdir",
-            composition  # Fallback to composition name
-        )
-        return os.path.join(base_dir, output_subdir)
+    def base_output_dir(self):
+        return self.get_kompos_setting('defaults.base_output_dir', './generated')
+
+    def partition_key(self):
+        return self.get_kompos_setting('compositions.partition.key')
+
+    def output_subdir(self, comp_type, default=None):
+        """Static compositions.properties.<type>.output_subdir (falls back to the type name)."""
+        return self.get_kompos_setting(
+            f"compositions.properties.{comp_type}.output_subdir", default or comp_type)
+
+    def is_partitioned(self, comp_type):
+        """True when compositions.partition is set and the type hasn't opted out."""
+        return bool(self.partition_key()) and self.get_kompos_setting(
+            f"compositions.properties.{comp_type}.partitioned", True) is not False
+
+    def _layout_types(self):
+        order = self.get_kompos_setting('compositions.order', {}) or {}
+        return set(self.get_kompos_setting('compositions.properties', {}) or {}).union(
+            *(types or [] for types in order.values()))
+
+    def validate_partition(self):
+        """A partitioned and an unpartitioned type can't share an output_subdir."""
+        seen = {}
+        for t in self._layout_types():
+            if seen.setdefault(self.output_subdir(t), self.is_partitioned(t)) != self.is_partitioned(t):
+                raise KomposConfigError(f"output_subdir '{self.output_subdir(t)}' is shared by "
+                                        "partitioned and unpartitioned composition types")
+
+    def get_output_root(self, raw_config, get_nested_value_fn, base_dir=None):
+        """<base_output_dir>/<value of compositions.partition.key> (just the base if unset)."""
+        base, key = base_dir or self.base_output_dir(), self.partition_key()
+        if not key:
+            return base
+        value = get_nested_value_fn(raw_config, key)
+        if (not isinstance(value, str) or value in ('', '.', '..') or '{{' in value or '/' in value
+                or value in {self.output_subdir(t).split('/')[0] for t in self._layout_types()}):
+            raise KomposConfigError(f"compositions.partition.key '{key}' must resolve to a single "
+                                    f"dir name that isn't an output_subdir, got {value!r}")
+        return os.path.join(base, value)
+
+    def get_instance_dir(self, comp_type, raw_config, get_nested_value_fn,
+                         base_dir=None, subdir=None, instance=None):
+        """<output root or base>/<output_subdir>/<composition.instance> for a composition."""
+        base = base_dir or self.base_output_dir()
+        root = (self.get_output_root(raw_config, get_nested_value_fn, base)
+                if self.is_partitioned(comp_type) else base)
+        return os.path.join(root, subdir or self.output_subdir(comp_type),
+                            instance or get_nested_value_fn(raw_config, 'composition.instance'))
 
     def get_composition_name(self, raw_config, get_nested_value_fn):
         """

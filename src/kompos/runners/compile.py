@@ -17,6 +17,7 @@ import sys
 from kompos.parser import SubParserConfig
 from kompos.runner import GenericRunner, COMPOSITION_KEY, split_path
 from kompos.helpers import console
+from kompos.komposconfig import KomposConfigError
 from kompos.compile_context import CompileContext
 
 logger = logging.getLogger(__name__)
@@ -384,7 +385,9 @@ class CompileRunner(GenericRunner):
         keeps it in the live set, so its artifacts are frozen, not pruned. Only
         compositions removed from configs/ entirely are treated as stale.
         """
-        live_instances = {}
+        kc = self.kompos_config
+        base = kc.base_output_dir()
+        live, runners = {}, set()  # output root (<base> or <base>/<partition>) -> live instances
         for comp_type, comp_path in live_comps:
             runner_type = routing.get(comp_type)
             if not runner_type:
@@ -394,45 +397,52 @@ class CompileRunner(GenericRunner):
                 inst = raw.get('composition', {}).get('instance', '')
                 if not inst or '{{' in str(inst):
                     inst = raw.get('cluster', {}).get('fullName', '')
+                root = (kc.get_output_root(raw, self.get_nested_value, base)
+                        if kc.is_partitioned(comp_type) else base)
+            except KomposConfigError as e:
+                console.print_warning(f"Skipping prune: {comp_path}: {e}")
+                return
             except Exception:
                 inst = ''
             if inst:
-                live_instances.setdefault(runner_type, set()).add(inst)
-
-        base = self.kompos_config.get_kompos_setting('defaults.base_output_dir', './generated')
-        pruned = []
+                runners.add(runner_type)
+                live.setdefault(root, set()).add(inst)
 
         # A single instance dir under generated/<subdir>/ can be claimed by more than
         # one runner: generated/clusters/<name> holds both the tfe `cluster` output
         # (tfe/) and the `helm-values` output (helm-values/). A helm-only cluster has a
         # helm-values composition but no tfe cluster composition, so it lives only in
-        # the helm live set. Prune against the UNION of every runner's live instances —
-        # otherwise the tfe cluster pass would delete helm-only cluster dirs (and vice
-        # versa). Only instances absent from configs/ entirely are stale.
-        all_live = set()
-        for instances in live_instances.values():
-            all_live |= instances
+        # the helm live set. Prune against the UNION of every runner's live instances
+        # per output root. Only instances absent from configs/ entirely are stale.
+        subdirs = {kc.output_subdir(t): kc.is_partitioned(t)
+                   for r in runners for t in kc.composition_order(r, default=[])}
+        roots = sorted(r for r in live if r != base)
+        targets = []
+        for subdir, partitioned in sorted(subdirs.items()):
+            if partitioned:  # per partition, plus the pre-partition <base>/<subdir> layout
+                targets += [(os.path.join(r, subdir), live[r]) for r in roots]
+                targets.append((os.path.join(base, subdir), set()))
+            else:
+                targets.append((os.path.join(base, subdir), live.get(base, set())))
+        stale = [os.path.join(d, e) for d, keep in targets if os.path.isdir(d)
+                 for e in sorted(os.listdir(d)) if e not in keep]
+        # Removed partitions: dirs under <base> holding a partitioned subdir; others are untouched.
+        part = [s for s, p in subdirs.items() if p]
+        if part and os.path.isdir(base):
+            keep = {os.path.basename(r) for r in roots} | {s.split('/')[0] for s in subdirs}
+            stale += [os.path.join(base, e) for e in sorted(os.listdir(base)) if e not in keep
+                      and any(os.path.isdir(os.path.join(base, e, s)) for s in part)]
 
-        scanned_dirs = set()
-        for runner_type, live in live_instances.items():
-            for comp_type in self.kompos_config.composition_order(runner_type, default=[]):
-                subdir = self.kompos_config.get_kompos_setting(
-                    f'compositions.properties.{comp_type}.output_subdir', comp_type)
-                target_dir = os.path.join(base, subdir)
-                if target_dir in scanned_dirs or not os.path.isdir(target_dir):
-                    continue
-                scanned_dirs.add(target_dir)
-                for entry in sorted(os.listdir(target_dir)):
-                    if entry not in all_live:
-                        stale = os.path.join(target_dir, entry)
-                        if os.path.isdir(stale):
-                            rel = os.path.relpath(stale)
-                            if dry_run:
-                                print(f"  (prune) {rel}")
-                            else:
-                                shutil.rmtree(stale)
-                                console.print_warning(f"Pruned stale: {rel}")
-                            pruned.append(stale)
+        pruned = []
+        for path in stale:
+            if os.path.isdir(path):
+                rel = os.path.relpath(path)
+                if dry_run:
+                    print(f"  (prune) {rel}")
+                else:
+                    shutil.rmtree(path)
+                    console.print_warning(f"Pruned stale: {rel}")
+                pruned.append(path)
 
         if not pruned:
             print("  No stale artifacts to prune.")
