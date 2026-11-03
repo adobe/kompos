@@ -13,7 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Interpolated `workspaces_sub_dir`** — `komposconfig.tfe.workspaces_config.workspaces_sub_dir` is read from the layered config, so it can interpolate per composition (e.g. `"workspaces/{{project.name}}"` → `generated/workspaces/<project>/<instance>.workspace.yaml`). Lets each TFE organization's workspace manager watch only its own manifests. An unresolved value fails the composition. Static values behave as before.
 
+- **Nested compositions inherit their owner's output dir** — helm, manual and external compositions under a `<type>=<name>/` config dir (e.g. `cluster=c1/composition=helm-values`, `cell=x1/composition=ipam`) write into that owner's instance dir, using the owner's `output_subdir` and `partitioned` settings instead of their own, so they can't drift from it. The owner is inferred from the config path; no new settings. tfe and terraform compositions are unchanged. `compile --prune` registers them under the owner's dir.
+
 ### Fixed
+- **Prune after a failed build** — `compile build --prune` skips prune entirely when any composition failed, instead of pruning against a partial build.
 - **Compile cache stale reads** — cached inputs are validated by content hash instead of stat metadata, so same-size rewrites are detected on filesystems with coarse timestamps (e.g. Linux ext4).
 
 ## [0.12.9] - 2026-10-02

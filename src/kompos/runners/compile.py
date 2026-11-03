@@ -23,6 +23,10 @@ from kompos.compile_context import CompileContext
 logger = logging.getLogger(__name__)
 
 
+# Runners whose compositions write into their owner's dir (cluster=X/composition=helm-values).
+_NESTED_RUNNERS = ('helm', 'manual', 'external')
+
+
 def _get_runner_class(runner_type):
     """Lazy import runner class by type to avoid circular imports."""
     if runner_type == 'helm':
@@ -126,7 +130,8 @@ class CompileParserConfig(SubParserConfig):
         parser.add_argument(
             '--prune',
             action='store_true',
-            help='Remove generated artifacts for compositions no longer in configs/'
+            help='Remove generated artifacts for compositions no longer in configs/ '
+                 '(skipped if any composition fails to build)'
         )
         parser.add_argument(
             '--dry-run',
@@ -230,7 +235,11 @@ class CompileRunner(GenericRunner):
             # what a disabled composition still emits via generate_disabled(): the TFE
             # runner writes a frozen, paused workspace; others skip entirely.
             rc = self._build(all_comps, routing, args)
-            if prune:
+            if prune and rc != 0:
+                # A failed composition may not have written its outputs; pruning against a
+                # partial build could delete live dirs. Fix the failures and re-run.
+                console.print_warning("Skipping prune: one or more compositions failed.")
+            elif prune:
                 # Prune diffs against every composition still in configs/ (enabled
                 # OR disabled). Disabled is skipped, not deleted — only compositions
                 # removed from configs/ are stale.
@@ -387,7 +396,7 @@ class CompileRunner(GenericRunner):
         """
         kc = self.kompos_config
         base = kc.base_output_dir()
-        live, runners = {}, set()  # output root (<base> or <base>/<partition>) -> live instances
+        live, runners, owners = {}, set(), set()  # output root (<base> or <base>/<partition>) -> instances
         for comp_type, comp_path in live_comps:
             runner_type = routing.get(comp_type)
             if not runner_type:
@@ -397,8 +406,10 @@ class CompileRunner(GenericRunner):
                 inst = raw.get('composition', {}).get('instance', '')
                 if not inst or '{{' in str(inst):
                     inst = raw.get('cluster', {}).get('fullName', '')
+                owner = (kc.owner_type(comp_type, comp_path)
+                         if runner_type in _NESTED_RUNNERS else comp_type)
                 root = (kc.get_output_root(raw, self.get_nested_value, base)
-                        if kc.is_partitioned(comp_type) else base)
+                        if kc.is_partitioned(owner) else base)
             except KomposConfigError as e:
                 console.print_warning(f"Skipping prune: {comp_path}: {e}")
                 return
@@ -406,6 +417,7 @@ class CompileRunner(GenericRunner):
                 inst = ''
             if inst:
                 runners.add(runner_type)
+                owners.add(owner)
                 live.setdefault(root, set()).add(inst)
 
         # A single instance dir under generated/<subdir>/ can be claimed by more than
@@ -414,8 +426,8 @@ class CompileRunner(GenericRunner):
         # helm-values composition but no tfe cluster composition, so it lives only in
         # the helm live set. Prune against the UNION of every runner's live instances
         # per output root. Only instances absent from configs/ entirely are stale.
-        subdirs = {kc.output_subdir(t): kc.is_partitioned(t)
-                   for r in runners for t in kc.composition_order(r, default=[])}
+        subdirs = {kc.output_subdir(t): kc.is_partitioned(t) for t in owners.union(
+                   *(kc.composition_order(r, default=[]) for r in runners))}
         roots = sorted(r for r in live if r != base)
         targets = []
         for subdir, partitioned in sorted(subdirs.items()):

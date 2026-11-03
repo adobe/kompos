@@ -327,9 +327,23 @@ class KomposConfig:
                                     f"dir name that isn't an output_subdir, got {value!r}")
         return os.path.join(base, value)
 
+    def owner_type(self, comp_type, config_path):
+        """Layout type of the `<type>=` config dir enclosing composition=<comp_type>
+        (cluster=X/composition=helm-values -> cluster); comp_type itself when there's none."""
+        parent = os.path.basename(os.path.dirname(os.path.normpath(config_path or '.')))
+        owner = parent.split('=', 1)[0]
+        return owner if '=' in parent and owner in self._layout_types() else comp_type
+
     def get_instance_dir(self, comp_type, raw_config, get_nested_value_fn,
-                         base_dir=None, subdir=None, instance=None):
-        """<output root or base>/<output_subdir>/<composition.instance> for a composition."""
+                         base_dir=None, subdir=None, instance=None, config_path=None):
+        """<output root or base>/<output_subdir>/<composition.instance> for a composition.
+
+        With config_path, a composition nested under an owner (cluster=X/composition=helm-values)
+        uses the owner's dir and partitioning; its own subdir/output_subdir settings are ignored.
+        """
+        owner = self.owner_type(comp_type, config_path)
+        if owner != comp_type:
+            comp_type, subdir = owner, None
         base = base_dir or self.base_output_dir()
         root = (self.get_output_root(raw_config, get_nested_value_fn, base)
                 if self.is_partitioned(comp_type) else base)

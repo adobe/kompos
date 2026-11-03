@@ -54,6 +54,17 @@ partitioned and an unpartitioned type can't share an `output_subdir`. All runner
 values and `tfe-outputs.yaml`) use `KomposConfig.get_instance_dir()`. `compile --prune` prunes per
 partition, removed partitions and the pre-partition layout; other dirs under base are untouched.
 
+**Nested compositions inherit their owner's dir.** A helm, manual or external composition
+directly under a `<type>=<name>/` config dir whose `<type>` is a layout type (in
+`compositions.properties` or `compositions.order`) writes into that owner's instance dir, using
+the owner's `output_subdir` and `partitioned`; its own `output_subdir` settings are ignored, so
+they can't drift. E.g. `cluster=c1/composition=helm-values` and `cluster=c1/composition=manual`
+write under `generated[/<value>]/clusters/c1/`, and `cell=x1/composition=ipam` under
+`.../cells/x1/`. This also holds for clusters with no `composition=cluster`. tfe and terraform
+compositions always use their own type (e.g. `cluster-legacy` → `clusters-legacy/`).
+
+`compile build --prune` skips prune entirely when any composition failed to build.
+
 ### KomposConfig vs GenericRunner
 
 **KomposConfig** - How Kompos operates

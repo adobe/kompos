@@ -65,8 +65,9 @@ class ManualRunner(GenericRunner):
                       so the file round-trips back into layered config when re-merged
       - ``content``   inline body, written verbatim (used when ``from_key`` is absent)
 
-    ``output_subdir`` comes from ``composition.output_subdir`` (default ``clusters``),
-    matching where the tfe/helm runners place per-instance artifacts.
+    Nested under an owner (``cluster=X/composition=manual``) the instance dir is the
+    owner's; otherwise ``output_subdir`` comes from ``composition.output_subdir``
+    (default ``clusters``), matching where the tfe/helm runners place artifacts.
     """
 
     def __init__(self, kompos_config, config_path, execute):
@@ -90,7 +91,8 @@ class ManualRunner(GenericRunner):
 
         subdir = self.get_nested_value(raw_config, 'composition.output_subdir')
         instance_dir = self.kompos_config.get_instance_dir(
-            composition, raw_config, self.get_nested_value, subdir=subdir or 'clusters', instance=instance)
+            composition, raw_config, self.get_nested_value, subdir=subdir or 'clusters', instance=instance,
+            config_path=config_path)
 
         written_paths = []
         for spec in files:
