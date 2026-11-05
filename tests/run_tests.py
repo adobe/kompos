@@ -1060,7 +1060,7 @@ def test_nested_composition_inherits_owner_dir():
                          'tfe': False, 'terraform': False}, flags
         tfe = TFERunner.__new__(TFERunner)
         tfe.kompos_config = kc
-        assert tfe.instance_dir('cluster-legacy', raw, path('cluster=c1', 'cluster-legacy')) == \
+        assert tfe.get_instance_dir('cluster-legacy', raw, path('cluster=c1', 'cluster-legacy')) == \
             os.path.join(tmp, 'p1', 'cluster-legacy', 'c1'), "tfe keeps its own type under cluster=X/"
         print("  ✓ helm/manual/external inherit owner dir + partitioning; no owner keeps own settings")
     finally:

@@ -170,7 +170,7 @@ class ExternalRunner(GenericRunner):
 
         subdir = (spec.get('output_subdir')
                   or self.get_nested_value(raw_config, 'composition.output_subdir'))
-        instance_dir = self.instance_dir(
+        instance_dir = self.get_instance_dir(
             composition, raw_config, config_path, subdir=subdir or 'clusters', instance=instance)
 
         console.print_section_header(f"External: {instance} ({composition})")

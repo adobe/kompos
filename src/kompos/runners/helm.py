@@ -215,7 +215,7 @@ class HelmRunner(GenericRunner):
 
     def _cluster_dir(self, composition, raw_config, cluster_name, config_path=None):
         """The owning cluster's dir (generated[/partition]/clusters/{cluster})."""
-        return self.instance_dir(
+        return self.get_instance_dir(
             composition, raw_config, config_path, base_dir=self.base_output_dir,
             subdir=self.kompos_config.output_subdir(composition, 'clusters'), instance=cluster_name)
 

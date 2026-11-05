@@ -38,7 +38,7 @@ class GenericRunner:
     """
 
     # True for runners whose compositions write into their owner's dir
-    # (cluster=X/composition=helm-values). Read by instance_dir() and compile --prune.
+    # (cluster=X/composition=helm-values). Read by get_instance_dir() and compile --prune.
     writes_into_owner = False
 
     def __init__(self, kompos_config, config_path, execute, runner_type):
@@ -544,9 +544,9 @@ class GenericRunner:
         os.makedirs(dir_path, exist_ok=True)
         return dir_path
 
-    def instance_dir(self, comp_type, raw_config, config_path=None, **kwargs):
-        """KomposConfig.get_instance_dir(); resolves the owner from config_path only
-        when this runner writes_into_owner."""
+    def get_instance_dir(self, comp_type, raw_config, config_path=None, **kwargs):
+        """KomposConfig.get_instance_dir() for this runner; resolves the owner from
+        config_path only when the runner writes_into_owner."""
         return self.kompos_config.get_instance_dir(
             comp_type, raw_config, self.get_nested_value,
             config_path=config_path if self.writes_into_owner else None, **kwargs)

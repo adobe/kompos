@@ -92,7 +92,7 @@ class ManualRunner(GenericRunner):
             return 0
 
         subdir = self.get_nested_value(raw_config, 'composition.output_subdir')
-        instance_dir = self.instance_dir(
+        instance_dir = self.get_instance_dir(
             composition, raw_config, config_path, subdir=subdir or 'clusters', instance=instance)
 
         written_paths = []
