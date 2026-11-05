@@ -125,6 +125,7 @@ class HelmRunner(GenericRunner):
       generated/clusters/{cluster}/argoapps/{app}.yaml
     """
 
+    writes_into_owner = True
 
     def __init__(self, kompos_config, config_path, execute):
         super(HelmRunner, self).__init__(kompos_config, config_path, execute, RUNNER_TYPE)
@@ -214,10 +215,9 @@ class HelmRunner(GenericRunner):
 
     def _cluster_dir(self, composition, raw_config, cluster_name, config_path=None):
         """The owning cluster's dir (generated[/partition]/clusters/{cluster})."""
-        return self.kompos_config.get_instance_dir(
-            composition, raw_config, self.get_nested_value, base_dir=self.base_output_dir,
-            subdir=self.kompos_config.output_subdir(composition, 'clusters'), instance=cluster_name,
-            config_path=config_path)
+        return self.get_instance_dir(
+            composition, raw_config, config_path, base_dir=self.base_output_dir,
+            subdir=self.kompos_config.output_subdir(composition, 'clusters'), instance=cluster_name)
 
     def _output_paths(self, composition, raw_config, cluster_name, config_path=None):
         """
