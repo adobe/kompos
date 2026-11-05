@@ -1038,7 +1038,7 @@ def test_nested_composition_inherits_owner_dir():
 
         helm = HelmRunner.__new__(HelmRunner)
         helm.kompos_config, helm.base_output_dir = kc, tmp
-        assert helm._cluster_dir('helm-values', raw, 'c1', path('cluster=c1', 'helm-values')) == \
+        assert helm.output_dir('helm-values', raw, path('cluster=c1', 'helm-values')) == \
             os.path.join(tmp, 'p1', 'clusters', 'c1')
 
         manual = ManualRunner.__new__(ManualRunner)
@@ -1050,6 +1050,12 @@ def test_nested_composition_inherits_owner_dir():
         assert os.path.isfile(os.path.join(tmp, 'p1', 'clusters', 'c1', 'a.yaml')), \
             "manual under cluster=c1 must write into the cluster's dir"
         assert not os.path.exists(os.path.join(tmp, 'p1', 'drift')), "own output_subdir must be ignored"
+
+        from kompos.runners.tfe import TFERunner
+        tfe = TFERunner.__new__(TFERunner)
+        tfe.kompos_config, tfe.base_dir = kc, tmp
+        assert tfe.output_dir('cluster-legacy', raw, path('cluster=c1', 'cluster-legacy')) == \
+            os.path.join(tmp, 'p1', 'cluster-legacy', 'c1'), "tfe keeps its own type under cluster=X/"
         print("  ✓ helm/manual/external inherit owner dir + partitioning; no owner keeps own settings")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -1336,22 +1342,6 @@ def test_compile_prune_keeps_helm_only_cluster():
 
     from kompos.komposconfig import KomposConfig
 
-    class _StubKomposConfig(KomposConfig):
-        def __init__(self, base, order, subdirs):
-            self._base, self._order, self._subdirs = base, order, subdirs
-
-        def get_kompos_setting(self, key, default=None):
-            if key == 'defaults.base_output_dir':
-                return self._base
-            parts = key.split('.')
-            if (len(parts) == 4 and parts[0] == 'compositions'
-                    and parts[1] == 'properties' and parts[3] == 'output_subdir'):
-                return self._subdirs.get(parts[2], default)
-            return default
-
-        def composition_order(self, runner_type, default=None):
-            return self._order.get(runner_type, default if default is not None else [])
-
     tmp = tempfile.mkdtemp(prefix="kompos-prune-")
     try:
         clusters = os.path.join(tmp, "clusters")
@@ -1360,9 +1350,14 @@ def test_compile_prune_keeps_helm_only_cluster():
         os.makedirs(os.path.join(clusters, "ghost", "tfe"))          # removed from configs
 
         order = {"tfe": ["account", "cluster"], "helm": ["helm-values"]}
-        subdirs = {"account": "accounts", "cluster": "clusters"}  # helm-values → fallback
+        kc = KomposConfig.__new__(KomposConfig)
+        kc.config = {'komposconfig': {
+            'defaults': {'base_output_dir': tmp, 'base_dir': tmp},
+            'helm': {'config': {'base_output_dir': tmp}},
+            'compositions': {'order': order, 'properties': {  # helm-values → fallback
+                'account': {'output_subdir': 'accounts'}, 'cluster': {'output_subdir': 'clusters'}}}}}
         runner = CompileRunner.__new__(CompileRunner)
-        runner.kompos_config = _StubKomposConfig(tmp, order, subdirs)
+        runner.kompos_config, runner.execute = kc, False
         # comp_path doubles as the resolved instance name for this stub.
         runner.get_raw_config = lambda path, comp: {"composition": {"instance": path}}
 
@@ -1397,14 +1392,14 @@ def test_compile_prune_partitioned():
 
         kc = KomposConfig.__new__(KomposConfig)
         kc.config = {'komposconfig': {
-            'defaults': {'base_output_dir': tmp},
+            'defaults': {'base_output_dir': tmp, 'base_dir': tmp},
             'compositions': {
                 'partition': {'key': 'project.name'},
                 'order': {'tfe': ['account', 'cluster']},
                 'properties': {'cluster': {'output_subdir': 'clusters'},
                                'account': {'output_subdir': 'accounts', 'partitioned': False}}}}}
         runner = CompileRunner.__new__(CompileRunner)
-        runner.kompos_config = kc
+        runner.kompos_config, runner.execute = kc, False
         runner.get_nested_value = GenericRunner.get_nested_value
         runner.get_raw_config = lambda path, comp: {
             'project': {'name': path.split(':')[0]}, 'composition': {'instance': path.split(':')[-1]}}
@@ -1435,14 +1430,15 @@ def test_compile_prune_nested_owner():
             os.makedirs(os.path.join(tmp, d))
         kc = KomposConfig.__new__(KomposConfig)
         kc.config = {'komposconfig': {
-            'defaults': {'base_output_dir': tmp},
+            'defaults': {'base_output_dir': tmp, 'base_dir': tmp},
+            'helm': {'config': {'base_output_dir': tmp}},
             'compositions': {
                 'partition': {'key': 'project.name'},
                 'order': {'tfe': ['cluster'], 'helm': ['helm-values']},
                 'properties': {'cluster': {'output_subdir': 'clusters'},
                                'helm-values': {'partitioned': False}}}}}
         runner = CompileRunner.__new__(CompileRunner)
-        runner.kompos_config = kc
+        runner.kompos_config, runner.execute = kc, False
         runner.get_nested_value = GenericRunner.get_nested_value
         runner.get_raw_config = lambda path, comp: {
             'project': {'name': 'p1'}, 'composition': {'instance': path.split('/')[1].split('=')[1]}}

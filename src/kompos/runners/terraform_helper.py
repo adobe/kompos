@@ -267,6 +267,13 @@ class GenericTerraformRunner(GenericRunner):
         self.use_composition_subdir = self.kompos_config.get_runtime_setting(self.runner_type, 'use_composition_subdir',
                                                                              True)
 
+    def output_dir(self, composition, raw_config, config_path=None):
+        """<base_dir>[/<partition>]/<output_subdir>/<composition.output_dir or instance>.
+        Used for writing and by compile --prune."""
+        return self.kompos_config.get_instance_dir(
+            composition, raw_config, self.get_nested_value,
+            base_dir=self.base_dir, instance=self.get_composition_output_dir(raw_config))
+
     def get_source_composition_path(self, composition, raw_config):
         """
         Get path to source composition templates.
