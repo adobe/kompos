@@ -54,7 +54,8 @@ config keys it declares (nothing else), and writes back ONLY what the plugin ret
         - ipam_topology
         - account.ipam
         - cell.ipam
-      output_subdir: cells                         # default: clusters
+      output_subdir: cells                         # default: clusters; ignored under an owner
+                                                   #   (cell=X/composition=ipam uses cell's dir)
       outputs:                                     # what Kompos writes from the plugin result
         - path: out.yaml                           # destination (optional if path_key is set)
           path_key: write_path                     # optional — plugin returns the path here
@@ -100,7 +101,8 @@ class ExternalRunner(GenericRunner):
       3. invokes the plugin — an in-process Python ``entrypoint`` ("module:callable")
          or a ``command`` subprocess (JSON over stdin/stdout),
       4. writes the returned bodies to the declared ``external.outputs`` under
-         ``<base_output_dir>/<output_subdir>/<instance>/<path>``.
+         ``<base_output_dir>/<output_subdir>/<instance>/<path>`` (the owner's dir when
+         nested under ``<type>=X/``, see ``KomposConfig.owner_type``).
 
     Kompos keeps ownership of discovery, the config context, enable/prune and output
     location; the plugin only transforms declared inputs into declared outputs. This
@@ -167,7 +169,8 @@ class ExternalRunner(GenericRunner):
         subdir = (spec.get('output_subdir')
                   or self.get_nested_value(raw_config, 'composition.output_subdir'))
         instance_dir = self.kompos_config.get_instance_dir(
-            composition, raw_config, self.get_nested_value, subdir=subdir or 'clusters', instance=instance)
+            composition, raw_config, self.get_nested_value, subdir=subdir or 'clusters', instance=instance,
+            config_path=config_path)
 
         console.print_section_header(f"External: {instance} ({composition})")
         console.print_kvp("Config", console.format_config_path(config_path), indent=1)

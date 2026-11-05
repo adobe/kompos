@@ -1001,6 +1001,60 @@ def test_komposconfig_partition_layout():
     print("  ✓ root/instance dirs, opt-out, rejects collisions, unresolved and non-string values")
 
 
+def test_nested_composition_inherits_owner_dir():
+    """helm/manual/external under cluster=X/ or cell=X/ use the owner's dir, not their own settings"""
+    print("5.4h Testing nested compositions inherit the owner's output dir...")
+    import shutil
+    from kompos.komposconfig import KomposConfig
+    from kompos.runner import GenericRunner
+    from kompos.runners.helm import HelmRunner
+    from kompos.runners.manual import ManualRunner
+
+    tmp = tempfile.mkdtemp(prefix="kompos-owner-")
+    try:
+        get = GenericRunner.get_nested_value
+        kc = KomposConfig.__new__(KomposConfig)
+        # Drifting child settings (output_subdir/partitioned) must be ignored under an owner.
+        kc.config = {'komposconfig': {'defaults': {'base_output_dir': tmp}, 'compositions': {
+            'partition': {'key': 'project.name'},
+            'properties': {'cluster': {'output_subdir': 'clusters'},
+                           'cell': {'output_subdir': 'cells', 'partitioned': False},
+                           'helm-values': {'output_subdir': 'drift', 'partitioned': False}}}}}
+        raw = {'project': {'name': 'p1'}, 'composition': {'instance': 'c1'}}
+
+        def path(owner, comp):
+            return os.path.join('configs', 'project=p1', owner, f'composition={comp}')
+
+        assert kc.owner_type('helm-values', path('cluster=c1', 'helm-values')) == 'cluster'
+        assert kc.owner_type('cluster', path('cluster=c1', 'cluster')) == 'cluster'
+        assert kc.owner_type('pod-cidr', path('region=r1', 'pod-cidr')) == 'pod-cidr', \
+            "a non-layout parent key is not an owner"
+        assert kc.get_instance_dir('ipam', raw, get, subdir='widgets',
+                                   config_path=path('cell=x1', 'ipam')) == os.path.join(tmp, 'cells', 'c1'), \
+            "owner's subdir and partitioned: false win over the child's explicit subdir"
+        assert kc.get_instance_dir('pod-cidr', raw, get, subdir='widgets',
+                                   config_path=path('region=r1', 'pod-cidr')) == \
+            os.path.join(tmp, 'p1', 'widgets', 'c1'), "no owner: own settings as before"
+
+        helm = HelmRunner.__new__(HelmRunner)
+        helm.kompos_config, helm.base_output_dir = kc, tmp
+        assert helm._cluster_dir('helm-values', raw, 'c1', path('cluster=c1', 'helm-values')) == \
+            os.path.join(tmp, 'p1', 'clusters', 'c1')
+
+        manual = ManualRunner.__new__(ManualRunner)
+        manual.kompos_config, manual.config_path, manual.runner_type = kc, '<test>', 'manual'
+        raw_manual = dict(raw, composition={'instance': 'c1', 'output_subdir': 'drift',
+                                            'files': [{'path': 'a.yaml', 'content': {'k': 1}}]})
+        assert manual.execution_configuration(
+            'manual', path('cluster=c1', 'manual'), None, raw_manual, [], []) == 0
+        assert os.path.isfile(os.path.join(tmp, 'p1', 'clusters', 'c1', 'a.yaml')), \
+            "manual under cluster=c1 must write into the cluster's dir"
+        assert not os.path.exists(os.path.join(tmp, 'p1', 'drift')), "own output_subdir must be ignored"
+        print("  ✓ helm/manual/external inherit owner dir + partitioning; no owner keeps own settings")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_tfe_multi_cluster():
     """Test dev and prod cluster configs both exist and have expected structure"""
     print("5.5 Testing multi-cluster configs...")
@@ -1364,6 +1418,67 @@ def test_compile_prune_partitioned():
         print("  ✓ prunes old layout, removed project and stale instance; keeps live + unrelated dirs")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_compile_prune_nested_owner():
+    """compile --prune registers a helm-only (legacy) cluster under its owner's partitioned dir"""
+    print("5.12c Testing compile --prune with nested owner compositions...")
+    import shutil
+    from kompos.komposconfig import KomposConfig
+    from kompos.runner import GenericRunner
+    from kompos.runners.compile import CompileRunner
+
+    tmp = tempfile.mkdtemp(prefix="kompos-prune-owner-")
+    try:
+        keep, drop = ["p1/clusters/legacy/helm-values"], ["p1/clusters/ghost", "clusters/legacy"]
+        for d in keep + drop:
+            os.makedirs(os.path.join(tmp, d))
+        kc = KomposConfig.__new__(KomposConfig)
+        kc.config = {'komposconfig': {
+            'defaults': {'base_output_dir': tmp},
+            'compositions': {
+                'partition': {'key': 'project.name'},
+                'order': {'tfe': ['cluster'], 'helm': ['helm-values']},
+                'properties': {'cluster': {'output_subdir': 'clusters'},
+                               'helm-values': {'partitioned': False}}}}}
+        runner = CompileRunner.__new__(CompileRunner)
+        runner.kompos_config = kc
+        runner.get_nested_value = GenericRunner.get_nested_value
+        runner.get_raw_config = lambda path, comp: {
+            'project': {'name': 'p1'}, 'composition': {'instance': path.split('/')[1].split('=')[1]}}
+
+        # Legacy cluster: only a helm-values composition, no composition=cluster.
+        live = [("helm-values", "project=p1/cluster=legacy/composition=helm-values")]
+        runner._prune_stale(live, {"cluster": "tfe", "helm-values": "helm"}, dry_run=False)
+        for d in keep:
+            assert os.path.isdir(os.path.join(tmp, d)), f"{d} must be kept"
+        for d in drop:
+            assert not os.path.isdir(os.path.join(tmp, d)), f"{d} should be pruned"
+        print("  ✓ helm-only cluster kept under the owner's partitioned dir; stale ones pruned")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_compile_prune_skipped_on_failed_build():
+    """compile build --prune skips prune entirely when any composition failed"""
+    print("5.12d Testing compile build --prune skips prune on a failed build...")
+    import argparse
+    from kompos.runners.compile import CompileRunner
+
+    for build_rc, expect_prune in ((1, False), (0, True)):
+        runner = CompileRunner.__new__(CompileRunner)
+        runner.config_path = '.'
+        pruned = []
+        runner.run_configuration = lambda args: None
+        runner._build_routing_map = lambda: {'cluster': 'tfe'}
+        runner._walk_compositions = lambda root: [('cluster', 'composition=cluster')]
+        runner._partition_enabled_compositions = lambda comps: (comps, [])
+        runner._build = lambda comps, routing, args, rc=build_rc: rc
+        runner._prune_stale = lambda *a, **kw: pruned.append(a)
+        args = argparse.Namespace(action='build', dry_run=False, prune=True)
+        assert runner._run_with_context(args, []) == build_rc, "build rc must be returned"
+        assert bool(pruned) == expect_prune, f"prune ran={bool(pruned)} with build rc={build_rc}"
+    print("  ✓ prune skipped when the build failed, runs when it succeeded")
 
 
 def test_manual_composition_writes_declared_files():
@@ -2441,6 +2556,7 @@ def main():
             test_partition_output_layout,
             test_partition_bad_key_fails,
             test_komposconfig_partition_layout,
+            test_nested_composition_inherits_owner_dir,
             test_tfe_multi_cluster,
             test_composition_enabled_false_pauses_workspace,
             test_composition_enabled_true_generates,
@@ -2451,6 +2567,8 @@ def main():
             test_compile_prune_keeps_disabled_composition,
             test_compile_prune_keeps_helm_only_cluster,
             test_compile_prune_partitioned,
+            test_compile_prune_nested_owner,
+            test_compile_prune_skipped_on_failed_build,
             test_manual_composition_writes_declared_files,
             test_external_entrypoint_plugin_writes_outputs,
             test_external_command_plugin_writes_outputs,
