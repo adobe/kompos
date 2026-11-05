@@ -1050,6 +1050,18 @@ def test_nested_composition_inherits_owner_dir():
         assert os.path.isfile(os.path.join(tmp, 'p1', 'clusters', 'c1', 'a.yaml')), \
             "manual under cluster=c1 must write into the cluster's dir"
         assert not os.path.exists(os.path.join(tmp, 'p1', 'drift')), "own output_subdir must be ignored"
+
+        # One class flag drives both output paths and compile --prune.
+        from kompos.runners.compile import _get_runner_class
+        from kompos.runners.tfe import TFERunner
+        flags = {r: _get_runner_class(r).writes_into_owner
+                 for r in ('helm', 'manual', 'external', 'tfe', 'terraform')}
+        assert flags == {'helm': True, 'manual': True, 'external': True,
+                         'tfe': False, 'terraform': False}, flags
+        tfe = TFERunner.__new__(TFERunner)
+        tfe.kompos_config = kc
+        assert tfe.instance_dir('cluster-legacy', raw, path('cluster=c1', 'cluster-legacy')) == \
+            os.path.join(tmp, 'p1', 'cluster-legacy', 'c1'), "tfe keeps its own type under cluster=X/"
         print("  ✓ helm/manual/external inherit owner dir + partitioning; no owner keeps own settings")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

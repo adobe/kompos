@@ -23,10 +23,6 @@ from kompos.compile_context import CompileContext
 logger = logging.getLogger(__name__)
 
 
-# Runners whose compositions write into their owner's dir (cluster=X/composition=helm-values).
-_NESTED_RUNNERS = ('helm', 'manual', 'external')
-
-
 def _get_runner_class(runner_type):
     """Lazy import runner class by type to avoid circular imports."""
     if runner_type == 'helm':
@@ -407,7 +403,8 @@ class CompileRunner(GenericRunner):
                 if not inst or '{{' in str(inst):
                     inst = raw.get('cluster', {}).get('fullName', '')
                 owner = (kc.owner_type(comp_type, comp_path)
-                         if runner_type in _NESTED_RUNNERS else comp_type)
+                         if getattr(_get_runner_class(runner_type), 'writes_into_owner', False)
+                         else comp_type)
                 root = (kc.get_output_root(raw, self.get_nested_value, base)
                         if kc.is_partitioned(owner) else base)
             except KomposConfigError as e:

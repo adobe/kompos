@@ -70,6 +70,8 @@ class ManualRunner(GenericRunner):
     (default ``clusters``), matching where the tfe/helm runners place artifacts.
     """
 
+    writes_into_owner = True
+
     def __init__(self, kompos_config, config_path, execute):
         super(ManualRunner, self).__init__(kompos_config, config_path, execute, RUNNER_TYPE)
 
@@ -90,9 +92,8 @@ class ManualRunner(GenericRunner):
             return 0
 
         subdir = self.get_nested_value(raw_config, 'composition.output_subdir')
-        instance_dir = self.kompos_config.get_instance_dir(
-            composition, raw_config, self.get_nested_value, subdir=subdir or 'clusters', instance=instance,
-            config_path=config_path)
+        instance_dir = self.instance_dir(
+            composition, raw_config, config_path, subdir=subdir or 'clusters', instance=instance)
 
         written_paths = []
         for spec in files:
