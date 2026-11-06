@@ -17,7 +17,6 @@ import sys
 from kompos.parser import SubParserConfig
 from kompos.runner import GenericRunner, COMPOSITION_KEY, split_path
 from kompos.helpers import console
-from kompos.komposconfig import KomposConfigError
 from kompos.compile_context import CompileContext
 
 logger = logging.getLogger(__name__)
@@ -391,7 +390,7 @@ class CompileRunner(GenericRunner):
         compositions removed from configs/ entirely are treated as stale.
         """
         kc = self.kompos_config
-        base = os.path.normpath(kc.base_output_dir())
+        base = os.path.realpath(kc.base_output_dir())
         # Each runner reports the dir it writes, so prune holds no layout rules of its own.
         live = set()
         for comp_type, comp_path in live_comps:
@@ -400,7 +399,7 @@ class CompileRunner(GenericRunner):
                 continue
             try:
                 raw = self.get_raw_config(comp_path, comp_type)
-                live.add(os.path.normpath(runner_cls(kc, comp_path, self.execute).output_dir(
+                live.add(os.path.realpath(runner_cls(kc, comp_path, self.execute).output_dir(
                     comp_type, raw, comp_path)))
             except Exception as e:
                 console.print_warning(f"Skipping prune: {comp_path}: {e}")
@@ -409,14 +408,16 @@ class CompileRunner(GenericRunner):
         def is_live(path):  # a live instance dir, or a dir containing one
             return any(d == path or d.startswith(path + os.sep) for d in live)
 
-        # Dirs holding instance dirs: parents of live ones plus every type's
-        # <base>[/<partition>]/<output_subdir>, so removed instances, removed partitions
-        # and a pre-partition layout are all found. Other dirs under <base> are untouched.
+        # Dirs holding instance dirs: parents of live ones, every type's <base>/<output_subdir>
+        # and <base>/<partition>/<output_subdir>. A dir under <base> that isn't a type dir,
+        # isn't live and holds an output_subdir is a removed partition (or unmanaged) and goes.
         subdirs = {kc.output_subdir(t) for t in kc._layout_types()}
-        tops = [os.path.join(base, e) for e in sorted(os.listdir(base))] if os.path.isdir(base) else []
+        type_dirs = {os.path.join(base, s.split('/')[0]) for s in subdirs}
+        tops = [os.path.join(base, e) for e in sorted(os.listdir(base))
+                if os.path.join(base, e) not in type_dirs] if os.path.isdir(base) else []
         gone = [d for d in tops if not is_live(d) and any(os.path.isdir(os.path.join(d, s)) for s in subdirs)]
-        holders = {os.path.dirname(d) for d in live} | {
-            os.path.join(r, s) for r in [base] + tops if r not in gone for s in subdirs}
+        holders = ({os.path.dirname(d) for d in live} | {os.path.join(base, s) for s in subdirs}
+                   | {os.path.join(d, s) for d in tops if d not in gone for s in subdirs}) - {base}
         stale = gone + [os.path.join(h, e) for h in sorted(holders) if os.path.isdir(h)
                         for e in sorted(os.listdir(h)) if not is_live(os.path.join(h, e))]
 

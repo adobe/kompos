@@ -315,16 +315,29 @@ class KomposConfig:
                 raise KomposConfigError(f"output_subdir '{self.output_subdir(t)}' is shared by "
                                         "partitioned and unpartitioned composition types")
 
+    def _reserved_dirs(self):
+        """Dir names kompos lays out directly under a root: every output_subdir and the
+        workspaces dir. Partition values and instance names can't reuse them."""
+        workspaces = self.get_kompos_setting('tfe.workspaces_config.workspaces_sub_dir', 'workspaces')
+        return {self.output_subdir(t).split('/')[0] for t in self._layout_types()} | {
+            str(workspaces).split('/')[0]}
+
+    def _check_not_reserved(self, what, value):
+        first = str(value).split('/')[0]
+        if first in self._reserved_dirs():
+            raise KomposConfigError(f"{what} {value!r} collides with reserved output dir '{first}' "
+                                    f"(reserved: {', '.join(sorted(self._reserved_dirs()))})")
+
     def get_output_root(self, raw_config, get_nested_value_fn, base_dir=None):
         """<base_output_dir>/<value of compositions.partition.key> (just the base if unset)."""
         base, key = base_dir or self.base_output_dir(), self.partition_key()
         if not key:
             return base
         value = get_nested_value_fn(raw_config, key)
-        if (not isinstance(value, str) or value in ('', '.', '..') or '{{' in value or '/' in value
-                or value in {self.output_subdir(t).split('/')[0] for t in self._layout_types()}):
+        if not isinstance(value, str) or value in ('', '.', '..') or '{{' in value or '/' in value:
             raise KomposConfigError(f"compositions.partition.key '{key}' must resolve to a single "
-                                    f"dir name that isn't an output_subdir, got {value!r}")
+                                    f"dir name, got {value!r}")
+        self._check_not_reserved(f"compositions.partition.key '{key}' value", value)
         return os.path.join(base, value)
 
     def owner_type(self, comp_type, config_path):
@@ -347,8 +360,10 @@ class KomposConfig:
         base = base_dir or self.base_output_dir()
         root = (self.get_output_root(raw_config, get_nested_value_fn, base)
                 if self.is_partitioned(comp_type) else base)
-        return os.path.join(root, subdir or self.output_subdir(comp_type),
-                            instance or get_nested_value_fn(raw_config, 'composition.instance'))
+        instance = instance or get_nested_value_fn(raw_config, 'composition.instance')
+        if instance:
+            self._check_not_reserved("composition instance", instance)
+        return os.path.join(root, subdir or self.output_subdir(comp_type), instance)
 
     def get_composition_name(self, raw_config, get_nested_value_fn):
         """

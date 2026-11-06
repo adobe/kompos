@@ -1061,6 +1061,30 @@ def test_nested_composition_inherits_owner_dir():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_komposconfig_reserved_dir_names():
+    """partition values and instance names can't reuse an output_subdir or the workspaces dir"""
+    print("5.4i Testing reserved output dir names...")
+    from kompos.komposconfig import KomposConfig, KomposConfigError
+    from kompos.runner import GenericRunner
+
+    get = GenericRunner.get_nested_value
+    kc = KomposConfig.__new__(KomposConfig)
+    kc.config = {'komposconfig': {'defaults': {'base_output_dir': 'gen'}, 'compositions': {
+        'partition': {'key': 'project.name'},
+        'properties': {'cluster': {'output_subdir': 'clusters'}, 'cell': {'output_subdir': 'cells'}}}}}
+    ok = {'project': {'name': 'p1'}, 'composition': {'instance': 'c1'}}
+    assert kc.get_instance_dir('cluster', ok, get) == os.path.join('gen', 'p1', 'clusters', 'c1')
+    for project, instance in [('p1', 'cells'), ('p1', 'workspaces'), ('workspaces', 'c1'), ('clusters', 'c1')]:
+        raw = {'project': {'name': project}, 'composition': {'instance': instance}}
+        try:
+            kc.get_instance_dir('cluster', raw, get)
+        except KomposConfigError as e:
+            assert 'reserved' in str(e), str(e)
+        else:
+            raise AssertionError(f"project={project!r} instance={instance!r} must be rejected")
+    print("  ✓ instance names and partition values can't reuse output_subdir or workspaces dir names")
+
+
 def test_tfe_multi_cluster():
     """Test dev and prod cluster configs both exist and have expected structure"""
     print("5.5 Testing multi-cluster configs...")
@@ -1475,6 +1499,53 @@ def test_compile_prune_skipped_on_failed_build():
         assert runner._run_with_context(args, []) == build_rc, "build rc must be returned"
         assert bool(pruned) == expect_prune, f"prune ran={bool(pruned)} with build rc={build_rc}"
     print("  ✓ prune skipped when the build failed, runs when it succeeded")
+
+
+def test_compile_prune_paths_and_unmanaged_dirs():
+    """prune compares resolved paths, removes unmanaged dirs, and aborts on a reserved instance name"""
+    print("5.12e Testing compile --prune path resolution, unmanaged dirs and reserved names...")
+    import shutil
+    from kompos.komposconfig import KomposConfig
+    from kompos.runner import GenericRunner
+    from kompos.runners.compile import CompileRunner
+
+    compositions = {'order': {'tfe': ['cluster', 'cell']},
+                    'properties': {'cluster': {'output_subdir': 'clusters'}, 'cell': {'output_subdir': 'cells'}}}
+
+    def prune(komposconfig, live, dirs):
+        for d in dirs:
+            os.makedirs(os.path.join(gen, d), exist_ok=True)
+        kc = KomposConfig.__new__(KomposConfig)
+        kc.config = {'komposconfig': dict(komposconfig, compositions=compositions)}
+        runner = CompileRunner.__new__(CompileRunner)
+        runner.kompos_config, runner.execute = kc, False
+        runner.get_nested_value = GenericRunner.get_nested_value
+        runner.get_raw_config = lambda path, comp: {'composition': {'instance': path}}
+        runner._prune_stale([("cluster", i) for i in live], {"cluster": "tfe"}, dry_run=False)
+
+    old_cwd = os.getcwd()
+    tmp = tempfile.mkdtemp(prefix="kompos-prune-paths-")
+    gen = os.path.join(tmp, 'gen')
+    try:
+        os.chdir(tmp)
+        # The same dir written relative (base_output_dir) and absolute (tfe base_dir).
+        prune({'defaults': {'base_output_dir': 'gen'}, 'tfe': {'base_dir': gen}},
+              ["c1"], ["clusters/c1/tfe", "clusters/ghost/tfe", "archive/clusters/notes"])
+        assert os.path.isdir(os.path.join(gen, 'clusters', 'c1', 'tfe')), \
+            "live dir must survive a relative/absolute base mismatch"
+        assert not os.path.isdir(os.path.join(gen, 'clusters', 'ghost')), "removed instance should be pruned"
+        assert not os.path.isdir(os.path.join(gen, 'archive')), \
+            "generated/ is owned by configs: an unmanaged dir holding an output_subdir should be pruned"
+
+        # An instance named like an output_subdir is rejected, so prune deletes nothing.
+        prune({'defaults': {'base_output_dir': gen, 'base_dir': gen}},
+              ["cells"], ["clusters/cells/tfe", "clusters/ghost2/tfe"])
+        assert os.path.isdir(os.path.join(gen, 'clusters', 'cells', 'tfe')) and \
+            os.path.isdir(os.path.join(gen, 'clusters', 'ghost2')), "a reserved instance name must abort prune"
+        print("  ✓ resolved-path compare, unmanaged dirs pruned, reserved instance name aborts prune")
+    finally:
+        os.chdir(old_cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def test_manual_composition_writes_declared_files():
@@ -2553,6 +2624,7 @@ def main():
             test_partition_bad_key_fails,
             test_komposconfig_partition_layout,
             test_nested_composition_inherits_owner_dir,
+            test_komposconfig_reserved_dir_names,
             test_tfe_multi_cluster,
             test_composition_enabled_false_pauses_workspace,
             test_composition_enabled_true_generates,
@@ -2565,6 +2637,7 @@ def main():
             test_compile_prune_partitioned,
             test_compile_prune_nested_owner,
             test_compile_prune_skipped_on_failed_build,
+            test_compile_prune_paths_and_unmanaged_dirs,
             test_manual_composition_writes_declared_files,
             test_external_entrypoint_plugin_writes_outputs,
             test_external_command_plugin_writes_outputs,

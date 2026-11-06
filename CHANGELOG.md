@@ -9,15 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Partitioned generated output** — optional `compositions.partition.key` in `.komposconfig.yaml` names a config key (e.g. `project.name`) whose value roots generated output: `generated/<value>/<output_subdir>/<instance>/`. Types opt out with `compositions.properties.<type>.partitioned: false`. `KomposConfig.get_instance_dir()` owns the layout for the tfe, helm (values + `tfe-outputs.yaml`), manual and external runners; `compile --prune` prunes per partition, removed partitions and the pre-partition layout. An unresolved, non-string or colliding value fails the composition with nothing written. Without `partition`, output is unchanged.
+- **Reserved output dir names** — partition values and composition instance names that reuse an `output_subdir` (e.g. `clusters`) or the workspaces dir fail the composition with nothing written, instead of nesting ambiguously next to layout dirs.
 
 ### Changed
 - **Interpolated `workspaces_sub_dir`** — `komposconfig.tfe.workspaces_config.workspaces_sub_dir` is read from the layered config, so it can interpolate per composition (e.g. `"workspaces/{{project.name}}"` → `generated/workspaces/<project>/<instance>.workspace.yaml`). Lets each TFE organization's workspace manager watch only its own manifests. An unresolved value fails the composition. Static values behave as before.
 
 - **Nested compositions inherit their owner's output dir** — helm, manual and external compositions under a `<type>=<name>/` config dir (e.g. `cluster=c1/composition=helm-values`, `cell=x1/composition=ipam`) write into that owner's instance dir, using the owner's `output_subdir` and `partitioned` settings instead of their own, so they can't drift from it. The owner is inferred from the config path; no new settings. tfe and terraform compositions are unchanged. `compile --prune` registers them under the owner's dir.
+- **`compile --prune` uses each runner's output dir** — tfe/terraform, helm, manual and external expose `output_dir()`, used both for writing and by prune, which compares real paths instead of re-deriving owner, partition and subdir rules. Prune aborts if any composition's dir can't be resolved. `generated/` is owned by configs: a dir under it that holds an `output_subdir` but isn't written by any composition is removed.
 
 ### Fixed
 - **Prune after a failed build** — `compile build --prune` skips prune entirely when any composition failed, instead of pruning against a partial build.
 - **Compile cache stale reads** — cached inputs are validated by content hash instead of stat metadata, so same-size rewrites are detected on filesystems with coarse timestamps (e.g. Linux ext4).
+- **Prune scanning the wrong dirs** — prune now follows the dir each runner actually writes (external/manual `output_subdir`, tfe `base_dir`), and compares resolved paths, so relative, absolute or symlinked base dirs can't make live output look stale.
 
 ## [0.12.9] - 2026-10-02
 
