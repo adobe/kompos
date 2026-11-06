@@ -125,7 +125,6 @@ class HelmRunner(GenericRunner):
       generated/clusters/{cluster}/argoapps/{app}.yaml
     """
 
-
     def __init__(self, kompos_config, config_path, execute):
         super(HelmRunner, self).__init__(kompos_config, config_path, execute, RUNNER_TYPE)
 
@@ -212,12 +211,13 @@ class HelmRunner(GenericRunner):
 
     # ── output paths ─────────────────────────────────────────────────────────
 
-    def _cluster_dir(self, composition, raw_config, cluster_name, config_path=None):
-        """The owning cluster's dir (generated[/partition]/clusters/{cluster})."""
+    def output_dir(self, composition, raw_config, config_path=None):
+        """The owning cluster's dir (generated[/partition]/clusters/{cluster}).
+        Used for writing and by compile --prune."""
         return self.kompos_config.get_instance_dir(
             composition, raw_config, self.get_nested_value, base_dir=self.base_output_dir,
-            subdir=self.kompos_config.output_subdir(composition, 'clusters'), instance=cluster_name,
-            config_path=config_path)
+            subdir=self.kompos_config.output_subdir(composition, 'clusters'),
+            instance=self.get_composition_name(raw_config), config_path=config_path)
 
     def _output_paths(self, composition, raw_config, cluster_name, config_path=None):
         """
@@ -228,7 +228,7 @@ class HelmRunner(GenericRunner):
             chart_symlinks: list of (symlink_path, parent_generated_dir) tuples
         """
         argoapps_dir = os.path.join(
-            self._cluster_dir(composition, raw_config, cluster_name, config_path), self.argoapps_subdir)
+            self.output_dir(composition, raw_config, config_path), self.argoapps_subdir)
 
         chart_symlinks = []
         charts_dir = self.default_charts_dir
@@ -307,7 +307,7 @@ class HelmRunner(GenericRunner):
             }
 
         infra_outputs_path = os.path.join(
-            self._cluster_dir(composition, raw_config, cluster_name, config_path), self.tfe_outputs_path)
+            self.output_dir(composition, raw_config, config_path), self.tfe_outputs_path)
 
         # Build context once — hierarchy + infra outputs, reused for all charts
         context = self._build_context(config_path, infra_outputs_path)

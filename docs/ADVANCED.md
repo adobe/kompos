@@ -48,11 +48,20 @@ komposconfig:
         partitioned: false       # opt out: stays at generated/ipam/<instance>/
 ```
 
-Without `partition`, output is unchanged. The value must resolve to a single dir name that
-isn't an `output_subdir` (unresolved, non-string or `clusters` fail with nothing written), and a
-partitioned and an unpartitioned type can't share an `output_subdir`. All runners (incl. helm
-values and `tfe-outputs.yaml`) use `KomposConfig.get_instance_dir()`. `compile --prune` prunes per
-partition, removed partitions and the pre-partition layout; other dirs under base are untouched.
+Without `partition`, output is unchanged. The value must resolve to a single dir name
+(unresolved or non-string fail with nothing written), and a partitioned and an unpartitioned
+type can't share an `output_subdir`. All runners (incl. helm values and `tfe-outputs.yaml`) use
+`KomposConfig.get_instance_dir()`.
+
+**Reserved dir names.** Partition values and composition instance names can't reuse a dir name
+kompos lays out under a root: any `output_subdir` (e.g. `clusters`, `cells`) or the workspaces
+dir. A collision fails the composition with nothing written.
+
+**`generated/` is owned by configs.** Everything under `base_output_dir` must come from a
+composition in `configs/`; put hand-maintained files in a `composition=manual`. `compile --prune`
+asks each runner for the dir it writes (`output_dir()`) and removes instance dirs no composition
+writes, removed partitions, a pre-partition layout, and any other dir under base that holds an
+`output_subdir`.
 
 **Nested compositions inherit their owner's dir.** A helm, manual or external composition
 directly under a `<type>=<name>/` config dir whose `<type>` is a layout type (in

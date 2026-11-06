@@ -17,14 +17,9 @@ import sys
 from kompos.parser import SubParserConfig
 from kompos.runner import GenericRunner, COMPOSITION_KEY, split_path
 from kompos.helpers import console
-from kompos.komposconfig import KomposConfigError
 from kompos.compile_context import CompileContext
 
 logger = logging.getLogger(__name__)
-
-
-# Runners whose compositions write into their owner's dir (cluster=X/composition=helm-values).
-_NESTED_RUNNERS = ('helm', 'manual', 'external')
 
 
 def _get_runner_class(runner_type):
@@ -395,55 +390,36 @@ class CompileRunner(GenericRunner):
         compositions removed from configs/ entirely are treated as stale.
         """
         kc = self.kompos_config
-        base = kc.base_output_dir()
-        live, runners, owners = {}, set(), set()  # output root (<base> or <base>/<partition>) -> instances
+        base = os.path.realpath(kc.base_output_dir())
+        # Each runner reports the dir it writes, so prune holds no layout rules of its own.
+        live = set()
         for comp_type, comp_path in live_comps:
-            runner_type = routing.get(comp_type)
-            if not runner_type:
+            runner_cls = _get_runner_class(routing.get(comp_type))
+            if not runner_cls:
                 continue
             try:
                 raw = self.get_raw_config(comp_path, comp_type)
-                inst = raw.get('composition', {}).get('instance', '')
-                if not inst or '{{' in str(inst):
-                    inst = raw.get('cluster', {}).get('fullName', '')
-                owner = (kc.owner_type(comp_type, comp_path)
-                         if runner_type in _NESTED_RUNNERS else comp_type)
-                root = (kc.get_output_root(raw, self.get_nested_value, base)
-                        if kc.is_partitioned(owner) else base)
-            except KomposConfigError as e:
+                live.add(os.path.realpath(runner_cls(kc, comp_path, self.execute).output_dir(
+                    comp_type, raw, comp_path)))
+            except Exception as e:
                 console.print_warning(f"Skipping prune: {comp_path}: {e}")
                 return
-            except Exception:
-                inst = ''
-            if inst:
-                runners.add(runner_type)
-                owners.add(owner)
-                live.setdefault(root, set()).add(inst)
 
-        # A single instance dir under generated/<subdir>/ can be claimed by more than
-        # one runner: generated/clusters/<name> holds both the tfe `cluster` output
-        # (tfe/) and the `helm-values` output (helm-values/). A helm-only cluster has a
-        # helm-values composition but no tfe cluster composition, so it lives only in
-        # the helm live set. Prune against the UNION of every runner's live instances
-        # per output root. Only instances absent from configs/ entirely are stale.
-        subdirs = {kc.output_subdir(t): kc.is_partitioned(t) for t in owners.union(
-                   *(kc.composition_order(r, default=[]) for r in runners))}
-        roots = sorted(r for r in live if r != base)
-        targets = []
-        for subdir, partitioned in sorted(subdirs.items()):
-            if partitioned:  # per partition, plus the pre-partition <base>/<subdir> layout
-                targets += [(os.path.join(r, subdir), live[r]) for r in roots]
-                targets.append((os.path.join(base, subdir), set()))
-            else:
-                targets.append((os.path.join(base, subdir), live.get(base, set())))
-        stale = [os.path.join(d, e) for d, keep in targets if os.path.isdir(d)
-                 for e in sorted(os.listdir(d)) if e not in keep]
-        # Removed partitions: dirs under <base> holding a partitioned subdir; others are untouched.
-        part = [s for s, p in subdirs.items() if p]
-        if part and os.path.isdir(base):
-            keep = {os.path.basename(r) for r in roots} | {s.split('/')[0] for s in subdirs}
-            stale += [os.path.join(base, e) for e in sorted(os.listdir(base)) if e not in keep
-                      and any(os.path.isdir(os.path.join(base, e, s)) for s in part)]
+        def is_live(path):  # a live instance dir, or a dir containing one
+            return any(d == path or d.startswith(path + os.sep) for d in live)
+
+        # Dirs holding instance dirs: parents of live ones, every type's <base>/<output_subdir>
+        # and <base>/<partition>/<output_subdir>. A dir under <base> that isn't a type dir,
+        # isn't live and holds an output_subdir is a removed partition (or unmanaged) and goes.
+        subdirs = {kc.output_subdir(t) for t in kc._layout_types()}
+        type_dirs = {os.path.join(base, s.split('/')[0]) for s in subdirs}
+        tops = [os.path.join(base, e) for e in sorted(os.listdir(base))
+                if os.path.join(base, e) not in type_dirs] if os.path.isdir(base) else []
+        gone = [d for d in tops if not is_live(d) and any(os.path.isdir(os.path.join(d, s)) for s in subdirs)]
+        holders = ({os.path.dirname(d) for d in live} | {os.path.join(base, s) for s in subdirs}
+                   | {os.path.join(d, s) for d in tops if d not in gone for s in subdirs}) - {base}
+        stale = gone + [os.path.join(h, e) for h in sorted(holders) if os.path.isdir(h)
+                        for e in sorted(os.listdir(h)) if not is_live(os.path.join(h, e))]
 
         pruned = []
         for path in stale:

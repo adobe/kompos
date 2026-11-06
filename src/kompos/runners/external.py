@@ -112,6 +112,15 @@ class ExternalRunner(GenericRunner):
     def __init__(self, kompos_config, config_path, execute):
         super(ExternalRunner, self).__init__(kompos_config, config_path, execute, RUNNER_TYPE)
 
+    def output_dir(self, composition, raw_config, config_path=None):
+        """Instance dir (the owner's when nested). Used for writing and by compile --prune."""
+        spec = self.get_nested_value(raw_config, 'composition.external')
+        subdir = ((spec.get('output_subdir') if isinstance(spec, dict) else None)
+                  or self.get_nested_value(raw_config, 'composition.output_subdir'))
+        return self.kompos_config.get_instance_dir(
+            composition, raw_config, self.get_nested_value, subdir=subdir or 'clusters',
+            config_path=config_path)
+
     def run_configuration(self, args):
         self.configure_passive()
 
@@ -166,11 +175,7 @@ class ExternalRunner(GenericRunner):
                 )
             inputs[key] = value
 
-        subdir = (spec.get('output_subdir')
-                  or self.get_nested_value(raw_config, 'composition.output_subdir'))
-        instance_dir = self.kompos_config.get_instance_dir(
-            composition, raw_config, self.get_nested_value, subdir=subdir or 'clusters', instance=instance,
-            config_path=config_path)
+        instance_dir = self.output_dir(composition, raw_config, config_path)
 
         console.print_section_header(f"External: {instance} ({composition})")
         console.print_kvp("Config", console.format_config_path(config_path), indent=1)

@@ -127,7 +127,7 @@ class TFERunner(GenericTerraformRunner):
         instance = self.require_composition_instance(raw_config)
         if not instance:
             return 1
-        instance_dir = self.composition_instance_dir(composition, raw_config)
+        instance_dir = self.output_dir(composition, raw_config)
 
         composition_files = 0
         config_files = 0
@@ -194,16 +194,10 @@ class TFERunner(GenericTerraformRunner):
             f"  {console.Colors.YELLOW}↳{console.Colors.RESET} '{composition}' "
             f"{console.Colors.DIM}paused (composition.enabled: false): workspace only, infra frozen{console.Colors.RESET}")
         # The workspace's working_directory is the frozen composition dir; fail if it can't resolve.
-        self.composition_instance_dir(composition, raw_config)
+        self.output_dir(composition, raw_config)
         if not self.generate_workspace_config(config_path, raw_config, instance_name=instance):
             return 1
         return 0
-
-    def composition_instance_dir(self, composition, raw_config):
-        """<base_dir>[/<partition>]/<output_subdir>/<composition.output_dir or instance>"""
-        return self.kompos_config.get_instance_dir(
-            composition, raw_config, self.get_nested_value,
-            base_dir=self.base_dir, instance=self.get_composition_output_dir(raw_config))
 
     def generate_composition(self, composition, raw_config, instance_dir, instance_name=None):
         """
@@ -215,7 +209,7 @@ class TFERunner(GenericTerraformRunner):
         Args:
             composition: Name of the composition (e.g., 'cluster')
             raw_config: Configuration dictionary from hiera
-            instance_dir: Resolved composition_instance_dir()
+            instance_dir: Resolved output_dir()
             instance_name: Pre-resolved composition.instance (optional)
             
         Returns:
