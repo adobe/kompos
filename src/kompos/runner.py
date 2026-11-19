@@ -20,7 +20,7 @@ import yaml
 from himl import ConfigRunner
 from kompos.helpers import console
 from himl.config_generator import ConfigProcessor, ConfigGenerator
-from himl.interpolation import InterpolationResolver
+from himl.interpolation import EscapingResolver, InterpolationResolver
 
 logger = logging.getLogger(__name__)
 
@@ -657,6 +657,16 @@ class GenericRunner:
         """
         InterpolationResolver().resolve_interpolations(data)
         InterpolationResolver().resolve_interpolations(data)
+
+    @staticmethod
+    def resolve_escaping(data):
+        """
+        Strip himl escapes ({{`...`}} -> ...) from an in-memory dict in-place.
+
+        Run after interpolation validation: cleaned values such as
+        {{ .Values.x }} look like unresolved interpolations to himl's validator.
+        """
+        EscapingResolver().resolve_escaping(data)
 
     @staticmethod
     def flatten_dict(d, parent_key='', sep='.'):

@@ -2102,6 +2102,58 @@ def test_helm_missing_tfe_outputs_no_sys_exit(tmp_path=None):
     print("  ✓ missing tfe-outputs returns None")
 
 
+def _render_bridge(bridge_yaml, context):
+    import tempfile
+    from kompos.runners.helm import HelmRunner
+
+    class _Runner(HelmRunner):
+        def __init__(self):
+            self.enclosing_key = '__helm_values__'
+            self.overrides_merge = False
+            self._last_validation_warning = None
+
+    chart_dir = Path(tempfile.mkdtemp()) / 'my-chart'
+    chart_dir.mkdir()
+    bridge = chart_dir / 'bridge.yaml'
+    bridge.write_text(bridge_yaml)
+    runner = _Runner()
+    values = runner.render_values('my-chart', str(bridge), context)
+    return runner, values
+
+
+def test_helm_render_values_cleans_escapes():
+    """Escaped {{`...`}} in bridge.yaml renders to the literal inner text."""
+    print("6.3g Testing helm bridge escape cleanup...")
+    context = {'cluster': {'fullName': 'demo'}}
+    runner, values = _render_bridge(
+        'args:\n'
+        '  - "{{`{{ join \\",\\" .Values.x }}`}}"\n'
+        'mixed: "--flag={{`{{ .Values.y }}`}}-end"\n'
+        'name: "{{cluster.fullName}}"\n',
+        context,
+    )
+    assert values['args'] == ['{{ join "," .Values.x }}'], values['args']
+    assert values['mixed'] == '--flag={{ .Values.y }}-end', values['mixed']
+    assert values['name'] == 'demo'
+    assert runner._last_validation_warning is None, runner._last_validation_warning
+    assert '__helm_values__' not in context
+    print("  ✓ escaped values rendered literally, interpolation resolved")
+
+
+def test_helm_render_values_unresolved_still_flagged():
+    """A real unresolved reference is still flagged next to escaped values."""
+    print("6.3h Testing unresolved interpolation still flagged with escapes...")
+    runner, values = _render_bridge(
+        'a: "{{`{{ .Values.x }}`}}"\n'
+        'b: "{{missing.key}}"\n',
+        {'cluster': {'fullName': 'demo'}},
+    )
+    assert runner._last_validation_warning, 'unresolved {{missing.key}} must be flagged'
+    assert 'missing.key' in runner._last_validation_warning
+    assert values['a'] == '{{ .Values.x }}'
+    print("  ✓ unresolved interpolation still flagged")
+
+
 def test_compile_flushes_inventory_on_failure():
     """compile build must flush deferred inventory even when some compositions fail (0.12.5 bug)."""
     print("6.3f Testing compile flushes inventory on partial failure...")
@@ -2652,6 +2704,8 @@ def main():
             test_parse_inventory_config,
             test_chart_inventory_write_path,
             test_helm_missing_tfe_outputs_no_sys_exit,
+            test_helm_render_values_cleans_escapes,
+            test_helm_render_values_unresolved_still_flagged,
             test_compile_flushes_inventory_on_failure,
             test_helm_generate_dry_run,
             test_helm_generate_writes_files,
