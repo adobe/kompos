@@ -120,7 +120,7 @@ class HelmRunner(GenericRunner):
       context[enclosing_key] = values_dict     # inject under internal key
       resolve_interpolations(context)           # resolve {{}} in-place
       rendered = context.pop(enclosing_key)     # extract clean values
-      resolve_escaping(rendered)                # {{`...`}} -> literal ...
+      merge overrides, then resolve_escaping    # {{`...`}} -> literal ...
 
     Output:
       generated/clusters/{cluster}/argoapps/{app}.yaml
@@ -515,13 +515,14 @@ class HelmRunner(GenericRunner):
           2. Resolve {{ }} interpolations (himl InterpolationResolver)
           3. Extract rendered values (pop enclosing key)
           4. Validate no {{ }} remain (himl InterpolationValidator)
-          5. Strip himl escapes: {{`...`}} -> ... (after validation)
-          6. Merge overrides on top (default < env < cluster, wins)
+          5. Merge overrides on top (default < env < cluster, wins)
+          6. Strip himl escapes from bridge + overrides: {{`...`}} -> ...
+             (after validation, so cleaned Helm {{ ... }} isn't flagged)
         """
         chart_dir = os.path.dirname(values_path)
         has_bridge = os.path.isfile(values_path)
 
-        # Step 1-5: bridge interpolation, validation, escape cleanup
+        # Step 1-4: bridge interpolation + validation
         bridge_values = None
         if has_bridge:
             template = self.load_yaml_file(values_path)
@@ -538,9 +539,8 @@ class HelmRunner(GenericRunner):
                     InterpolationValidator().check_all_interpolations_resolved(bridge_values)
                 except Exception as e:
                     self._last_validation_warning = str(e)
-                self.resolve_escaping(bridge_values)
 
-        # Step 6: overrides merge
+        # Step 5: overrides merge
         loaded = []
         if self.overrides_merge:
             overrides_dir = os.path.join(chart_dir, self.overrides_subdir)
@@ -554,6 +554,10 @@ class HelmRunner(GenericRunner):
                         bridge_values = override
                     loaded.append(name)
         self._last_loaded_overrides = loaded
+
+        # Step 6: escape cleanup over the merged result
+        if bridge_values:
+            self.resolve_escaping(bridge_values)
 
         return bridge_values
 

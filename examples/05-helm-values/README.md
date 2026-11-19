@@ -177,6 +177,28 @@ runs `InterpolationResolver` on the entire context (so `{{}}` in the values can 
 context key), then extracts `__helm_values__` as clean output. The context data never appears
 in the output.
 
+### Literal Helm `{{ ... }}` (escaping)
+
+Some charts run Helm `tpl` on a value, so the generated values must contain a literal Helm
+expression. Wrap it in a himl escape — `{{` + backtick … backtick + `}}` — so kompos doesn't
+try to resolve it:
+
+```yaml
+extraArgs:
+  - "--label={{`{{ join \",\" .Values.labels }}`}}"
+```
+
+renders as:
+
+```yaml
+extraArgs:
+  - --label={{ join "," .Values.labels }}
+```
+
+Escapes work in the values template and in `overrides/*.yaml`. They are removed last, after
+the unresolved-interpolation check and the overrides merge, so an escaped expression is never
+reported as unresolved. An unescaped `{{ ... }}` is still treated as a kompos reference.
+
 ### Pruning
 
 After rendering, `argoapps/` is pruned — any `.yaml` file not in the current rendered set is

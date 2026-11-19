@@ -2102,22 +2102,28 @@ def test_helm_missing_tfe_outputs_no_sys_exit(tmp_path=None):
     print("  ✓ missing tfe-outputs returns None")
 
 
-def _render_bridge(bridge_yaml, context):
+def _render_bridge(bridge_yaml, context, overrides=None):
     import tempfile
     from kompos.runners.helm import HelmRunner
 
     class _Runner(HelmRunner):
         def __init__(self):
             self.enclosing_key = '__helm_values__'
-            self.overrides_merge = False
+            self.overrides_merge = bool(overrides)
+            self.overrides_subdir = 'overrides'
             self._last_validation_warning = None
 
     chart_dir = Path(tempfile.mkdtemp()) / 'my-chart'
     chart_dir.mkdir()
     bridge = chart_dir / 'bridge.yaml'
-    bridge.write_text(bridge_yaml)
+    if bridge_yaml is not None:
+        bridge.write_text(bridge_yaml)
+    for name, text in (overrides or {}).items():
+        (chart_dir / 'overrides').mkdir(exist_ok=True)
+        (chart_dir / 'overrides' / name).write_text(text)
     runner = _Runner()
-    values = runner.render_values('my-chart', str(bridge), context)
+    values = runner.render_values('my-chart', str(bridge), context,
+                                  cluster_name='c1', env_name='dev')
     return runner, values
 
 
@@ -2152,6 +2158,29 @@ def test_helm_render_values_unresolved_still_flagged():
     assert 'missing.key' in runner._last_validation_warning
     assert values['a'] == '{{ .Values.x }}'
     print("  ✓ unresolved interpolation still flagged")
+
+
+def test_helm_render_values_cleans_override_escapes():
+    """Escaped values in overrides/*.yaml render literally, with or without a bridge."""
+    print("6.3i Testing helm override escape cleanup...")
+    runner, values = _render_bridge(
+        'name: "{{cluster.fullName}}"\n'
+        'args: ["{{`{{ .Values.a }}`}}"]\n',
+        {'cluster': {'fullName': 'demo'}},
+        overrides={
+            'default.yaml': 'extra: "{{`{{ join \\",\\" .Values.x }}`}}"\n',
+            'c1.yaml': 'args: ["{{`{{ .Values.a }}`}}", "{{`{{ .Values.b }}`}}"]\n',
+        },
+    )
+    assert values['name'] == 'demo'
+    assert values['extra'] == '{{ join "," .Values.x }}', values['extra']
+    assert values['args'] == ['{{ .Values.a }}', '{{ .Values.b }}'], values['args']
+    assert runner._last_validation_warning is None, runner._last_validation_warning
+
+    _, values = _render_bridge(
+        None, {}, overrides={'dev.yaml': 'v: "{{`{{ .Values.y }}`}}"\n'})
+    assert values == {'v': '{{ .Values.y }}'}, values
+    print("  ✓ override escapes cleaned, list items deduped before cleanup")
 
 
 def test_compile_flushes_inventory_on_failure():
@@ -2706,6 +2735,7 @@ def main():
             test_helm_missing_tfe_outputs_no_sys_exit,
             test_helm_render_values_cleans_escapes,
             test_helm_render_values_unresolved_still_flagged,
+            test_helm_render_values_cleans_override_escapes,
             test_compile_flushes_inventory_on_failure,
             test_helm_generate_dry_run,
             test_helm_generate_writes_files,
